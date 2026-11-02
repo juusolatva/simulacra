@@ -4,6 +4,7 @@
 //! so seeds stay compatible; this crate shades the pixels in parallel and
 //! returns packed RGB bytes (row-major, 3 bytes per pixel).
 
+mod geometry;
 mod noise;
 mod palette;
 mod raster;
@@ -16,12 +17,81 @@ mod abstract_art_core {
     use pyo3::types::PyBytes;
 
     use crate::palette::Palette;
-    use crate::styles::{drift, quasar};
+    use crate::styles::{Style, drift, fields, quasar, shapes};
 
     type Stops = Vec<(i64, i64, i64)>;
 
     fn palette(stops: Stops) -> PyResult<Palette> {
         Palette::new(stops).map_err(PyValueError::new_err)
+    }
+
+    /// Names of the styles this module can render.
+    #[pymodule_export]
+    const STYLES: [&str; 18] = [
+        "blobs",
+        "bloom",
+        "circuit",
+        "cosmic",
+        "drift",
+        "galaxy",
+        "geo",
+        "interference",
+        "kaleidoscope",
+        "mandala",
+        "nebula",
+        "orbits",
+        "pinwheel",
+        "plasma",
+        "prism",
+        "quasar",
+        "shard",
+        "waves",
+    ];
+
+    fn extract_style(style: &str, scene: &Bound<'_, PyAny>) -> PyResult<Box<dyn Style>> {
+        Ok(match style {
+            "blobs" => Box::new(fields::Blobs),
+            "bloom" => Box::new(scene.extract::<fields::Bloom>()?),
+            "circuit" => Box::new(scene.extract::<shapes::Circuit>()?),
+            "cosmic" => Box::new(scene.extract::<fields::Cosmic>()?),
+            "drift" => Box::new(drift::Drift),
+            "galaxy" => Box::new(scene.extract::<fields::Galaxy>()?),
+            "geo" => Box::new(scene.extract::<shapes::Geo>()?),
+            "interference" => Box::new(scene.extract::<fields::Interference>()?),
+            "kaleidoscope" => Box::new(scene.extract::<fields::Kaleidoscope>()?),
+            "mandala" => Box::new(scene.extract::<shapes::Mandala>()?),
+            "nebula" => Box::new(scene.extract::<fields::Nebula>()?),
+            "orbits" => Box::new(scene.extract::<fields::Orbits>()?),
+            "pinwheel" => Box::new(scene.extract::<fields::Pinwheel>()?),
+            "plasma" => Box::new(scene.extract::<fields::Plasma>()?),
+            "prism" => Box::new(scene.extract::<shapes::Prism>()?),
+            "quasar" => Box::new(scene.extract::<quasar::Quasar>()?),
+            "shard" => Box::new(scene.extract::<shapes::Shard>()?),
+            "waves" => Box::new(scene.extract::<fields::Waves>()?),
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "no native renderer for style {style:?}"
+                )));
+            }
+        })
+    }
+
+    /// Render `style` from a scene dict built by the matching Python
+    /// `_<style>_scene()`; returns packed RGB bytes.
+    #[pyfunction]
+    fn render<'py>(
+        py: Python<'py>,
+        style: &str,
+        width: usize,
+        height: usize,
+        seed: u32,
+        stops: Stops,
+        scene: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let palette = palette(stops)?;
+        let renderer = extract_style(style, scene)?;
+        let rgb = py.detach(|| renderer.render(width, height, seed, &palette));
+        Ok(PyBytes::new(py, &rgb))
     }
 
     /// fBm noise in [0, 1]; same results as `abstract_art.fbm`.
@@ -35,51 +105,5 @@ mod abstract_art_core {
     fn palette_color(stops: Stops, t: f64) -> PyResult<(u8, u8, u8)> {
         let [r, g, b] = palette(stops)?.color(t);
         Ok((r, g, b))
-    }
-
-    #[pyfunction]
-    fn render_drift<'py>(
-        py: Python<'py>,
-        width: usize,
-        height: usize,
-        seed: u32,
-        stops: Stops,
-    ) -> PyResult<Bound<'py, PyBytes>> {
-        let palette = palette(stops)?;
-        let rgb = py.detach(|| drift::render(width, height, seed, &palette));
-        Ok(PyBytes::new(py, &rgb))
-    }
-
-    #[pyfunction]
-    #[allow(clippy::too_many_arguments)]
-    fn render_quasar<'py>(
-        py: Python<'py>,
-        width: usize,
-        height: usize,
-        seed: u32,
-        stops: Stops,
-        center: (f64, f64),
-        beta: f64,
-        r_shadow: f64,
-        r_outer: f64,
-        jet_axis: (f64, f64),
-        jet_half_angle: f64,
-        jet_len: f64,
-        orbits: Vec<(f64, u32)>,
-    ) -> PyResult<Bound<'py, PyBytes>> {
-        let palette = palette(stops)?;
-        let scene = quasar::Quasar {
-            seed,
-            center,
-            beta,
-            r_shadow,
-            r_outer,
-            jet_axis,
-            jet_half_angle,
-            jet_len,
-            orbits,
-        };
-        let rgb = py.detach(|| scene.render(width, height, &palette));
-        Ok(PyBytes::new(py, &rgb))
     }
 }

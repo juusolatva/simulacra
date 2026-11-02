@@ -266,7 +266,7 @@ For a fixed script version and Python environment, the same inputs produce repea
 
 ## Performance and limitations
 
-Without the Rust core, rendering runs on the CPU in Python loops: all 36 styles take about 3 minutes at 640 × 480. Styles with a Rust implementation run in parallel on all CPU cores, roughly 800× faster (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
+Without the Rust core, rendering runs on the CPU in Python loops: all 36 styles take about 3 minutes at 640 × 480. With the Rust core, the 18 per-pixel styles run in parallel on all CPU cores, 78–918× faster, and all 36 styles take about 25 s at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
 
 - Start with 128 × 128 or 256 × 256 previews before increasing resolution.
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
@@ -280,7 +280,7 @@ Output is PNG/APNG only. There is no JPEG, SVG, GIF, or video export, and no bui
 
 ## Optional Rust core
 
-The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES` (currently `drift` and `quasar`). All other styles, and every style when the module is missing, use the pure-Python renderers.
+The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: `blobs`, `bloom`, `circuit`, `cosmic`, `drift`, `galaxy`, `geo`, `interference`, `kaleidoscope`, `mandala`, `nebula`, `orbits`, `pinwheel`, `plasma`, `prism`, `quasar`, `shard`, and `waves`. All other styles, and every style when the module is missing, use the pure-Python renderers.
 
 Python still generates each scene with `random.Random`, so a seed produces the same composition either way. The native output is tested to be byte-identical to the Python output.
 
@@ -294,7 +294,7 @@ maturin develop --release -m core/Cargo.toml
 python abstract_art.py --style quasar --width 3840 --height 2160 --out quasar-4k.png
 ```
 
-Rebuild with the same `maturin develop` command after changing Rust code. Measured on an 8-core machine at 640 × 480, `quasar` dropped from 43 s to 0.05 s and `drift` from 11 s to 0.013 s; a 4K `quasar` render including PNG encoding takes about 2 s.
+Rebuild with the same `maturin develop` command after changing Rust code. Measured on an 8-core machine at 640 × 480, native styles take 3–77 ms each, against 0.7–43 s in Python. For example, `quasar` went from 43 s to 0.05 s and `circuit` from 12 s to 0.07 s. A 4K `quasar` render including PNG encoding takes about 2 s.
 
 ## Testing
 
@@ -312,7 +312,7 @@ To run one regression test:
 python3 -m unittest -v test_abstract_art.RenderingTests.test_large_flowfield_trails_are_connected
 ```
 
-The suite currently contains 29 tests covering:
+The suite currently contains 32 tests covering:
 
 - Valid dimensions and RGB channels across all registered styles.
 - Every style using a wide part of its palette, unaliased wave styles, and shapes that scale with the canvas.
@@ -350,7 +350,7 @@ To add a style:
 4. Register it in the `STYLES` dictionary. `render()`, the CLI's `--style` choices, and the tests all read from it.
 5. Add a description to this README and the module's style list.
 6. Run the tests, add a regression check for the new style's intended behavior, and inspect square, wide, and tall renders.
-7. Optionally port the per-pixel work to Rust: keep scene generation in Python, add a shader under `core/src/styles/`, expose it in `core/src/lib.rs`, and register a wrapper in `NATIVE_STYLES`. `test_native_styles_match_python_exactly` then checks it against the Python renderer.
+7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/src/styles/` that reads it, add it to `extract_style()` and `STYLES` in `core/src/lib.rs`, and register the scene builder in `NATIVE_STYLES`. `test_native_styles_match_python_exactly` then checks it against the Python renderer.
 
 Pay particular attention to coordinate units: normalize positions when a shape should scale with the canvas, distinguish angles from pixel distances, and sample continuous paths densely enough to connect adjacent pixels. Test the saved image as well as the in-memory buffer.
 

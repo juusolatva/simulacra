@@ -12,7 +12,8 @@ impl Palette {
         Ok(Self { stops })
     }
 
-    fn stop(&self, index: usize) -> [u8; 3] {
+    /// Stop `index` as RGB, clamped to 0..=255.
+    pub fn stop(&self, index: usize) -> [u8; 3] {
         let (r, g, b) = self.stops[index];
         [channel(r as f64), channel(g as f64), channel(b as f64)]
     }

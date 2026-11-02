@@ -55,18 +55,16 @@ Project key: `juusolatva_abstract-art`.
 
 ### Performance (the next planned work)
 
-Pure Python takes about 178 s for all 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core currently covers `drift` and `quasar`, about 870× faster at 640×480 (quasar 43 s to 0.05 s; 4K in about 1.4 s). The remaining 34 styles still render in Python; porting them, slowest first, is the next step. Algorithmic fixes are done in Python first because they carry over to Rust.
+Pure Python takes about 178 s for all 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core covers the 18 per-pixel styles in `NATIVE_STYLES` (blobs, bloom, circuit, cosmic, drift, galaxy, geo, interference, kaleidoscope, mandala, nebula, orbits, pinwheel, plasma, prism, quasar, shard, waves). They are 78–918× faster, and all 36 styles now take about 25 s. Algorithmic fixes are done in Python first because they carry over to Rust. Single-run timings on this machine vary by about ±30%, so use `--repeat` and compare against a fresh baseline.
 
 - **Culling has been done** for the cases that keep output byte-identical: row filtering (`_RowFilter`) for stars in `orbits`, `nebula`, `cosmic` and `constellations`, and for glyphs in `mandala`; exact-zero ring bands in `mandala`; column bounds in `ember`; and bounding-box pruning of segments in `circuit` (`_nearest_segment`). A skip is allowed only where a contribution is exactly zero, either from a hard cutoff or because `exp()` underflows past `GAUSSIAN_ZERO` standard deviations.
 - **`render_torus` and `render_lissajous`** now sample their curves at a spacing tied to the glow width and measure distances to line segments (`_sample_by_length`, `_segment_box`), so curve drawing grows with the pixel count. This fixed the torus issue Greptile raised on PR #1. Their remaining cost is per-pixel work (background noise in torus).
-- **Still slow per pixel:**
-  - `render_quasar` evaluates 3-octave noise once per orbit ring per pixel.
-  - `render_circuit` still measures the nearest segment of every trace at every pixel.
-  - `render_geo` and `render_shard` measure every polygon edge at every pixel. Their Gaussian halos are too wide to cull exactly.
-  - All noise-based styles pay for pure-Python `fbm()`.
-
-  Except for quasar, which is now in the Rust core, these are the next styles to port.
-- **PNG encoding** builds a `bytearray` per pixel in Python. A 256-entry lookup table or `bytes` joins would be faster.
+- **Remaining Python styles, now the bulk of the time:**
+  - Per-pixel styles, straightforward to port next: crystal (computes a height field, then gradients), voronoi (sorts site distances per pixel), cosmos, mandelbrot, aurora, spiral, petals, starburst, rings, gems, horizon.
+  - Brush-and-trail styles that accumulate stamps in a fixed order: torus and lissajous (stamping plus per-pixel shading), constellations (lines plus stars), ink, flowfield, comet, ember. They need either sequential stamping in Rust or a per-pixel gather to stay byte-identical, because floating-point addition order changes results.
+- **Scene builders:** a native style needs a `_x_scene()` returning plain data (numbers, tuples, lists). A scene must reproduce the exact random draws, including any that depend on the palette: `orbits` takes the stop count because `randrange(n_stops)` consumes a number of random bits that depends on `n_stops`.
+- **Python `sum()` is compensated since 3.12.** Rust must use `geometry::py_sum` wherever Python sums floats with `sum()` (currently `render_geo`), and `geometry::py_mod` for Python's float `%`.
+- **PNG encoding:** `_packed_rgb` has a fast `bytes()` path for in-range integer channels (about 0.03 s at 640×480), and `zlib` level 9 compression dominates the encoding time at 4K.
 - **No resource guard:** there are no limits on `--width`, `--height` or `--frames`, and the CLI holds all animation frames in memory before writing them.
 
 ### Rendering quirks (not bugs, but worth knowing)

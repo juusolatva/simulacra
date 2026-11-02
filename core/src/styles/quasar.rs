@@ -3,12 +3,16 @@
 //! Mirrors `_quasar_value()` in `abstract_art.py`; the scene comes from
 //! `_quasar_scene()` so both implementations share the same random layout.
 
+use pyo3::FromPyObject;
+
+use super::Style;
 use crate::noise::{fbm, polar_noise};
 use crate::palette::Palette;
 use crate::raster::shade;
 
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
 pub struct Quasar {
-    pub seed: u32,
     pub center: (f64, f64),
     pub beta: f64,
     pub r_shadow: f64,
@@ -21,7 +25,14 @@ pub struct Quasar {
 }
 
 /// Bipolar cone emission along the visible axis, fading toward the tips.
-fn jet_glow(along: f64, perpendicular: f64, length: f64, opening: f64, shadow: f64, beta: f64) -> f64 {
+fn jet_glow(
+    along: f64,
+    perpendicular: f64,
+    length: f64,
+    opening: f64,
+    shadow: f64,
+    beta: f64,
+) -> f64 {
     let distance = along.abs();
     if distance <= shadow || distance >= length {
         return 0.0;
@@ -35,7 +46,7 @@ fn jet_glow(along: f64, perpendicular: f64, length: f64, opening: f64, shadow: f
 }
 
 impl Quasar {
-    fn value(&self, x: usize, y: usize) -> f64 {
+    fn value(&self, x: usize, y: usize, seed: u32) -> f64 {
         let dx = x as f64 - self.center.0;
         let dy = y as f64 - self.center.1;
         let (r_shadow, r_outer) = (self.r_shadow, self.r_outer);
@@ -44,7 +55,7 @@ impl Quasar {
         let mut v = 0.0;
         // gravitational lensing glow ring around the shadow
         let lens_r = r_shadow * 2.4;
-        let lens_wob = 0.7 + 0.6 * polar_noise(r * 0.35, theta, self.seed, 2.0, 2);
+        let lens_wob = 0.7 + 0.6 * polar_noise(r * 0.35, theta, seed, 2.0, 2);
         let lens_w = ((r_shadow * 0.9).max(1.0) * lens_wob).max(0.4);
         let d = r - lens_r;
         v += (-(d * d) / (2.0 * lens_w * lens_w)).exp() * 2.2;
@@ -68,14 +79,23 @@ impl Quasar {
         let (ux, uy) = self.jet_axis;
         let along = dx * ux + dy * uy;
         let perp = -dx * uy + dy * ux;
-        v += jet_glow(along, perp, self.jet_len, self.jet_half_angle, r_shadow, self.beta);
+        v += jet_glow(
+            along,
+            perp,
+            self.jet_len,
+            self.jet_half_angle,
+            r_shadow,
+            self.beta,
+        );
         // faint starfield backdrop
-        let n = fbm(x as f64 * 0.004, y as f64 * 0.004, self.seed, 2);
+        let n = fbm(x as f64 * 0.004, y as f64 * 0.004, seed, 2);
         v += (n - 0.5).max(0.0) * 0.6;
         1.0 - (-0.75 * v).exp()
     }
+}
 
-    pub fn render(&self, width: usize, height: usize, palette: &Palette) -> Vec<u8> {
-        shade(width, height, palette, |x, y| self.value(x, y))
+impl Style for Quasar {
+    fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
+        shade(width, height, palette, |x, y| self.value(x, y, seed))
     }
 }

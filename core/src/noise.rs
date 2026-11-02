@@ -55,7 +55,12 @@ pub fn fbm(x: f64, y: f64, seed: u32, octaves: u32) -> f64 {
 /// fBm sampled on a circle in noise space; continuous across theta = +/-pi.
 #[inline]
 pub fn polar_noise(r_coord: f64, theta: f64, seed: u32, around: f64, octaves: u32) -> f64 {
-    fbm(r_coord + around * theta.cos(), around * theta.sin(), seed, octaves)
+    fbm(
+        r_coord + around * theta.cos(),
+        around * theta.sin(),
+        seed,
+        octaves,
+    )
 }
 
 /// Stretch fbm output around 0.5.

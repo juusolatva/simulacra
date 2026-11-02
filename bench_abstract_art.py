@@ -29,12 +29,18 @@ def time_style(style, width, height, seed, palette, repeat):
     return best
 
 
-def load_baseline(path, width, height):
-    """Seconds per style from a ``--save`` file; the canvas size must match."""
+def load_baseline(path, width, height, seed, palette):
+    """Seconds per style from a ``--save`` file recorded with the same inputs.
+
+    Size, seed and palette must all match: another seed can produce a scene
+    with a different amount of work, which would distort the speedups.
+    """
     with open(path) as handle:
         saved = json.load(handle)
-    if [saved.get("width"), saved.get("height")] != [width, height]:
-        raise ValueError("baseline was recorded at %sx%s" % (saved.get("width"), saved.get("height")))
+    expected = {"width": width, "height": height, "seed": seed, "palette": palette}
+    mismatched = ["%s=%s" % (key, saved.get(key)) for key in expected if saved.get(key) != expected[key]]
+    if mismatched:
+        raise ValueError("baseline was recorded with different inputs: %s" % ", ".join(mismatched))
     return saved["seconds"]
 
 
@@ -50,11 +56,13 @@ def print_report(results, baseline):
             line += " %9.3f %7.1fx" % (baseline[style], baseline[style] / results[style])
         print(line)
     total = sum(results.values())
-    footer = "%-15s %9.3f" % ("TOTAL", total)
-    if baseline:
-        before = sum(baseline[s] for s in results if s in baseline)
-        footer += " %9.3f %7.1fx" % (before, before / total)
-    print(footer)
+    print("%-15s %9.3f" % ("TOTAL", total))
+    shared = [style for style in results if style in baseline]
+    if shared:
+        # Compare like with like: only styles present in both runs.
+        now = sum(results[style] for style in shared)
+        before = sum(baseline[style] for style in shared)
+        print("%-15s %9.3f %9.3f %7.1fx" % ("SHARED (%d)" % len(shared), now, before, before / now))
 
 
 def main():
@@ -74,14 +82,14 @@ def main():
     unknown = [s for s in styles if s not in art.STYLES]
     if unknown:
         parser.error("unknown style(s): %s" % ", ".join(unknown))
-    width = args.width or args.size
-    height = args.height or args.size
+    width = args.size if args.width is None else args.width
+    height = args.size if args.height is None else args.height
     if width <= 0 or height <= 0 or args.repeat <= 0:
         parser.error("sizes and repeat must be positive")
     baseline = {}
     if args.compare:
         try:
-            baseline = load_baseline(args.compare, width, height)
+            baseline = load_baseline(args.compare, width, height, args.seed, args.palette)
         except ValueError as error:
             parser.error(str(error))
 

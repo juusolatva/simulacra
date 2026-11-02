@@ -301,7 +301,7 @@ class RenderingTests(unittest.TestCase):
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_styles_match_python_exactly(self):
         cases = ((37, 23, 1, 'deep'), (64, 48, -7, 'neon'), (1, 1, 2 ** 40 + 3, 'gold'),
-                 (2, 5, 9, 'ocean'))
+                 (2, 5, 9, 'ocean'), (29, 61, 12345, 'sunset'))
         for style in art.NATIVE_STYLES:
             for width, height, seed, palette in cases:
                 with self.subTest(style=style, size=(width, height), seed=seed):
@@ -311,12 +311,29 @@ class RenderingTests(unittest.TestCase):
                     self.assertEqual(native, python)
 
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_style_lists_agree(self):
+        self.assertEqual(sorted(art.NATIVE_STYLES), sorted(art._core.STYLES))
+        self.assertTrue(set(art.NATIVE_STYLES) <= set(art.STYLES))
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_noise_and_palette_match_python(self):
         for x, y, seed, octaves in ((-3.7, 12.25, 77, 4), (1e6, -1e6, 0, 3), (0.5, 0.5, 2 ** 32 - 1, 1)):
             self.assertEqual(art._core.fbm(x, y, seed, octaves), art.fbm(x, y, seed, octaves))
         for t in (-1.0, 0.0, 0.3, 0.999, 1.0, 2.0):
             self.assertEqual(art._core.palette_color(art.PALETTES['ember'], t),
                              art.palette_color(art.PALETTES['ember'], t))
+
+    def test_open_curves_are_sampled_to_their_end(self):
+        points = art._sample_by_length(lambda u: (u * 100.0, 0.0), 10.0, closed=False)
+        self.assertEqual(points[0], (0.0, 0.0))
+        self.assertEqual(points[-1], (100.0, 0.0))
+        closed = art._sample_by_length(lambda u: (math.cos(math.tau * u), math.sin(math.tau * u)),
+                                       0.5, closed=True)
+        self.assertEqual(closed[-1], closed[0])
+
+    def test_packed_rgb_clamps_out_of_range_channels(self):
+        rows = [[(300, -5, 12.7), (0, 128, 255)]]
+        self.assertEqual(art._packed_rgb(rows, 2, 1), bytes([255, 0, 12, 0, 128, 255]))
 
     def test_failed_still_write_preserves_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:
