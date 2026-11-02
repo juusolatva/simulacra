@@ -8,6 +8,7 @@ Styles:
     orbits   - starfield with noise-driven orbital rings
     mandelbrot - classic Mandelbrot set framed by a palette gradient
     spiral   - polar spiral arms modulated by smooth winding phases
+    bloom    - radial glowing cloud blooms
     constellations - starfield with connected constellation lines
     cosmos - concentric ripples from luminous centers
     nebula   - layered radial glow clouds with noise-driven starlight
@@ -625,6 +626,37 @@ def render_galaxy(width, height, seed, palette_name):
     return pixels
 
 
+
+def render_bloom(width, height, seed, palette_name):
+    """Radial blooms: soft glowing clouds spawned at noise-driven points."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    blooms = []
+    for _ in range(rng.randint(4, 9)):
+        blooms.append({
+            "x": rng.uniform(0, width - 1),
+            "y": rng.uniform(0, height - 1),
+            "r": rng.uniform(20.0, 70.0),
+            "amp": rng.uniform(0.4, 1.0),
+        })
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            n = fbm(x * 0.006, y * 0.006, seed, octaves=3)
+            base = 0.5 + 0.5 * n
+            for b in blooms:
+                d = math.hypot(x - b["x"], y - b["y"])
+                w = math.exp(-((d / b["r"]) ** 2) / 2.0) * b["amp"]
+                w *= (0.5 + 0.5 * n) * (0.6 + 0.4 * base)
+                v += w
+            t = min(1.0, max(0.0, v / (len(blooms) * 1.4)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -664,7 +696,12 @@ def render(width, height, seed, style, palette_name):
         return render_cosmos(width, height, seed, palette_name)
     if style == "galaxy":
         return render_galaxy(width, height, seed, palette_name)
+    if style == "bloom":
+        return render_bloom(width, height, seed, palette_name)
+
     raise ValueError("unknown style: %s" % style)
+
+
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
@@ -807,7 +844,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
