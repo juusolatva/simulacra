@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
-import ast
+import math
+import os
 import pathlib
+import stat
 import struct
 import tempfile
 import unittest
@@ -91,12 +93,8 @@ class RenderingTests(unittest.TestCase):
         self.assertGreater(changed, 64)
 
     def test_all_styles_have_valid_dimensions_and_channels(self):
-        tree = ast.parse(pathlib.Path(art.__file__).read_text())
-        styles = [node.comparators[0].value for node in ast.walk(tree)
-                  if isinstance(node, ast.Compare)
-                  and isinstance(node.left, ast.Name) and node.left.id == 'style']
-        self.assertTrue(styles)
-        for style in styles:
+        self.assertEqual(len(art.STYLES), 36)
+        for style in art.STYLES:
             with self.subTest(style=style):
                 pixels = art.render(40, 28, 1, style, 'deep')
                 self.assertEqual(len(pixels), 28)
@@ -182,6 +180,112 @@ class RenderingTests(unittest.TestCase):
                 art.write_png(path, [[(0, 0, 0)]], 2, 1)
             with self.assertRaises(ValueError):
                 art.write_animated_png(path, [], 2, 1)
+
+
+    def test_every_style_uses_a_wide_palette_range(self):
+        stops = art.PALETTES['deep']
+        lookup = [(art.palette_color(stops, i / 100), i / 100) for i in range(101)]
+
+        def position(color):
+            return min(lookup, key=lambda item: sum((a - b) ** 2
+                                                     for a, b in zip(item[0], color)))[1]
+
+        for style in art.STYLES:
+            with self.subTest(style=style):
+                pixels = art.render(64, 64, 3, style, 'deep')
+                positions = {position(c) for row in pixels[::3] for c in row[::3]}
+                self.assertGreater(max(positions) - min(positions), 0.5)
+
+    def test_fbm_is_unit_range(self):
+        values = [art.fbm(x * 1.7, y * 2.3, 5) for x in range(-40, 40) for y in range(-40, 40)]
+        self.assertGreaterEqual(min(values), 0.0)
+        self.assertLessEqual(max(values), 1.0)
+        self.assertAlmostEqual(sum(values) / len(values), 0.5, delta=0.1)
+
+    def test_polar_noise_is_continuous_across_the_angle_seam(self):
+        for r in (0.0, 3.0, 40.0):
+            self.assertAlmostEqual(art.polar_noise(r, math.pi - 1e-9, 2, 3.0),
+                                   art.polar_noise(r, -math.pi + 1e-9, 2, 3.0), places=6)
+
+    def test_wave_styles_are_not_aliased(self):
+        # Wave frequencies are relative to the canvas, so neighbouring pixels
+        # become more similar as resolution grows instead of staying noisy.
+        def roughness(pixels):
+            return (sum(abs(a - b) for row in pixels for left, right in zip(row, row[1:])
+                        for a, b in zip(left, right))
+                    / (len(pixels) * (len(pixels[0]) - 1)))
+
+        for style in ('plasma', 'spiral', 'interference'):
+            with self.subTest(style=style):
+                coarse = roughness(art.render(32, 32, 1, style, 'deep'))
+                fine = roughness(art.render(128, 128, 1, style, 'deep'))
+                self.assertLess(fine, coarse / 2)
+
+    def test_formerly_fixed_size_styles_scale_with_canvas(self):
+        background = art.PALETTES['deep'][0]
+
+        def coverage(style, size):
+            pixels = art.render(size, size, 4, style, 'deep')
+            return sum(c != background for row in pixels for c in row) / (size * size)
+
+        for style in ('rings', 'gems'):
+            with self.subTest(style=style):
+                small, large = coverage(style, 48), coverage(style, 144)
+                self.assertGreater(small, 0.05)
+                self.assertLess(abs(small - large), 0.5 * max(small, large))
+
+    def test_writers_store_palette_colors_unchanged(self):
+        color = art.PALETTES['deep'][0]
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / 'still.png'
+            art.write_png(path, [[color]], 1, 1)
+            raw = zlib.decompress(dict(chunks(path))[b'IDAT'])
+        self.assertEqual(tuple(raw[1:4]), color)
+
+    def test_writers_use_default_file_permissions(self):
+        umask = os.umask(0o022)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                still = pathlib.Path(directory) / 'still.png'
+                animated = pathlib.Path(directory) / 'animated.png'
+                art.write_png(still, [[(0, 0, 0)]], 1, 1)
+                art.write_animated_png(animated, [[[(0, 0, 0)]]] * 2, 1, 1)
+                for path in (still, animated):
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o644)
+        finally:
+            os.umask(umask)
+
+    def test_writers_never_change_the_process_umask(self):
+        # os.umask() is process-wide; changing it, even briefly, would affect
+        # files created concurrently by other threads.
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(art.os, 'umask', side_effect=AssertionError('umask changed')):
+            art.write_png(pathlib.Path(directory) / 'still.png', [[(0, 0, 0)]], 1, 1)
+            art.write_animated_png(pathlib.Path(directory) / 'animated.png',
+                                   [[[(0, 0, 0)]]] * 2, 1, 1)
+
+    def test_failed_still_write_preserves_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / 'existing.png'
+            path.write_bytes(b'previous output')
+            with mock.patch.object(art.os, 'replace', side_effect=OSError('disk error')):
+                with self.assertRaises(OSError):
+                    art.write_png(path, [[(0, 0, 0)]], 1, 1)
+            self.assertEqual(path.read_bytes(), b'previous output')
+            self.assertEqual(list(path.parent.iterdir()), [path])
+
+    def test_cli_accepts_every_registered_style(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = pathlib.Path(directory) / 'cli.png'
+            argv = ['abstract_art.py', '--style', 'ink', '--width', '6', '--height', '5',
+                    '--out', str(out)]
+            with mock.patch('sys.argv', argv), \
+                    mock.patch('builtins.print'):
+                art.main()
+            self.assertEqual(struct.unpack('>II', chunks(out)[0][1][:8]), (6, 5))
+        with mock.patch('sys.argv', ['abstract_art.py', '--style', 'nope']), \
+                mock.patch('sys.stderr'), self.assertRaises(SystemExit):
+            art.main()
 
 
 if __name__ == '__main__':
