@@ -30,6 +30,7 @@ Styles:
     cosmic     - starfield with nebula glow and curved spiral arm
     quasar     - glowing relativistic accretion disk with Doppler-beamed jets
     mandala    - concentric noise-wobbled rings of glowing glyphs with spokes
+    crystal    - noise-grown terrain quantized into faceted gem crystal faces
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1322,8 +1323,48 @@ def render_drift(width, height, seed, palette_name):
 
 # ---------------------------------------------------------------- render dispatch
 
+def render_crystal(width, height, seed, palette_name):
+    """Crystal: noise-grown terrain quantized into low-poly faceted gem faces.
 
-# ---------------------------------------------------------------- render dispatch
+    A value field is grown from fBm noise, its gradient is measured with
+    finite differences, and the tilt direction is quantized into discrete
+    facet orientations. The result is faceted crystal terrain with crisp
+    highlights and dark crevices.
+    """
+    stops = PALETTES[palette_name]
+    light = (0.45, -0.55, 0.70)
+    ln = math.sqrt(sum(c * c for c in light)) or 1.0
+    light = (light[0] / ln, light[1] / ln, light[2] / ln)
+
+    def height_at(x, y):
+        return fbm(x * 0.011, y * 0.011, seed, octaves=5) * 0.5 + 0.5
+
+    def gradient(x, y):
+        xm = max(0, x - 1)
+        xp = min(width - 1, x + 1)
+        ym = max(0, y - 1)
+        yp = min(height - 1, y + 1)
+        dx = (height_at(xp, y) - height_at(xm, y)) / (xp - xm) if xp != xm else 0.0
+        dy = (height_at(x, yp) - height_at(x, ym)) / (yp - ym) if yp != ym else 0.0
+        return dx, dy
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx, dy = gradient(x, y)
+            h = math.sqrt(dx * dx + dy * dy) or 0.0001
+            tx, ty = -dy / h, dx / h
+            k = int(round(math.atan2(ty, tx) / (math.pi / 4))) % 8
+            qt = (k - int(k / 8)) * math.pi / 4
+            n = (math.cos(qt) * tx, math.cos(qt) * ty, math.sin(qt))
+            diffuse = max(0.0, n[0] * light[0] + n[1] * light[1] + n[2] * light[2])
+            spec = max(0.0, 2.0 * diffuse - (n[0] * light[0] + n[1] * light[1] + n[2] * light[2])) * max(0.0, 1.0 - diffuse)
+            t = min(1.0, max(0.0, diffuse * 0.9 + spec * 1.6 - 0.05))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
 
 def render(width, height, seed, style, palette_name):
     if style == "waves":
@@ -1390,6 +1431,8 @@ def render(width, height, seed, style, palette_name):
         return render_mandala(width, height, seed, palette_name)
     if style == "drift":
         return render_drift(width, height, seed, palette_name)
+    if style == "crystal":
+        return render_crystal(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1536,7 +1579,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala", "drift"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala", "drift", "crystal"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
