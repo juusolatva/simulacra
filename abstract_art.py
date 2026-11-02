@@ -8,6 +8,8 @@ Styles:
     orbits   - starfield with noise-driven orbital rings
     mandelbrot - classic Mandelbrot set framed by a palette gradient
     spiral   - polar spiral arms modulated by smooth winding phases
+    constellations - starfield with connected constellation lines
+    cosmos - concentric ripples from luminous centers
     nebula   - layered radial glow clouds with noise-driven starlight
     kaleidoscope - radial symmetry patterns via folded angular sectors
     petals   - radial petal flower arrangements modulated by noise
@@ -480,6 +482,98 @@ def render_interference(width, height, seed, palette_name):
     return pixels
 
 
+def render_constellations(width, height, seed, palette_name):
+    """Constellations: starfield whose stars are loosely connected by lines."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_stars = rng.randint(28, 48)
+    stars = []
+    for _ in range(n_stars):
+        stars.append({
+            "x": rng.uniform(0, width - 1),
+            "y": rng.uniform(0, height - 1),
+            "r": rng.uniform(0.7, 2.2),
+            "b": rng.uniform(0.45, 1.0),
+        })
+
+    max_dist = math.sqrt(width * width + height * height) * 0.32
+    line_grid = [[0.0] * width for _ in range(height)]
+
+    pairs = []
+    for i in range(len(stars)):
+        for j in range(i + 1, len(stars)):
+            sx, sy = stars[i]["x"], stars[i]["y"]
+            ex, ey = stars[j]["x"], stars[j]["y"]
+            dist = math.hypot(ex - sx, ey - sy)
+            if dist < 4.0 and dist <= max_dist:
+                pairs.append((i, j, dist))
+
+    for (i, j, dist) in pairs:
+        sx, sy = stars[i]["x"], stars[i]["y"]
+        ex, ey = stars[j]["x"], stars[j]["y"]
+        steps = max(1, int(dist / 1.2))
+        for k in range(steps + 1):
+            t = k / steps
+            lx = sx + (ex - sx) * t
+            ly = sy + (ey - sy) * t
+            ix = int(lx)
+            iy = int(ly)
+            if 0 <= ix < width and 0 <= iy < height:
+                falloff = math.exp(-((k / steps) * (k / steps)) / 2.0)
+                line_grid[iy][ix] += falloff * 0.9
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for star in stars:
+                d = math.hypot(x - star["x"], y - star["y"])
+                v += math.exp(-((d / star["r"]) ** 2) / 2.0) * star["b"]
+            v += line_grid[y][x]
+            t = min(1.0, max(0.0, v / (n_stars * 1.3)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
+def render_cosmos(width, height, seed, palette_name):
+    """Cosmos: concentric ripples emanating from random luminous centers."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_centers = rng.randint(2, 5)
+    centers = []
+    for _ in range(n_centers):
+        centers.append({
+            "x": rng.uniform(width * 0.2, width * 0.8),
+            "y": rng.uniform(height * 0.2, height * 0.8),
+            "max_r": rng.uniform(0.25, 0.6) * math.sqrt(width * width + height * height),
+            "rings": rng.randint(3, 8),
+            "phase": rng.uniform(0.0, 6.28),
+            "amp": rng.uniform(0.6, 1.4),
+        })
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            weight = 0.0
+            for c in centers:
+                d = math.sqrt((x - c["x"]) ** 2 + (y - c["y"]) ** 2)
+                if d < c["max_r"]:
+                    k = int((d / c["max_r"]) * (c["rings"] - 1) + 0.5)
+                    w = math.exp(-((d / (c["max_r"] / max(c["rings"] - 1, 1))) ** 2) / 2.0)
+                    s = math.sin(k * 2.0 + c["phase"])
+                    val = w * c["amp"] * (0.5 + 0.5 * s)
+                    v += val
+                    weight += w
+            t = min(1.0, max(0.0, v / (weight + 0.6)))
+            row.append(palette_color(stops, t * 0.95))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -513,6 +607,10 @@ def render(width, height, seed, style, palette_name):
         return render_starburst(width, height, seed, palette_name)
     if style == "interference":
         return render_interference(width, height, seed, palette_name)
+    if style == "constellations":
+        return render_constellations(width, height, seed, palette_name)
+    if style == "cosmos":
+        return render_cosmos(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -656,7 +754,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
