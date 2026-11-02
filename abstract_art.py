@@ -49,11 +49,18 @@ Palette stops are sRGB colors and are written to PNG unchanged.
 """
 
 import argparse
+import itertools
 import math
 import os
 import random
 import struct
 import zlib
+
+try:
+    # Optional Rust core (see core/); every style also has a pure-Python renderer.
+    import abstract_art_core as _core
+except ImportError:
+    _core = None
 
 # ---------------------------------------------------------------- palettes
 
@@ -236,15 +243,19 @@ def _poly_min_dist(x, y, poly):
 
 # ---------------------------------------------------------------- styles
 
-def render_waves(width, height, seed, palette_name):
-    stops = PALETTES[palette_name]
+def _waves_scene(width, height, seed):
     rng = random.Random(seed)
-    layers = [
+    return {"layers": [
         (30.0, 2.0, rng.uniform(0, 6.28)),
         (18.0, 3.5, rng.uniform(0, 6.28)),
         (12.0, 5.0, rng.uniform(0, 6.28)),
         (7.0, 7.0, rng.uniform(0, 6.28)),
-    ]
+    ]}
+
+
+def render_waves(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    layers = _waves_scene(width, height, seed)["layers"]
     pixels = []
     for y in range(height):
         row = []
@@ -274,26 +285,37 @@ def render_blobs(width, height, seed, palette_name):
     return pixels
 
 
+# exp(-q) is exactly 0.0 in double precision once q exceeds ~745.13, so a
+# Gaussian exp(-(d / sigma) ** 2 / 2) contributes exactly nothing beyond
+# d = sigma * sqrt(2 * 746). Culling past that distance keeps output identical.
+GAUSSIAN_ZERO = math.sqrt(2.0 * 746.0)
+
+
+class _RowFilter:
+    """Items that can affect a canvas row, kept in their original order.
+
+    An item whose vertical center is more than its reach away from a row
+    cannot affect any pixel in it (a point-to-pixel distance is never less
+    than the vertical offset). The last row's list is cached, so per-pixel
+    callers that scan rows in order filter once per row.
+    """
+
+    def __init__(self, items, center_y, reach):
+        self._entries = [(center_y(item), reach(item), item) for item in items]
+        self._row = None
+        self._items = []
+
+    def __call__(self, y):
+        if y != self._row:
+            self._row = y
+            self._items = [item for (cy, r, item) in self._entries if abs(y - cy) <= r]
+        return self._items
+
+
 def _shade(width, height, stops, value):
     """Build ``height`` rows of palette colors from ``value(x, y)`` in [0, 1]."""
     return [[palette_color(stops, value(x, y)) for x in range(width)]
             for y in range(height)]
-
-
-def _box_distances(px, py, reach, width, height, pad=0):
-    """Yield ``(row, col, distance)`` for canvas cells in a box around (px, py).
-
-    The box spans ``reach`` pixels each way, plus ``pad`` extra columns and
-    rows on the far side, clipped to the canvas.
-    """
-    x0 = max(0, int(px - reach))
-    x1 = min(width - 1, int(px + reach) + pad)
-    y0 = max(0, int(py - reach))
-    y1 = min(height - 1, int(py + reach) + pad)
-    for yy in range(y0, y1 + 1):
-        dy2 = (yy - py) * (yy - py)
-        for xx in range(x0, x1 + 1):
-            yield yy, xx, math.sqrt((xx - px) * (xx - px) + dy2)
 
 
 def _orbits_color(x, y, seed, stops, center, rings, stars):
@@ -304,25 +326,36 @@ def _orbits_color(x, y, seed, stops, center, rings, stars):
     for (radius, ring_color) in rings:
         if radius * 0.9 < r < radius * 1.1:
             c = ring_color
-    for (sx, sy, sr) in stars:
+    for (sx, sy, sr) in stars(y):
         if math.hypot(x - sx, y - sy) < sr * 1.2:
             c = (255, 255, 255)
     return c
 
 
-def render_orbits(width, height, seed, palette_name):
-    stops = PALETTES[palette_name]
+def _orbits_scene(width, height, seed, n_stops):
+    """Stars and ring bands; rings store palette stop indices.
+
+    The ring draw depends on the palette size (randrange(n_stops)), so the
+    scene needs it to reproduce the same random sequence.
+    """
     rng = random.Random(seed)
     stars = [
         (rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.5, 3.0))
         for _ in range(60)
     ]
+    max_r = math.sqrt((width / 2.0) ** 2 + (height / 2.0) ** 2)
+    rings = [(max_r * rng.uniform(0.15, 0.9), rng.randrange(n_stops)) for _ in range(6)]
+    return {"stars": stars, "rings": rings}
+
+
+def render_orbits(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    scene = _orbits_scene(width, height, seed, len(stops))
     cx = width / 2.0
     cy = height / 2.0
-    max_r = math.sqrt(cx * cx + cy * cy)
-    rings = [(max_r * rng.uniform(0.15, 0.9), stops[rng.randrange(len(stops))])
-             for _ in range(6)]
-    return [[_orbits_color(x, y, seed, stops, (cx, cy), rings, stars) for x in range(width)]
+    rings = [(radius, stops[index]) for radius, index in scene["rings"]]
+    star_rows = _RowFilter(scene["stars"], lambda s: s[1], lambda s: s[2] * 1.2 + 1.0)
+    return [[_orbits_color(x, y, seed, stops, (cx, cy), rings, star_rows) for x in range(width)]
             for y in range(height)]
 
 
@@ -384,36 +417,40 @@ def render_spiral(width, height, seed, palette_name):
     return pixels
 
 
-def render_nebula(width, height, seed, palette_name):
-    """Nebula: stacked radial glow clouds over a noise starfield."""
-    stops = PALETTES[palette_name]
+def _nebula_scene(width, height, seed):
     rng = random.Random(seed)
     diag = math.sqrt(width * width + height * height)
     clouds = []
-    n_clouds = rng.randint(3, 6)
-    for _ in range(n_clouds):
-        clouds.append({
-            "cx": rng.uniform(width * 0.1, width * 0.9),
-            "cy": rng.uniform(height * 0.1, height * 0.9),
-            "r": rng.uniform(0.08, 0.25) * diag,
-            "amp": rng.uniform(0.5, 1.5),
-        })
-    noise_k = 24.0 / max(width, height)
-    pixels = []
+    for _ in range(rng.randint(3, 6)):
+        ccx = rng.uniform(width * 0.1, width * 0.9)
+        ccy = rng.uniform(height * 0.1, height * 0.9)
+        cr = rng.uniform(0.08, 0.25) * diag
+        clouds.append((ccx, ccy, cr, rng.uniform(0.5, 1.5)))
     stars = [
         (rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.5, 2.0))
         for _ in range(40)
     ]
+    return {"clouds": clouds, "stars": stars}
+
+
+def render_nebula(width, height, seed, palette_name):
+    """Nebula: stacked radial glow clouds over a noise starfield."""
+    stops = PALETTES[palette_name]
+    scene = _nebula_scene(width, height, seed)
+    clouds = scene["clouds"]
+    noise_k = 24.0 / max(width, height)
+    star_rows = _RowFilter(scene["stars"], lambda s: s[1], lambda s: s[2] + 1.0)
+    pixels = []
     for y in range(height):
         row = []
         for x in range(width):
             v = 0.0
-            for cloud in clouds:
-                d2 = (x - cloud["cx"]) ** 2 + (y - cloud["cy"]) ** 2
-                v += math.exp(-d2 / (2.0 * cloud["r"] ** 2)) * cloud["amp"]
+            for (ccx, ccy, cr, amp) in clouds:
+                d2 = (x - ccx) ** 2 + (y - ccy) ** 2
+                v += math.exp(-d2 / (2.0 * cr ** 2)) * amp
             n = fbm(x * noise_k, y * noise_k, seed, octaves=4)
             v *= max(0.0, 0.2 + 1.6 * (_contrast(n, 2.0) - 0.2))
-            for (sx, sy, sr) in stars:
+            for (sx, sy, sr) in star_rows(y):
                 if math.hypot(x - sx, y - sy) < sr:
                     v += 1.2
                     break
@@ -422,12 +459,16 @@ def render_nebula(width, height, seed, palette_name):
     return pixels
 
 
+def _kaleidoscope_scene(width, height, seed):
+    rng = random.Random(seed)
+    return {"folds": rng.randint(4, 8), "phase": rng.uniform(0.0, math.tau)}
+
+
 def render_kaleidoscope(width, height, seed, palette_name):
     """Mirror a noise-modulated radial pattern into equal angular sectors."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    folds = rng.randint(4, 8)
-    phase = rng.uniform(0.0, math.tau)
+    scene = _kaleidoscope_scene(width, height, seed)
+    folds, phase = scene["folds"], scene["phase"]
     cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
     scale = max(1.0, min(width, height) / 2.0)
     sector = math.tau / folds
@@ -519,9 +560,7 @@ def render_starburst(width, height, seed, palette_name):
     return pixels
 
 
-def render_interference(width, height, seed, palette_name):
-    """Interference: plane waves from several directions summed into moire bands."""
-    stops = PALETTES[palette_name]
+def _interference_scene(width, height, seed):
     rng = random.Random(seed)
     size = max(width, height)
     layers = []
@@ -531,6 +570,13 @@ def render_interference(width, height, seed, palette_name):
         k = rng.uniform(4.0, 18.0) * math.tau / size
         layers.append((rng.uniform(0, 6.28), k * math.cos(direction),
                        k * math.sin(direction), rng.uniform(1.0, 4.0)))
+    return {"layers": layers}
+
+
+def render_interference(width, height, seed, palette_name):
+    """Interference: plane waves from several directions summed into moire bands."""
+    stops = PALETTES[palette_name]
+    layers = _interference_scene(width, height, seed)["layers"]
     pixels = []
     for y in range(height):
         row = []
@@ -577,7 +623,7 @@ def _draw_constellation_line(line_grid, start, end, dist, width, height):
 
 def _constellation_value(x, y, stars, line_grid):
     v = 0.0
-    for star in stars:
+    for star in stars(y):
         d = math.hypot(x - star["x"], y - star["y"])
         v += math.exp(-((d / star["r"]) ** 2) / 2.0) * star["b"]
     v += line_grid[y][x]
@@ -598,8 +644,9 @@ def render_constellations(width, height, seed, palette_name):
             "b": rng.uniform(0.45, 1.0),
         })
     line_grid = _constellation_lines(stars, width, height)
+    star_rows = _RowFilter(stars, lambda s: s["y"], lambda s: s["r"] * GAUSSIAN_ZERO + 1.0)
     return _shade(width, height, stops,
-                  lambda x, y: _constellation_value(x, y, stars, line_grid))
+                  lambda x, y: _constellation_value(x, y, star_rows, line_grid))
 
 
 def render_cosmos(width, height, seed, palette_name):
@@ -639,25 +686,29 @@ def render_cosmos(width, height, seed, palette_name):
     return pixels
 
 
+def _galaxy_scene(width, height, seed):
+    rng = random.Random(seed)
+    max_r = max(1.0, math.hypot((width - 1) / 2.0, (height - 1) / 2.0))
+    bulge_r = max_r * rng.uniform(0.10, 0.26)
+    bulge_amp = rng.uniform(0.9, 1.5)
+    arms = []
+    for _ in range(rng.randint(2, 3)):
+        r0 = max_r * rng.uniform(0.015, 0.05)
+        arm_width = rng.uniform(0.08, 0.18)
+        phase = rng.uniform(0.0, 6.28)
+        pitch = rng.uniform(1.5, 3.5)
+        arms.append((r0, arm_width, phase, pitch, rng.uniform(0.5, 1.0)))
+    return {"bulge_r": bulge_r, "bulge_amp": bulge_amp, "arms": arms}
+
+
 def render_galaxy(width, height, seed, palette_name):
     """Galaxy: spiral disk of stars with a bright central bulge and curved arms."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
+    scene = _galaxy_scene(width, height, seed)
+    bulge_r, bulge_amp, arms = scene["bulge_r"], scene["bulge_amp"], scene["arms"]
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
     max_r = max(1.0, math.hypot(cx, cy))
-    bulge_r = max_r * rng.uniform(0.10, 0.26)
-    bulge_amp = rng.uniform(0.9, 1.5)
-    n_arms = rng.randint(2, 3)
-    arms = []
-    for _ in range(n_arms):
-        arms.append({
-            "r0": max_r * rng.uniform(0.015, 0.05),
-            "width": rng.uniform(0.08, 0.18),
-            "phase": rng.uniform(0.0, 6.28),
-            "pitch": rng.uniform(1.5, 3.5),
-            "amp": rng.uniform(0.5, 1.0),
-        })
     pixels = []
     for y in range(height):
         row = []
@@ -668,40 +719,43 @@ def render_galaxy(width, height, seed, palette_name):
             theta = math.atan2(dy, dx)
             n = fbm(x * 0.0035, y * 0.0035, seed, octaves=2)
             v = math.exp(-0.5 * (r / bulge_r) ** 2) * bulge_amp * (0.8 + 0.4 * n)
-            for arm in arms:
-                t = math.log1p(r / arm["r0"])
-                arm_theta = arm["phase"] + t * arm["pitch"]
+            for (r0, arm_width, phase, pitch, amp) in arms:
+                t = math.log1p(r / r0)
+                arm_theta = phase + t * pitch
                 d = abs((arm_theta - theta + math.pi) % math.tau - math.pi)
-                w = math.exp(-0.5 * (d / arm["width"]) ** 2 - r / max_r)
-                v += w * arm["amp"]
+                w = math.exp(-0.5 * (d / arm_width) ** 2 - r / max_r)
+                v += w * amp
             t_val = 1.0 - math.exp(-v)
             row.append(palette_color(stops, t_val * 0.95))
         pixels.append(row)
     return pixels
 
 
-def render_bloom(width, height, seed, palette_name):
-    """Radial blooms: soft glowing clouds modulated by noise."""
-    stops = PALETTES[palette_name]
+def _bloom_scene(width, height, seed):
     rng = random.Random(seed)
     scale = max(1.0, min(width, height))
     blooms = []
     for _ in range(rng.randint(4, 9)):
-        blooms.append({
-            "x": rng.uniform(0, width - 1),
-            "y": rng.uniform(0, height - 1),
-            "r": scale * rng.uniform(0.08, 0.27),
-            "amp": rng.uniform(0.4, 1.0),
-        })
+        bx = rng.uniform(0, width - 1)
+        by = rng.uniform(0, height - 1)
+        br = scale * rng.uniform(0.08, 0.27)
+        blooms.append((bx, by, br, rng.uniform(0.4, 1.0)))
+    return {"blooms": blooms}
+
+
+def render_bloom(width, height, seed, palette_name):
+    """Radial blooms: soft glowing clouds modulated by noise."""
+    stops = PALETTES[palette_name]
+    blooms = _bloom_scene(width, height, seed)["blooms"]
     pixels = []
     for y in range(height):
         row = []
         for x in range(width):
             v = 0.0
             n = fbm(x * 0.006, y * 0.006, seed, octaves=3)
-            for b in blooms:
-                d = math.hypot(x - b["x"], y - b["y"])
-                v += math.exp(-((d / b["r"]) ** 2) / 2.0) * b["amp"]
+            for (bx, by, br, amp) in blooms:
+                d = math.hypot(x - bx, y - by)
+                v += math.exp(-((d / br) ** 2) / 2.0) * amp
             v *= 0.4 + 1.2 * n
             row.append(palette_color(stops, 1.0 - math.exp(-1.4 * v)))
         pixels.append(row)
@@ -737,15 +791,46 @@ def render_flowfield(width, height, seed, palette_name):
     return _glow_pixels(glow, width, height, stops)
 
 
-def _torus_knot_points(tube, a, b, samples):
-    pts = []
-    for i in range(samples):
-        t = 2.0 * math.pi * i / samples
-        ct = math.cos(b * t)
-        pts.append(((2.0 + tube * ct) * math.cos(a * t),
-                    (2.0 + tube * ct) * math.sin(a * t),
-                    tube * math.sin(b * t)))
-    return pts
+def _sample_by_length(point_at, spacing, closed):
+    """Sample ``point_at(u)`` for u in [0, 1] roughly ``spacing`` pixels apart.
+
+    ``point_at`` returns a tuple whose first two items are screen x and y.
+    Closed curves repeat their first point at the end; open curves end at
+    ``point_at(1.0)``.
+    """
+    coarse = [point_at(i / 512) for i in range(513)]
+    length = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(coarse, coarse[1:]))
+    count = max(64, math.ceil(length / spacing))
+    points = [point_at(i / count) for i in range(count)]
+    points.append(points[0] if closed else point_at(1.0))
+    return points
+
+
+def _segment_box(p0, p1, reach, width, height):
+    """Yield ``(row, col, distance, t)`` for pixels in the segment's box grown by ``reach``.
+
+    ``distance`` is to the closest point on the segment, which lies at
+    fraction ``t`` (0 at ``p0``, 1 at ``p1``) along it.
+    """
+    ax, ay = p0[0], p0[1]
+    dx, dy = p1[0] - ax, p1[1] - ay
+    len2 = dx * dx + dy * dy
+    x0 = max(0, int(min(ax, p1[0]) - reach))
+    x1 = min(width - 1, int(max(ax, p1[0]) + reach) + 1)
+    y0 = max(0, int(min(ay, p1[1]) - reach))
+    y1 = min(height - 1, int(max(ay, p1[1]) + reach) + 1)
+    for yy in range(y0, y1 + 1):
+        for xx in range(x0, x1 + 1):
+            t = 0.0 if len2 < 1e-12 else min(1.0, max(0.0, ((xx - ax) * dx + (yy - ay) * dy) / len2))
+            yield yy, xx, math.hypot(xx - (ax + t * dx), yy - (ay + t * dy)), t
+
+
+def _torus_knot_point(tube, a, b, u):
+    """Model-space (x, y, z) of the (a, b) torus knot at u in [0, 1)."""
+    t = math.tau * u
+    ct = math.cos(b * t)
+    return ((2.0 + tube * ct) * math.cos(a * t), (2.0 + tube * ct) * math.sin(a * t),
+            tube * math.sin(b * t))
 
 
 def render_torus(width, height, seed, palette_name):
@@ -754,26 +839,29 @@ def render_torus(width, height, seed, palette_name):
     rng = random.Random(seed)
     tube = rng.uniform(0.6, 1.2)
     a, b = rng.choice(((2, 3), (3, 2), (3, 5), (5, 2)))
-    pts = _torus_knot_points(tube, a, b, max(2200, 4 * (width + height)))
-    xs = [p[0] for p in pts]
-    ys = [p[1] for p in pts]
-    zs = [p[2] for p in pts]
+    model = [_torus_knot_point(tube, a, b, i / 2200) for i in range(2200)]
+    xs, ys, zs = zip(*model)
     cx = (min(xs) + max(xs)) / 2.0
     cy = (min(ys) + max(ys)) / 2.0
     z_lo, z_hi = min(zs), max(zs)
     span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-9)
     s = min(width, height) * 0.85 / span
-
-    # Each sample stamps a glow scaled by its depth (larger z = nearer); keeping
-    # the maximum lets the front strand win where the knot crosses itself.
-    glow = [[0.0] * width for _ in range(height)]
     r_glow = max(2.0, min(width, height) * 0.016)
-    for (x, y, z) in pts:
-        px = (x - cx) * s + (width - 1) / 2.0
-        py = (cy - y) * s + (height - 1) / 2.0
-        depth = 0.45 + 0.55 * (z - z_lo) / max(1e-9, z_hi - z_lo)
-        for yy, xx, d in _box_distances(px, py, r_glow, width, height, pad=1):
+
+    def screen(u):
+        x, y, z = _torus_knot_point(tube, a, b, u)
+        return ((x - cx) * s + (width - 1) / 2.0, (cy - y) * s + (height - 1) / 2.0,
+                0.45 + 0.55 * (z - z_lo) / max(1e-9, z_hi - z_lo))
+
+    # Glow falls off with the distance to the curve, scaled by the depth at the
+    # closest point (larger z = nearer). Keeping the maximum lets the front
+    # strand win where the knot crosses itself.
+    glow = [[0.0] * width for _ in range(height)]
+    points = _sample_by_length(screen, max(1.0, r_glow * 0.5), closed=True)
+    for p0, p1 in zip(points, points[1:]):
+        for yy, xx, d, t in _segment_box(p0, p1, r_glow, width, height):
             if d < r_glow:
+                depth = p0[2] + (p1[2] - p0[2]) * t
                 glow[yy][xx] = max(glow[yy][xx], (1.0 - d / r_glow) * depth)
 
     def value(x, y):
@@ -805,12 +893,16 @@ def render_voronoi(width, height, seed, palette_name):
     return pixels
 
 
+def _pinwheel_scene(width, height, seed):
+    rng = random.Random(seed)
+    return {"n_arms": rng.randint(3, 5), "twist": rng.uniform(2.0, 7.0)}
+
+
 def render_pinwheel(width, height, seed, palette_name):
     """Pinwheel: swirling radial arms with noise-modulated twist."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    n_arms = rng.randint(3, 5)
-    twist = rng.uniform(2.0, 7.0)
+    scene = _pinwheel_scene(width, height, seed)
+    n_arms, twist = scene["n_arms"], scene["twist"]
     # 1.05 keeps t < 1 at the corners, so the arm width below never reaches zero.
     max_r = math.sqrt((width / 2.0) ** 2 + (height / 2.0) ** 2) * 1.05
     pixels = []
@@ -833,11 +925,11 @@ def render_pinwheel(width, height, seed, palette_name):
     return pixels
 
 
-def _curve_distance_grid(pts, reach, width, height):
-    """Distance from each pixel near the curve to its closest sample (1e9 elsewhere)."""
+def _curve_distance_grid(points, reach, width, height):
+    """Distance from each pixel near the polyline to it (1e9 elsewhere)."""
     min_d = [[1e9] * width for _ in range(height)]
-    for (px, py) in pts:
-        for yy, xx, d in _box_distances(px, py, reach, width, height):
+    for p0, p1 in zip(points, points[1:]):
+        for yy, xx, d, _ in _segment_box(p0, p1, reach, width, height):
             if d < min_d[yy][xx]:
                 min_d[yy][xx] = d
     return min_d
@@ -872,21 +964,22 @@ def render_lissajous(width, height, seed, palette_name):
 
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
-    samples = 1400
     glow_values = []
     for c in curves:
-        pts = [(cx + cx * c["ax"] * math.sin(c["fx"] * t + c["px"]),
-                cy - cy * c["ay"] * math.sin(c["fy"] * t + c["py"]))
-               for t in (2.0 * math.pi * i / samples for i in range(samples))]
+        def point_at(u, c=c):
+            t = math.tau * u
+            return (cx + cx * c["ax"] * math.sin(c["fx"] * t + c["px"]),
+                    cy - cy * c["ay"] * math.sin(c["fy"] * t + c["py"]))
+
         reach = max(2, math.ceil(c["sigma"] * 3))
-        glow_values.append((_curve_distance_grid(pts, reach, width, height), c))
+        # Non-integer frequencies leave the curve open over one period.
+        points = _sample_by_length(point_at, max(1.0, reach / 2), closed=False)
+        glow_values.append((_curve_distance_grid(points, reach, width, height), c))
     return _shade(width, height, stops,
                   lambda x, y: _lissajous_value(x, y, glow_values, n_curves))
 
 
-def render_geo(width, height, seed, palette_name):
-    """Layered rotated regular polygons with glowing edges."""
-    stops = PALETTES[palette_name]
+def _geo_scene(width, height, seed):
     rng = random.Random(seed)
     cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
     scale = max(1.0, min(width, height) / 2.0)
@@ -898,12 +991,20 @@ def render_geo(width, height, seed, palette_name):
         polygons.append([(cx + radius * math.cos(i * math.tau / sides + phase),
                           cy + radius * math.sin(i * math.tau / sides + phase))
                          for i in range(sides)])
+    return {"polygons": polygons}
+
+
+def render_geo(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    polygons = _geo_scene(width, height, seed)["polygons"]
+    sigma = max(0.6, max(1.0, min(width, height) / 2.0) * 0.025)
     pixels = []
     for y in range(height):
         row = []
         for x in range(width):
-            v = sum(math.exp(-0.5 * (_poly_min_dist(x, y, poly) /
-                                    max(0.6, scale * 0.025)) ** 2)
+            # sum() of floats uses compensated summation (Python 3.12+); the
+            # Rust core replicates it, so keep sum() here.
+            v = sum(math.exp(-0.5 * (_poly_min_dist(x, y, poly) / sigma) ** 2)
                     for poly in polygons)
             row.append(palette_color(stops, 1 - math.exp(-v)))
         pixels.append(row)
@@ -942,9 +1043,7 @@ def _prism_value(x, y, scenes):
     return 1.0 - math.exp(-1.1 * v)
 
 
-def render_prism(width, height, seed, palette_name):
-    """Prism: stacked faceted gem facets with ridge shading and soft glow."""
-    stops = PALETTES[palette_name]
+def _prism_scene(width, height, seed):
     rng = random.Random(seed)
     n_gems = rng.randint(2, 5)
     small = min(width, height)
@@ -956,7 +1055,15 @@ def render_prism(width, height, seed, palette_name):
             "r": rng.uniform(small * 0.08, small * 0.28),
             "glow": rng.uniform(0.5, 1.0),
         })
-    scenes = [(g, _prism_layers(rng, g, small)) for g in gems]
+    return {"gems": [(g["cx"], g["cy"], g["r"], g["glow"], _prism_layers(rng, g, small))
+                     for g in gems]}
+
+
+def render_prism(width, height, seed, palette_name):
+    """Prism: stacked faceted gem facets with ridge shading and soft glow."""
+    stops = PALETTES[palette_name]
+    scenes = [({"cx": cx, "cy": cy, "r": r, "glow": glow}, layers)
+              for cx, cy, r, glow, layers in _prism_scene(width, height, seed)["gems"]]
     return _shade(width, height, stops, lambda x, y: _prism_value(x, y, scenes))
 
 
@@ -1009,11 +1116,17 @@ def _shard_value(x, y, shards):
     return min(1.0, max(0.0, v / (len(shards) * 2.2)))
 
 
+def _shard_scene(width, height, seed):
+    rng = random.Random(seed)
+    shards = [_make_shard(rng, width, height) for _ in range(rng.randint(2, 4))]
+    return {"shards": [(s["r"], s["poly"], s["cracks"]) for s in shards]}
+
+
 def render_shard(width, height, seed, palette_name):
     """Shard: fractured irregular gem shards with glow halos and crack lines."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    shards = [_make_shard(rng, width, height) for _ in range(rng.randint(2, 4))]
+    shards = [{"r": r, "poly": poly, "cracks": cracks}
+              for r, poly, cracks in _shard_scene(width, height, seed)["shards"]]
     return _shade(width, height, stops, lambda x, y: _shard_value(x, y, shards))
 
 
@@ -1033,34 +1146,59 @@ def _make_trace(rng, width, height):
     return nodes, segments
 
 
+def _nearest_segment(x, y, segments):
+    """Same value as ``min(_seg_hit(x, y, p1, p2) for ...)``, with pruning.
+
+    A segment is skipped only when the distance to its bounding box (a lower
+    bound on the distance to the segment) clearly exceeds the best distance so
+    far, so the minimum, and therefore the output, is unchanged.
+    """
+    best = math.inf
+    for (p1, p2, x0, x1, y0, y1) in segments:
+        gx = max(x0 - x, 0.0, x - x1)
+        gy = max(y0 - y, 0.0, y - y1)
+        if gx * gx + gy * gy > (best + 1e-6) ** 2:
+            continue
+        d = _seg_hit(x, y, p1, p2)
+        if d < best:
+            best = d
+    return best
+
+
 def _circuit_value(x, y, traces, core, halo, pad):
     v = 0.0
-    for (nodes, segments) in traces:
-        d = min(_seg_hit(x, y, p1, p2) for p1, p2 in segments)
+    for (pad_rows, segments) in traces:
+        d = _nearest_segment(x, y, segments)
         v += math.exp(-((d / core) ** 2) / 2.0) + 0.3 * math.exp(-((d / halo) ** 2) / 2.0)
-        for (px, py) in nodes:
+        for (px, py) in pad_rows(y):
             dn = math.hypot(x - px, y - py)
             if dn < pad * 2.5:
                 v += 1.5 * math.exp(-((dn / pad) ** 2) / 2.0)
     return 1.0 - math.exp(-1.2 * v)
 
 
+def _circuit_scene(width, height, seed):
+    rng = random.Random(seed)
+    return {"traces": [_make_trace(rng, width, height) for _ in range(rng.randint(3, 6))]}
+
+
 def render_circuit(width, height, seed, palette_name):
     """Circuit: glowing right-angled traces routed between node pads."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
     small = max(1.0, min(width, height))
     core = max(0.7, small * 0.008)
     halo = max(2.0, small * 0.04)
     pad = max(1.5, small * 0.018)
-    traces = [_make_trace(rng, width, height) for _ in range(rng.randint(3, 6))]
+    traces = []
+    for nodes, segments in _circuit_scene(width, height, seed)["traces"]:
+        boxes = [(p1, p2, min(p1[0], p2[0]), max(p1[0], p2[0]),
+                  min(p1[1], p2[1]), max(p1[1], p2[1])) for p1, p2 in segments]
+        traces.append((_RowFilter(nodes, lambda n: n[1], lambda n: pad * 2.5 + 1.0), boxes))
     return _shade(width, height, stops,
                   lambda x, y: _circuit_value(x, y, traces, core, halo, pad))
 
 
-def render_cosmic(width, height, seed, palette_name):
-    """Cosmic: layered starfield with nebula glow and a bright arm."""
-    stops = PALETTES[palette_name]
+def _cosmic_scene(width, height, seed):
     rng = random.Random(seed)
     stars = []
     for _ in range(rng.randint(40, 90)):
@@ -1069,11 +1207,20 @@ def render_cosmic(width, height, seed, palette_name):
     small = max(1.0, min(width, height))
     arm_r = rng.uniform(small * 0.5, small * 0.8)
     arm_ang = rng.uniform(0, 2 * math.pi)
-    arm_w = rng.uniform(0.4, 1.0)
+    return {"stars": stars, "arm_r": arm_r, "arm_ang": arm_ang, "arm_w": rng.uniform(0.4, 1.0)}
+
+
+def render_cosmic(width, height, seed, palette_name):
+    """Cosmic: layered starfield with nebula glow and a bright arm."""
+    stops = PALETTES[palette_name]
+    scene = _cosmic_scene(width, height, seed)
+    arm_r, arm_ang, arm_w = scene["arm_r"], scene["arm_ang"], scene["arm_w"]
+    small = max(1.0, min(width, height))
     ox, oy = width / 2, height / 2
     glow_sigma = small * 0.55
     arm_sigma = max(1.0, small * 0.08)
     star_sigma = max(1.0, small * 0.02)
+    star_rows = _RowFilter(scene["stars"], lambda s: s[1], lambda s: star_sigma * 3.0 + 1.0)
 
     pixels = []
     for y in range(height):
@@ -1087,7 +1234,7 @@ def render_cosmic(width, height, seed, palette_name):
             d2 = math.hypot(x - (ox + dist_along * math.cos(arm_ang)),
                             y - (oy + dist_along * math.sin(arm_ang)))
             v += math.exp(-((d2 / arm_sigma) ** 2) / 2.0) * 1.2
-            for (sx, sy, size, brightness) in stars:
+            for (sx, sy, size, brightness) in star_rows(y):
                 ds = math.hypot(x - sx, y - sy)
                 if ds < star_sigma * 3.0:
                     v += size * brightness * math.exp(-((ds / star_sigma) ** 2) / 2.0)
@@ -1108,64 +1255,74 @@ def _quasar_jet_glow(along, perpendicular, length, opening, shadow, beta):
     return 3.0 * cross_section * launch * math.exp(-2 * distance / length) * beaming
 
 
-def render_quasar(width, height, seed, palette_name):
-    """Quasar: glowing relativistic accretion disk with Doppler-beamed jets and lensing glow."""
-    stops = PALETTES[palette_name]
+def _quasar_scene(width, height, seed):
+    """Random layout for a quasar; shared by the Python and Rust renderers."""
     rng = random.Random(seed)
-    cx = (width - 1) / 2.0
-    cy = (height - 1) / 2.0
     beta = rng.uniform(0.55, 0.9)
     spin = rng.uniform(0.0, 2 * math.pi)
     r_shadow = max(1.5, min(width, height) * rng.uniform(0.05, 0.11))
     r_outer = min(width, height) * rng.uniform(1.4, 3.2)
-    jet_axis = (math.cos(spin), math.sin(spin))
     jet_half_angle = rng.uniform(0.15, 0.3)
     jet_len = rng.uniform(min(width, height) * 1.0, min(width, height) * 2.2)
     orbits = sorted(rng.uniform(r_shadow * 1.25, r_outer) for _ in range(rng.randint(5, 8)))
+    return {
+        "center": ((width - 1) / 2.0, (height - 1) / 2.0),
+        "beta": beta,
+        "r_shadow": r_shadow,
+        "r_outer": r_outer,
+        "jet_axis": (math.cos(spin), math.sin(spin)),
+        "jet_half_angle": jet_half_angle,
+        "jet_len": jet_len,
+        # Each orbit ring has its own turbulence seed.
+        "orbits": [(ro, seed + int(ro * 10.0)) for ro in orbits],
+    }
 
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            dx = x - cx
-            dy = y - cy
-            r = math.hypot(dx, dy)
-            theta = math.atan2(dy, dx)
-            v = 0.0
-            # gravitational lensing glow ring around the shadow
-            lens_r = r_shadow * 2.4
-            lens_w = max(1.0, r_shadow * 0.9)
-            lens_wob = 0.7 + 0.6 * polar_noise(r * 0.35, theta, seed, 2.0)
-            lens_w = max(0.4, lens_w * lens_wob)
-            v += math.exp(-((r - lens_r) ** 2) / (2.0 * lens_w * lens_w)) * 2.2
-            # black hole shadow with a hot inner edge
-            if r < r_shadow:
-                hot = math.exp(-((r - r_shadow) / max(1.0, r_shadow * 0.15)) ** 2 / 2.0)
-                v += hot * 2.5
-            # relativistic accretion disk: glowing orbit rings, hotter toward the hole
-            doppler = 0.35 + 0.65 * (0.5 - 0.5 * math.cos(theta))
-            disk_scale = max(1.0, r_outer - r_shadow)
-            disk_t = (r - r_shadow) / disk_scale
-            disk_level = 1.0 - 0.45 * (r / max(r_outer, 1.0))
-            for ro in orbits:
-                w = max(0.4, (ro - r_shadow * 1.2) * 0.06)
-                # turbulence makes the glow rings irregular and organic
-                wob = 0.35 + 0.65 * polar_noise(r * 0.5, theta, seed + int(ro * 10.0),
-                                                3.0, octaves=3)
-                ro_t = ro + w * (wob - 0.5)
-                g = math.exp(-((r - ro_t) ** 2) / (2.0 * w * w)) * doppler * disk_level
-                v += g * (1.5 - 0.6 * disk_t)
-            # relativistic jets along the spin axis, with cone and Doppler beaming
-            ux, uy = jet_axis
-            t = dx * ux + dy * uy
-            perp = -dx * uy + dy * ux
-            v += _quasar_jet_glow(t, perp, jet_len, jet_half_angle, r_shadow, beta)
-            # faint starfield backdrop
-            n = fbm(x * 0.004, y * 0.004, seed, octaves=2)
-            v += max(0.0, n - 0.5) * 0.6
-            row.append(palette_color(stops, 1.0 - math.exp(-0.75 * v)))
-        pixels.append(row)
-    return pixels
+
+def _quasar_value(x, y, seed, q):
+    dx = x - q["center"][0]
+    dy = y - q["center"][1]
+    r_shadow, r_outer = q["r_shadow"], q["r_outer"]
+    r = math.hypot(dx, dy)
+    theta = math.atan2(dy, dx)
+    v = 0.0
+    # gravitational lensing glow ring around the shadow
+    lens_r = r_shadow * 2.4
+    lens_w = max(1.0, r_shadow * 0.9)
+    lens_wob = 0.7 + 0.6 * polar_noise(r * 0.35, theta, seed, 2.0)
+    lens_w = max(0.4, lens_w * lens_wob)
+    v += math.exp(-((r - lens_r) ** 2) / (2.0 * lens_w * lens_w)) * 2.2
+    # black hole shadow with a hot inner edge
+    if r < r_shadow:
+        hot = math.exp(-((r - r_shadow) / max(1.0, r_shadow * 0.15)) ** 2 / 2.0)
+        v += hot * 2.5
+    # relativistic accretion disk: glowing orbit rings, hotter toward the hole
+    doppler = 0.35 + 0.65 * (0.5 - 0.5 * math.cos(theta))
+    disk_scale = max(1.0, r_outer - r_shadow)
+    disk_t = (r - r_shadow) / disk_scale
+    disk_level = 1.0 - 0.45 * (r / max(r_outer, 1.0))
+    for ro, orbit_seed in q["orbits"]:
+        w = max(0.4, (ro - r_shadow * 1.2) * 0.06)
+        # turbulence makes the glow rings irregular and organic
+        wob = 0.35 + 0.65 * polar_noise(r * 0.5, theta, orbit_seed, 3.0, octaves=3)
+        ro_t = ro + w * (wob - 0.5)
+        g = math.exp(-((r - ro_t) ** 2) / (2.0 * w * w)) * doppler * disk_level
+        v += g * (1.5 - 0.6 * disk_t)
+    # relativistic jets along the spin axis, with cone and Doppler beaming
+    ux, uy = q["jet_axis"]
+    t = dx * ux + dy * uy
+    perp = -dx * uy + dy * ux
+    v += _quasar_jet_glow(t, perp, q["jet_len"], q["jet_half_angle"], r_shadow, q["beta"])
+    # faint starfield backdrop
+    n = fbm(x * 0.004, y * 0.004, seed, octaves=2)
+    v += max(0.0, n - 0.5) * 0.6
+    return 1.0 - math.exp(-0.75 * v)
+
+
+def render_quasar(width, height, seed, palette_name):
+    """Quasar: glowing relativistic accretion disk with Doppler-beamed jets and lensing glow."""
+    stops = PALETTES[palette_name]
+    q = _quasar_scene(width, height, seed)
+    return _shade(width, height, stops, lambda x, y: _quasar_value(x, y, seed, q))
 
 
 def _mandala_value(x, y, scene):
@@ -1179,27 +1336,26 @@ def _mandala_value(x, y, scene):
     # ring glows; "wob" is the wobble amplitude as a fraction of the radius
     noise = polar_noise(r * 0.05, theta, scene["seed"], 3.0)
     for rib in scene["rings"]:
+        if abs(r - rib["radius"]) > rib["reach"]:
+            continue
         wobbled = rib["radius"] * (1.0 + rib["wob"] * (noise - 0.5))
         v += math.exp(-((r - wobbled) ** 2) / (2.0 * rib["size"] ** 2)) * 1.6
     for (r0, r1, phase) in scene["spokes"]:
         dang = math.atan2(math.sin(theta - phase), math.cos(theta - phase))
         if r0 <= r <= r1 and abs(dang) < 0.06:
             v += 0.9
-    for (gx, gy, size) in scene["glyphs"]:
+    for (gx, gy, size) in scene["glyphs"](y):
         d = math.hypot(x - gx, y - gy)
         if d < size * 0.9:
             v += math.exp(-(d * d) / (2.0 * size * size)) * 2.2
     return 1.0 - math.exp(-0.7 * v)
 
 
-def render_mandala(width, height, seed, palette_name):
-    """Concentric mandala: noise-wobbled rings of glowing glyphs with radial spokes and a center medallion."""
-    stops = PALETTES[palette_name]
+def _mandala_scene(width, height, seed):
     rng = random.Random(seed)
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
     max_r = max(1.0, math.sqrt(cx * cx + cy * cy))
-
     rings = []
     for _ in range(rng.randint(6, 12)):
         rings.append({
@@ -1217,9 +1373,25 @@ def render_mandala(width, height, seed, palette_name):
               for rib in rings
               for ga in (rib["phase"] + (gi / rib["glyphs"]) * 2.0 * math.pi
                          for gi in range(rib["glyphs"]))]
-    scene = {"center": (cx, cy), "medallion": max(3.0, max_r * 0.06), "seed": seed,
-             "rings": rings, "spokes": spokes, "glyphs": glyphs}
-    return _shade(width, height, stops, lambda x, y: _mandala_value(x, y, scene))
+    return {"center": (cx, cy), "medallion": max(3.0, max_r * 0.06),
+            "rings": [(rib["radius"], rib["size"], rib["wob"]) for rib in rings],
+            "spokes": spokes, "glyphs": glyphs}
+
+
+def render_mandala(width, height, seed, palette_name):
+    """Concentric mandala: noise-wobbled rings of glowing glyphs with radial spokes and a center medallion."""
+    stops = PALETTES[palette_name]
+    scene = _mandala_scene(width, height, seed)
+    rings = []
+    for radius, size, wob in scene["rings"]:
+        # Wobble moves a ring by at most radius * wob / 2; beyond that plus the
+        # Gaussian's zero distance the ring contributes exactly 0.0.
+        rings.append({"radius": radius, "size": size, "wob": wob,
+                      "reach": radius * wob * 0.5 + size * GAUSSIAN_ZERO + 1.0})
+    glyph_rows = _RowFilter(scene["glyphs"], lambda g: g[1], lambda g: g[2] * 0.9 + 1.0)
+    value_scene = {"center": scene["center"], "medallion": scene["medallion"], "seed": seed,
+                   "rings": rings, "spokes": scene["spokes"], "glyphs": glyph_rows}
+    return _shade(width, height, stops, lambda x, y: _mandala_value(x, y, value_scene))
 
 
 def render_drift(width, height, seed, palette_name):
@@ -1316,6 +1488,10 @@ def render_ember(width, height, seed, palette_name):
         flicker = e["flicker"] * (0.55 + 0.45 * math.sin(e["phase"] + 2.0 * math.sin(e["phase"])))
         cx = e["x"]
         cy_top = e["y"] - e["rise"]
+        # The horizontal falloff is exactly 0.0 once |dx| >= size * 2 + 0.01.
+        reach = e["size"] * 2.0 + 0.01 + 1.0
+        x_lo = max(0, math.floor(cx - reach))
+        x_hi = min(width, math.ceil(cx + reach) + 1)
         for yy in range(height):
             dy = yy - cy_top
             if abs(dy) > e["rise"] * 3.0:
@@ -1324,7 +1500,7 @@ def render_ember(width, height, seed, palette_name):
             if fall < 0.02:
                 continue
             glow = fall ** 2 * (0.35 + 0.65 * flicker)
-            for xx in range(width):
+            for xx in range(x_lo, x_hi):
                 dx = xx - cx
                 g = glow * max(0.0, 1.0 - (dx / ((e["size"] * 2.0) + 0.01)) ** 2) ** 2
                 glow_sum[yy * width + xx] += g
@@ -1482,9 +1658,7 @@ def render_aurora(width, height, seed, palette_name):
     return pixels
 
 
-def render_plasma(width, height, seed, palette_name):
-    """Plasma effect: sine plane waves from several directions warped by noise."""
-    stops = PALETTES[palette_name]
+def _plasma_scene(width, height, seed):
     rng = random.Random(seed)
     size = max(width, height)
     layers = []
@@ -1494,6 +1668,13 @@ def render_plasma(width, height, seed, palette_name):
         k = cycles * math.tau / size
         layers.append((amp, k * math.cos(direction), k * math.sin(direction),
                        rng.uniform(0.0, 6.28)))
+    return {"layers": layers}
+
+
+def render_plasma(width, height, seed, palette_name):
+    """Plasma effect: sine plane waves from several directions warped by noise."""
+    stops = PALETTES[palette_name]
+    layers = _plasma_scene(width, height, seed)["layers"]
     pixels = []
     for y in range(height):
         row = []
@@ -1550,14 +1731,87 @@ STYLES = {
 }
 
 
-def render(width, height, seed, style, palette_name):
-    """Render ``style`` and return ``height`` rows of ``width`` RGB tuples."""
+def _seed32(seed):
+    """The noise hash only uses a seed modulo 2**32; the Rust core takes it as u32."""
+    return seed & 0xFFFFFFFF
+
+
+def _quasar_native_scene(width, height, seed):
+    q = _quasar_scene(width, height, seed)
+    return dict(q, orbits=[(ro, _seed32(orbit_seed)) for ro, orbit_seed in q["orbits"]])
+
+
+def _scene_without_stops(builder):
+    return lambda width, height, seed, stops: builder(width, height, seed)
+
+
+def _no_scene(width, height, seed, stops):
+    return {}
+
+
+# Styles with a Rust implementation, mapped to the scene builder whose plain
+# data (numbers, tuples, lists) the core receives. Python still makes every
+# random draw, and native output is tested to be byte-identical to Python.
+NATIVE_STYLES = {
+    "blobs": _no_scene,
+    "bloom": _scene_without_stops(_bloom_scene),
+    "circuit": _scene_without_stops(_circuit_scene),
+    "cosmic": _scene_without_stops(_cosmic_scene),
+    "drift": _no_scene,
+    "galaxy": _scene_without_stops(_galaxy_scene),
+    "geo": _scene_without_stops(_geo_scene),
+    "interference": _scene_without_stops(_interference_scene),
+    "kaleidoscope": _scene_without_stops(_kaleidoscope_scene),
+    "mandala": _scene_without_stops(_mandala_scene),
+    "nebula": _scene_without_stops(_nebula_scene),
+    "orbits": lambda width, height, seed, stops: _orbits_scene(width, height, seed, len(stops)),
+    "pinwheel": _scene_without_stops(_pinwheel_scene),
+    "plasma": _scene_without_stops(_plasma_scene),
+    "prism": _scene_without_stops(_prism_scene),
+    "quasar": _scene_without_stops(_quasar_native_scene),
+    "shard": _scene_without_stops(_shard_scene),
+    "waves": _scene_without_stops(_waves_scene),
+}
+
+
+def _render_native(style, width, height, seed, stops):
+    scene = NATIVE_STYLES[style](width, height, seed, stops)
+    return _core.render(style, width, height, _seed32(seed), stops, scene)
+
+
+def _check_render_args(width, height, style, palette_name):
     _validate_dimensions(width, height)
     if palette_name not in PALETTES:
         raise ValueError("unknown palette: %s" % palette_name)
     if style not in STYLES:
         raise ValueError("unknown style: %s" % style)
+
+
+def _use_native(style):
+    return _core is not None and style in NATIVE_STYLES
+
+
+def render(width, height, seed, style, palette_name):
+    """Render ``style`` and return ``height`` rows of ``width`` RGB tuples."""
+    _check_render_args(width, height, style, palette_name)
+    if _use_native(style):
+        rgb = _render_native(style, width, height, seed, PALETTES[palette_name])
+        stride = width * 3
+        return [list(zip(rgb[o:o + stride:3], rgb[o + 1:o + stride:3], rgb[o + 2:o + stride:3]))
+                for o in range(0, stride * height, stride)]
     return STYLES[style](width, height, seed, palette_name)
+
+
+def render_rgb(width, height, seed, style, palette_name):
+    """Render ``style`` as packed RGB bytes: row-major, 3 bytes per pixel.
+
+    Much smaller and faster than ``render()`` for large images, since no
+    per-pixel tuples are created when the Rust core renders the style.
+    """
+    _check_render_args(width, height, style, palette_name)
+    if _use_native(style):
+        return _render_native(style, width, height, seed, PALETTES[palette_name])
+    return _packed_rgb(STYLES[style](width, height, seed, palette_name), width, height)
 
 
 # ---------------------------------------------------------------- png writer
@@ -1573,22 +1827,45 @@ def _png_chunk(tag, data):
             + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
 
 
+def _packed_rgb(pixels, width, height):
+    """Validate a frame and return it as packed RGB bytes.
+
+    ``pixels`` is either ``height`` rows of ``width`` RGB tuples (channels are
+    clamped to 0..255) or a bytes-like object of ``width * height * 3`` bytes.
+    """
+    _validate_dimensions(width, height)
+    if isinstance(pixels, (bytes, bytearray, memoryview)):
+        data = bytes(pixels)
+        if len(data) != width * height * 3:
+            raise ValueError("pixel buffer must contain width * height * 3 bytes")
+        return data
+    if len(pixels) != height or any(len(row) != width for row in pixels):
+        raise ValueError("pixel array must match width and height")
+    try:
+        # Fast path for the usual case: integer channels already in 0..255.
+        data = b"".join(bytes(itertools.chain.from_iterable(row)) for row in pixels)
+        if len(data) == width * height * 3:
+            return data
+    except (TypeError, ValueError):
+        pass
+    data = bytearray()
+    for row in pixels:
+        for r, g, b in row:
+            data.extend((min(255, max(0, int(r))),
+                         min(255, max(0, int(g))),
+                         min(255, max(0, int(b)))))
+    return bytes(data)
+
+
 def _png_pixels(pixels, width, height):
     """Encode 8-bit sRGB samples as compressed PNG scanlines.
 
     Palette stops are authored as sRGB colors, so samples are written as-is.
     """
-    _validate_dimensions(width, height)
-    if len(pixels) != height or any(len(row) != width for row in pixels):
-        raise ValueError("pixel array must match width and height")
-
-    raw = bytearray()
-    for row in pixels:
-        raw.append(0)  # PNG filter: None
-        for r, g, b in row:
-            raw.extend((min(255, max(0, int(r))),
-                        min(255, max(0, int(g))),
-                        min(255, max(0, int(b)))))
+    data = _packed_rgb(pixels, width, height)
+    stride = width * 3
+    # Each scanline starts with filter type 0 (None).
+    raw = b"".join(b"\x00" + data[o:o + stride] for o in range(0, len(data), stride))
     return zlib.compress(raw, 9)
 
 
@@ -1691,13 +1968,13 @@ def main():
         parser.error("frames must be positive")
     if args.frames > 1:
         frames = [
-            render(args.width, args.height, args.seed + i, args.style, args.palette)
+            render_rgb(args.width, args.height, args.seed + i, args.style, args.palette)
             for i in range(args.frames)
         ]
         write_animated_png(args.out, frames, args.width, args.height, fps=12)
         print("wrote %d animation frames to %s (%s, seed=%d, palette=%s)" % (args.frames, args.out, args.style, args.seed, args.palette))
     else:
-        pixels = render(args.width, args.height, args.seed, args.style, args.palette)
+        pixels = render_rgb(args.width, args.height, args.seed, args.style, args.palette)
         write_png(args.out, pixels, args.width, args.height)
         print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, args.seed, args.palette))
 
