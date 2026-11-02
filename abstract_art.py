@@ -1191,6 +1191,8 @@ def render_quasar(width, height, seed, palette_name):
             # gravitational lensing glow ring around the shadow
             lens_r = r_shadow * 2.4
             lens_w = max(1.0, r_shadow * 0.9)
+            lens_wob = 0.7 + 0.6 * fbm(r * 0.35, theta * 0.9, seed, octaves=2)
+            lens_w = max(0.4, lens_w * lens_wob)
             v += math.exp(-((r - lens_r) ** 2) / (2.0 * lens_w * lens_w)) * 2.2
             # black hole shadow with a hot inner edge
             if r < r_shadow:
@@ -1203,7 +1205,10 @@ def render_quasar(width, height, seed, palette_name):
             disk_level = 1.0 - 0.45 * (r / max(r_outer, 1.0))
             for ro in orbits:
                 w = max(0.4, (ro - r_shadow * 1.2) * 0.06)
-                g = math.exp(-((r - ro) ** 2) / (2.0 * w * w)) * doppler * disk_level
+                # turbulence makes the glow rings irregular and organic
+                wob = 0.35 + 0.65 * fbm(r * 0.5, theta * 1.5, seed + int(ro * 10.0), octaves=3)
+                ro_t = ro + w * (wob - 0.5)
+                g = math.exp(-((r - ro_t) ** 2) / (2.0 * w * w)) * doppler * disk_level
                 v += g * (1.5 - 0.6 * disk_t)
             # relativistic jets along the spin axis, with cone and Doppler beaming
             ux, uy = jet_axis
