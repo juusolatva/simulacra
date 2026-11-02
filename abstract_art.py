@@ -53,7 +53,6 @@ import math
 import os
 import random
 import struct
-import tempfile
 import zlib
 
 # ---------------------------------------------------------------- palettes
@@ -1600,11 +1599,21 @@ def _png_header(width, height):
         b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)))
 
 
-def _default_file_mode():
-    """Permissions a newly created file would get under the current umask."""
-    umask = os.umask(0)
-    os.umask(umask)
-    return 0o666 & ~umask
+def _create_temporary(directory):
+    """Create a new, exclusive temporary file next to the destination.
+
+    The file is opened with mode 0o666 so the kernel applies the process umask
+    exactly as for a normal open(). Reading the umask with os.umask() would
+    briefly change it for every thread in the process.
+    """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    for _ in range(100):
+        name = os.path.join(directory, ".abstract-art-%s.tmp" % os.urandom(8).hex())
+        try:
+            return name, os.open(name, flags, 0o666)
+        except FileExistsError:
+            continue
+    raise FileExistsError("could not create a unique temporary file in %s" % directory)
 
 
 def _atomic_write(path, chunks):
@@ -1615,14 +1624,10 @@ def _atomic_write(path, chunks):
     """
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(
-                dir=os.path.dirname(os.path.abspath(path)), prefix=".abstract-art-",
-                delete=False) as output:
-            temporary = output.name
+        temporary, descriptor = _create_temporary(os.path.dirname(os.path.abspath(path)))
+        with os.fdopen(descriptor, "wb") as output:
             for chunk in chunks:
                 output.write(chunk)
-        # NamedTemporaryFile creates 0600 files; match a normal open() instead.
-        os.chmod(temporary, _default_file_mode())
         os.replace(temporary, path)
     finally:
         if temporary is not None:

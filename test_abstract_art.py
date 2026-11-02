@@ -255,6 +255,15 @@ class RenderingTests(unittest.TestCase):
         finally:
             os.umask(umask)
 
+    def test_writers_never_change_the_process_umask(self):
+        # os.umask() is process-wide; changing it, even briefly, would affect
+        # files created concurrently by other threads.
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(art.os, 'umask', side_effect=AssertionError('umask changed')):
+            art.write_png(pathlib.Path(directory) / 'still.png', [[(0, 0, 0)]], 1, 1)
+            art.write_animated_png(pathlib.Path(directory) / 'animated.png',
+                                   [[[(0, 0, 0)]]] * 2, 1, 1)
+
     def test_failed_still_write_preserves_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / 'existing.png'
