@@ -289,9 +289,13 @@ To run one regression test:
 python3 -m unittest -v test_abstract_art.RenderingTests.test_large_flowfield_trails_are_connected
 ```
 
-The suite currently contains 14 tests covering:
+The suite currently contains 24 tests covering:
 
-- Valid dimensions and RGB channels across all dispatched styles.
+- Valid dimensions and RGB channels across all registered styles.
+- Every style using a wide part of its palette, unaliased wave styles, and shapes that scale with the canvas.
+- The noise range and seam-free angular noise.
+- Writers that store palette colors unchanged, use normal file permissions without changing the process umask, and preserve existing files on failure.
+- A command-line smoke test.
 - Spatial detail in formerly flat renderers and known Mandelbrot interior/exterior points.
 - Repeatability without changing global random state.
 - Lissajous curve coverage and a single-pixel galaxy edge case.
@@ -319,7 +323,7 @@ To add a style:
 1. Implement `render_your_style(width, height, seed, palette_name)` in `abstract_art.py`.
 2. Return exactly `height` rows containing exactly `width` RGB tuples each. Keep channel values between 0 and 255.
 3. Use `PALETTES[palette_name]` and `palette_color()` for palette mapping. If randomness is needed, create a local `random.Random(seed)`.
-4. Add a branch to `render()` and add the style name to the CLI's `--style` choices. These are currently maintained separately.
+4. Register it in the `STYLES` dictionary. `render()`, the CLI's `--style` choices, and the tests all read from it.
 5. Add a description to this README and the module's style list.
 6. Run the tests, add a regression check for the new style's intended behavior, and inspect square, wide, and tall renders.
 
@@ -347,3 +351,4 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | [`test_abstract_art.py`](test_abstract_art.py) | Standard-library regression tests. |
 | [`.gitignore`](.gitignore) | Excludes Python bytecode and cache directories. Generated artwork is not currently ignored. |
 | [`README.md`](README.md) | Usage, API, implementation notes, and development guidance. |
+| [`AGENTS.md`](AGENTS.md) | Conventions, triage notes, and known issues for coding agents and contributors. |
