@@ -100,6 +100,13 @@ PALETTES = {
         (120, 36, 150),
         (200, 140, 255),
     ],
+    "lagoon": [
+        (2, 16, 20),
+        (8, 48, 56),
+        (20, 96, 102),
+        (56, 160, 156),
+        (176, 230, 220),
+    ],
 }
 
 
@@ -1294,6 +1301,25 @@ def render_mandala(width, height, seed, palette_name):
     return pixels
 
 
+def render_drift(width, height, seed, palette_name):
+    """Drift: liquid flow-fields where nested noise currents warp the sampling grid,
+    producing smooth organic contours that feel like slow-moving currents."""
+    stops = PALETTES[palette_name]
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            # current offsets from low-frequency turbulence
+            ox = (fbm(x * 0.008, y * 0.008, seed, octaves=3) - 0.5) * 12.0
+            oy = (fbm(x * 0.007 + 2.1, y * 0.007 + 5.7, seed, octaves=2) - 0.5) * 9.0
+            # sample the value field displaced along the current
+            v = fbm(x * 0.015 + ox, y * 0.015 + oy, seed, octaves=4)
+            t = min(1.0, max(0.0, v * 1.35 - 0.32)) * 1.08
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 
@@ -1362,6 +1388,8 @@ def render(width, height, seed, style, palette_name):
         return render_quasar(width, height, seed, palette_name)
     if style == "mandala":
         return render_mandala(width, height, seed, palette_name)
+    if style == "drift":
+        return render_drift(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1508,7 +1536,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala", "drift"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
