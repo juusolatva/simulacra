@@ -26,6 +26,7 @@ Styles:
     geo        - layered geometric rosettes with glow halos
     prism      - stacked faceted gem facets with ridge shading and glow
     shard       - fractured irregular gem shards with glow halos and cracks
+    circuit    - glowing printed-circuit traces with node pads
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1084,6 +1085,41 @@ def render_shard(width, height, seed, palette_name):
     return pixels
 
 
+
+def render_circuit(width, height, seed, palette_name):
+    """Circuit: glowing printed-circuit traces routed between node pads."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_traces = rng.randint(2, 4)
+    traces = []
+    for _ in range(n_traces):
+        path = [(rng.uniform(width * 0.08, width * 0.92), rng.uniform(height * 0.08, height * 0.92))]
+        for _ in range(rng.randint(2, 5)):
+            path.append((rng.uniform(width * 0.04, width * 0.96), rng.uniform(height * 0.04, height * 0.96)))
+        traces.append({"path": path})
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for tr in traces:
+                path = tr["path"]
+                glow = 0.0
+                for i in range(len(path) - 1):
+                    d = _seg_hit(x, y, path[i], path[i + 1])
+                    glow = max(glow, math.exp(-((d / max(1.0, min(width, height) * 0.12)) ** 2) / 2.0))
+                v += glow * 1.6
+                for (px, py) in path:
+                    d = math.hypot(x - px, y - py)
+                    if d < 3.0:
+                        v += math.exp(-((d / 3.0) ** 2) / 2.0)
+            t = min(1.0, max(0.0, v / (len(traces) * 2.0)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -1141,6 +1177,8 @@ def render(width, height, seed, style, palette_name):
         return render_prism(width, height, seed, palette_name)
     if style == "shard":
         return render_shard(width, height, seed, palette_name)
+    if style == "circuit":
+        return render_circuit(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1287,7 +1325,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
