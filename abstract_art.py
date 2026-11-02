@@ -8,6 +8,7 @@ Styles:
     orbits   - starfield with noise-driven orbital rings
     mandelbrot - classic Mandelbrot set framed by a palette gradient
     spiral   - polar spiral arms modulated by smooth winding phases
+    nebula   - layered radial glow clouds with noise-driven starlight
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -275,6 +276,46 @@ def render_spiral(width, height, seed, palette_name):
     return pixels
 
 
+def render_nebula(width, height, seed, palette_name):
+    """Nebula: stacked radial glow clouds over a noise starfield."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    clouds = []
+    n_clouds = rng.randint(3, 6)
+    for _ in range(n_clouds):
+        clouds.append({
+            "cx": rng.uniform(width * 0.1, width * 0.9),
+            "cy": rng.uniform(height * 0.1, height * 0.9),
+            "r": rng.uniform(0.15, 0.45) * math.sqrt(width * width + height * height),
+            "amp": rng.uniform(0.5, 1.5),
+        })
+    pixels = []
+    stars = [
+        (rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.5, 2.0))
+        for _ in range(40)
+    ]
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            weight_total = 0.0
+            for cloud in clouds:
+                d = math.sqrt((x - cloud["cx"]) ** 2 + (y - cloud["cy"]) ** 2)
+                w = math.exp(-((d / cloud["r"]) ** 2) / 2.0)
+                v += w * cloud["amp"]
+                weight_total += w
+            n = fbm(x * 0.004, y * 0.004, seed, octaves=3)
+            star = 0.0
+            for (sx, sy, sr) in stars:
+                if math.hypot(x - sx, y - sy) < sr:
+                    star = 1.0
+            v += (n * 0.5 + 0.5) * 0.35 + star * 0.4
+            t = min(1.0, max(0.0, v / (weight_total + 1.2)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -296,6 +337,8 @@ def render(width, height, seed, style, palette_name):
         return render_plasma(width, height, seed, palette_name)
     if style == "spiral":
         return render_spiral(width, height, seed, palette_name)
+    if style == "nebula":
+        return render_nebula(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -439,7 +482,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
