@@ -27,6 +27,7 @@ Styles:
     prism      - stacked faceted gem facets with ridge shading and glow
     shard       - fractured irregular gem shards with glow halos and cracks
     circuit    - glowing printed-circuit traces with node pads
+    cosmic     - starfield with nebula glow and curved spiral arm
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1120,6 +1121,48 @@ def render_circuit(width, height, seed, palette_name):
     return pixels
 
 
+
+def render_cosmic(width, height, seed, palette_name):
+    """Cosmic: layered starfield with nebula glow and a curved spiral arm."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    stars = []
+    for _ in range(rng.randint(40, 90)):
+        stars.append((rng.uniform(0, width), rng.uniform(0, height),
+                      rng.uniform(0.2, 1.2), rng.uniform(0, 2 * math.pi)))
+    arm_r = rng.uniform(min(width, height) * 0.5, min(width, height) * 0.8)
+    arm_ang = rng.uniform(0, 2 * math.pi)
+    arm_w = rng.uniform(0.4, 1.0)
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            r_c, g_c, b_c = palette_color(stops, 0.5)
+            nr, ng, nb = palette_color(stops, 0.85)
+            # nebula glow
+            d = math.hypot(x - width / 2, y - height / 2)
+            glow = math.exp(-((d / max(1.0, min(width, height) * 0.55)) ** 2) / 2.0)
+            v += glow * 1.5
+            # spiral arm
+            ox, oy = width / 2, height / 2
+            ang = math.atan2(y - oy, x - ox)
+            rad = math.hypot(x - ox, y - oy)
+            ang_diff = (ang - arm_ang + math.pi) % (2 * math.pi) - math.pi
+            dist_along = rad * math.tan(arm_w) + arm_r * math.cos(ang_diff / arm_w)
+            d2 = math.hypot(x - (ox + dist_along * math.cos(arm_ang)),
+                            y - (oy + dist_along * math.sin(arm_ang)))
+            v += math.exp(-((d2 / max(1.0, min(width, height) * 0.08)) ** 2) / 2.0) * 2.0
+            for (sx, sy, sr, sa) in stars:
+                d2 = math.hypot(x - sx, y - sy)
+                v += sr * math.exp(-((d2 / max(1.0, min(width, height) * 0.02)) ** 2) / 2.0) * sa
+            t = min(1.0, max(0.0, v / (len(stars) * 2.5 + 3.0)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -1179,6 +1222,8 @@ def render(width, height, seed, style, palette_name):
         return render_shard(width, height, seed, palette_name)
     if style == "circuit":
         return render_circuit(width, height, seed, palette_name)
+    if style == "cosmic":
+        return render_cosmic(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1325,7 +1370,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
