@@ -21,6 +21,7 @@ Styles:
     interference - layered sine waves creating interference patterns
     galaxy      - spiral galaxy disk with central bulge and curved arms
     voronoi    - glowing cell clouds from randomly placed seed sites
+    pinwheel   - swirling radial pinwheel arms modulated by noise
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -778,6 +779,33 @@ def render_voronoi(width, height, seed, palette_name):
     return pixels
 
 
+def render_pinwheel(width, height, seed, palette_name):
+    """Pinwheel: swirling radial arms with noise-modulated twist."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_arms = rng.randint(3, 5)
+    twist = rng.uniform(2.0, 7.0)
+    max_r = math.sqrt((width / 2.0) ** 2 + (height / 2.0) ** 2) * 1.05
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = x - width / 2.0
+            dy = y - height / 2.0
+            r = math.sqrt(dx * dx + dy * dy)
+            theta = math.atan2(dy, dx) if (dx or dy) else 0.0
+            t = min(1.0, max(0.0, r / max_r))
+            arm_phase = theta * n_arms + t * twist
+            d = abs(((arm_phase - theta + math.pi) % (2 * math.pi)) - math.pi)
+            w = math.exp(-((d / (0.35 * (1.0 - t))) ** 2) / 2.0)
+            n = fbm(x * 0.006, y * 0.006, seed, octaves=2)
+            v = w * (1.0 - 0.35 * t) + (n * 0.5 + 0.5) * 0.15
+            t_val = min(1.0, max(0.0, v / 1.2))
+            row.append(palette_color(stops, t_val))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -825,6 +853,8 @@ def render(width, height, seed, style, palette_name):
         return render_torus(width, height, seed, palette_name)
     if style == "voronoi":
         return render_voronoi(width, height, seed, palette_name)
+    if style == "pinwheel":
+        return render_pinwheel(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -971,7 +1001,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
