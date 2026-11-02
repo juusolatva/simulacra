@@ -10,6 +10,7 @@ Styles:
     spiral   - polar spiral arms modulated by smooth winding phases
     nebula   - layered radial glow clouds with noise-driven starlight
     kaleidoscope - radial symmetry patterns via folded angular sectors
+    petals   - radial petal flower arrangements modulated by noise
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -357,6 +358,38 @@ def render_kaleidoscope(width, height, seed, palette_name):
     return pixels
 
 
+def render_petals(width, height, seed, palette_name):
+    """Petals: radial flower-like petals arranged around a center."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_petals = rng.randint(5, 8)
+    petal_len = rng.uniform(0.4, 0.9)
+    petal_w = rng.uniform(0.05, 0.15)
+    center = (width - 1) / 2.0
+    mid = (height - 1) / 2.0
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = x - center
+            dy = y - mid
+            r = math.sqrt(dx * dx + dy * dy)
+            theta = math.atan2(dy, dx)
+            v = 0.0
+            for i in range(n_petals):
+                ang = theta + (i * 6.28) / n_petals
+                d = abs(((ang - theta) + 3.14) % (6.28) - 3.14)
+                if d < petal_w:
+                    t = math.sin(math.pi * d / petal_w) * (r / (petal_len * 2.0))
+                    v += t
+            n = fbm(x * 0.005, y * 0.005, seed, octaves=2)
+            v += (n * 0.5 + 0.5) * 0.25
+            t = min(1.0, max(0.0, v / (n_petals * 0.9)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -382,6 +415,8 @@ def render(width, height, seed, style, palette_name):
         return render_nebula(width, height, seed, palette_name)
     if style == "kaleidoscope":
         return render_kaleidoscope(width, height, seed, palette_name)
+    if style == "petals":
+        return render_petals(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -525,7 +560,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
