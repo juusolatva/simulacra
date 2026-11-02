@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """Procedurally generated abstract art.
 
 Pure Python (stdlib only) generative art engine.
