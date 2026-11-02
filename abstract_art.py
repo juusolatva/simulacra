@@ -11,6 +11,7 @@ Styles:
     nebula   - layered radial glow clouds with noise-driven starlight
     kaleidoscope - radial symmetry patterns via folded angular sectors
     petals   - radial petal flower arrangements modulated by noise
+    horizon   - layered mountain silhouettes over a gradient sky
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -390,6 +391,37 @@ def render_petals(width, height, seed, palette_name):
     return pixels
 
 
+def render_horizon(width, height, seed, palette_name):
+    """Horizon: layered mountain ridge silhouettes over a gradient sky."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    layers = [
+        (height * 0.28, rng.uniform(0.0, 1.0), rng.uniform(0, len(stops) - 1)),
+        (height * 0.45, rng.uniform(0.0, 1.0), rng.uniform(0, len(stops) - 1)),
+        (height * 0.62, rng.uniform(0.0, 1.0), rng.uniform(0, len(stops) - 1)),
+        (height * 0.78, rng.uniform(0.0, 1.0), rng.uniform(0, len(stops) - 1)),
+    ]
+    pixels = []
+    sky_t = 0.5
+    for y in range(height):
+        row = []
+        for x in range(width):
+            n = fbm(x * 0.006, y * 0.006, seed, octaves=3)
+            t = n * 0.5 + 0.5
+            r = math.sqrt((x - width / 2.0) ** 2 + (y - height / 2.0) ** 2)
+            v = 0.0
+            for (frac, noise_off, idx) in layers:
+                base_y = height - height * frac + noise_off * height
+                ridge = math.sin(x * 0.008 + y * 0.002) * 0.5 + 0.5
+                t_ = min(1.0, max(0.0, (ridge + (n - noise_off) * 0.6 - 0.5) / 0.6))
+                if y > base_y and t_ > 0.5:
+                    v += 1.0 - min(1.0, (y - base_y) / (height * 0.2)) * 0.9
+            t_val = min(1.0, max(0.0, sky_t + (t - sky_t) * 0.6 - v * 0.8))
+            row.append(palette_color(stops, t_val))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -417,6 +449,8 @@ def render(width, height, seed, style, palette_name):
         return render_kaleidoscope(width, height, seed, palette_name)
     if style == "petals":
         return render_petals(width, height, seed, palette_name)
+    if style == "horizon":
+        return render_horizon(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -560,7 +594,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
