@@ -29,6 +29,7 @@ Styles:
     circuit    - glowing printed-circuit traces with node pads
     cosmic     - starfield with nebula glow and curved spiral arm
     quasar     - glowing relativistic accretion disk with Doppler-beamed jets
+    mandala    - concentric noise-wobbled rings of glowing glyphs with spokes
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1234,6 +1235,68 @@ def render_quasar(width, height, seed, palette_name):
     return pixels
 
 
+def render_mandala(width, height, seed, palette_name):
+    """Concentric mandala: noise-wobbled rings of glowing glyphs with radial spokes and a center medallion."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    cx = (width - 1) / 2.0
+    cy = (height - 1) / 2.0
+    max_r = math.sqrt(cx * cx + cy * cy)
+
+    rings = []
+    n_rings = rng.randint(6, 12)
+    for _ in range(n_rings):
+        rings.append({
+            "radius": max_r * rng.uniform(0.2, 0.9),
+            "glyphs": rng.randint(2, 10),
+            "size": rng.uniform(2.5, 8.0),
+            "phase": rng.uniform(0.0, 6.28),
+            "wob": rng.uniform(0.05, 0.18),
+        })
+    spokes = []
+    for i in range(len(rings) - 1):
+        spokes.append((rings[i]["radius"], rings[i + 1]["radius"], rng.uniform(0.0, 6.28)))
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = x - cx
+            dy = y - cy
+            r = math.hypot(dx, dy)
+            theta = math.atan2(dy, dx)
+            v = 0.0
+            # center medallion glow
+            v += math.exp(-((r - 0.0) ** 2) / (2.0 * max(3.0, max_r * 0.06) ** 2)) * 3.5
+            # ring glows with noise-wobbled radii
+            for rib in rings:
+                wob = rib["radius"] + rib["wob"] * fbm(r * 0.9, theta * 1.6, seed, octaves=2)
+                v += math.exp(-((r - wob) ** 2) / (2.0 * rib["size"] ** 2)) * 1.6
+            # radial spokes connecting consecutive rings
+            for (r0, r1, phase) in spokes:
+                span = max(0.05, r1 - r0)
+                dang = math.atan2(math.sin(theta - phase), math.cos(theta - phase))
+                if abs(dang) < 0.06:
+                    tt = min(1.0, max(0.0, (r - r0) / span))
+                    v += math.exp(-((r - (r0 + tt * span)) ** 2) / (2.0 * 2.0 * 2.0)) * 0.9
+            # glyph hits on rings
+            for rib in rings:
+                for gi in range(rib["glyphs"]):
+                    ga = rib["phase"] + (gi / rib["glyphs"]) * 2.0 * math.pi
+                    gx = cx + math.cos(ga) * rib["radius"]
+                    gy = cy + math.sin(ga) * rib["radius"]
+                    d = math.hypot(x - gx, y - gy)
+                    if d < rib["size"] * 0.9:
+                        v += math.exp(-((d ** 2) / (2.0 * rib["size"] * rib["size"]))) * 2.2
+            t = min(1.0, max(0.0, v / (len(rings) * 2.2 + 5.0)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
+# ---------------------------------------------------------------- render dispatch
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -1297,6 +1360,8 @@ def render(width, height, seed, style, palette_name):
         return render_cosmic(width, height, seed, palette_name)
     if style == "quasar":
         return render_quasar(width, height, seed, palette_name)
+    if style == "mandala":
+        return render_mandala(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1443,7 +1508,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
