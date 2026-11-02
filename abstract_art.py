@@ -247,6 +247,8 @@ def render(width, height, seed, style, palette_name):
         return render_rings(width, height, seed, palette_name)
     if style == "aurora":
         return render_aurora(width, height, seed, palette_name)
+    if style == "plasma":
+        return render_plasma(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -331,6 +333,30 @@ def render_aurora(width, height, seed, palette_name):
 
 
 
+def render_plasma(width, height, seed, palette_name):
+    """Plasma effect: layered sine waves summed with noise, mapped through palette."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    layers = [
+        (1.0, 3.0, rng.uniform(0.0, 6.28)),
+        (0.8, 5.0, rng.uniform(0.0, 6.28)),
+        (0.6, 8.0, rng.uniform(0.0, 6.28)),
+        (0.45, 13.0, rng.uniform(0.0, 6.28)),
+    ]
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            n = fbm(x * 0.01, y * 0.01, seed, octaves=4) * 0.5 + 0.5
+            for (amp, freq, phase) in layers:
+                v += amp * math.sin(x * freq + y * freq * 1.7 + phase) * (0.5 + 0.5 * n)
+            t = min(1.0, max(0.0, v * 1.15 - 0.1))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- png writer
 
 def write_png(path, pixels, width, height):
@@ -357,7 +383,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
