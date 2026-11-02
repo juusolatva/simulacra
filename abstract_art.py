@@ -12,6 +12,7 @@ Styles:
     kaleidoscope - radial symmetry patterns via folded angular sectors
     petals   - radial petal flower arrangements modulated by noise
     horizon   - layered mountain silhouettes over a gradient sky
+    starburst - radiating starburst rays from a central point
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -422,6 +423,38 @@ def render_horizon(width, height, seed, palette_name):
     return pixels
 
 
+def render_starburst(width, height, seed, palette_name):
+    """Starburst: radiating rays from a central focal point."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    rays = rng.randint(8, 14)
+    rays_len = rng.uniform(0.4, 0.9)
+    rays_w = rng.uniform(0.02, 0.08)
+    focal_x = width / 2.0
+    focal_y = height / 2.0
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = x - focal_x
+            dy = y - focal_y
+            r = math.sqrt(dx * dx + dy * dy)
+            theta = math.atan2(dy, dx)
+            v = 0.0
+            for i in range(rays):
+                ang = theta + (i * 6.28) / rays
+                d = abs(((ang - theta) + 3.14) % (6.28) - 3.14)
+                if d < rays_w:
+                    t = math.sin(math.pi * d / rays_w) * (r / (rays_len * 2.0))
+                    v += t
+            n = fbm(x * 0.004, y * 0.004, seed, octaves=2)
+            v += (n * 0.5 + 0.5) * 0.2
+            t = min(1.0, max(0.0, v / (rays * 0.5)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -451,6 +484,8 @@ def render(width, height, seed, style, palette_name):
         return render_petals(width, height, seed, palette_name)
     if style == "horizon":
         return render_horizon(width, height, seed, palette_name)
+    if style == "starburst":
+        return render_starburst(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -594,7 +629,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
