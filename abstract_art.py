@@ -274,6 +274,42 @@ def render_blobs(width, height, seed, palette_name):
     return pixels
 
 
+def _shade(width, height, stops, value):
+    """Build ``height`` rows of palette colors from ``value(x, y)`` in [0, 1]."""
+    return [[palette_color(stops, value(x, y)) for x in range(width)]
+            for y in range(height)]
+
+
+def _box_distances(px, py, reach, width, height, pad=0):
+    """Yield ``(row, col, distance)`` for canvas cells in a box around (px, py).
+
+    The box spans ``reach`` pixels each way, plus ``pad`` extra columns and
+    rows on the far side, clipped to the canvas.
+    """
+    x0 = max(0, int(px - reach))
+    x1 = min(width - 1, int(px + reach) + pad)
+    y0 = max(0, int(py - reach))
+    y1 = min(height - 1, int(py + reach) + pad)
+    for yy in range(y0, y1 + 1):
+        dy2 = (yy - py) * (yy - py)
+        for xx in range(x0, x1 + 1):
+            yield yy, xx, math.sqrt((xx - px) * (xx - px) + dy2)
+
+
+def _orbits_color(x, y, seed, stops, center, rings, stars):
+    """Noise background, overridden by any ring band and then by any star."""
+    n = fbm(x * 0.008, y * 0.008, seed, octaves=3)
+    c = palette_color(stops, _contrast(n, 1.6))
+    r = math.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
+    for (radius, ring_color) in rings:
+        if radius * 0.9 < r < radius * 1.1:
+            c = ring_color
+    for (sx, sy, sr) in stars:
+        if math.hypot(x - sx, y - sy) < sr * 1.2:
+            c = (255, 255, 255)
+    return c
+
+
 def render_orbits(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
@@ -281,27 +317,13 @@ def render_orbits(width, height, seed, palette_name):
         (rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.5, 3.0))
         for _ in range(60)
     ]
-    pixels = []
     cx = width / 2.0
     cy = height / 2.0
     max_r = math.sqrt(cx * cx + cy * cy)
     rings = [(max_r * rng.uniform(0.15, 0.9), stops[rng.randrange(len(stops))])
              for _ in range(6)]
-    for y in range(height):
-        row = []
-        for x in range(width):
-            n = fbm(x * 0.008, y * 0.008, seed, octaves=3)
-            c = palette_color(stops, _contrast(n, 1.6))
-            r = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-            for (radius, ring_color) in rings:
-                if radius * 0.9 < r < radius * 1.1:
-                    c = ring_color
-            for (sx, sy, sr) in stars:
-                if math.hypot(x - sx, y - sy) < sr * 1.2:
-                    c = (255, 255, 255)
-            row.append(c)
-        pixels.append(row)
-    return pixels
+    return [[_orbits_color(x, y, seed, stops, (cx, cy), rings, stars) for x in range(width)]
+            for y in range(height)]
 
 
 def render_mandelbrot(width, height, seed, palette_name):
@@ -524,6 +546,44 @@ def render_interference(width, height, seed, palette_name):
     return pixels
 
 
+def _constellation_lines(stars, width, height):
+    """Rasterize lines between nearby stars into an additive glow grid."""
+    max_dist = math.sqrt(width * width + height * height) * 0.32
+    line_grid = [[0.0] * width for _ in range(height)]
+    pairs = []
+    for i in range(len(stars)):
+        for j in range(i + 1, len(stars)):
+            dist = math.hypot(stars[j]["x"] - stars[i]["x"], stars[j]["y"] - stars[i]["y"])
+            if dist <= max_dist:
+                pairs.append((i, j, dist))
+    for (i, j, dist) in pairs:
+        _draw_constellation_line(line_grid, stars[i], stars[j], dist, width, height)
+    return line_grid
+
+
+def _draw_constellation_line(line_grid, start, end, dist, width, height):
+    """Accumulate one line, brightest at ``start`` and fading toward ``end``."""
+    sx, sy = start["x"], start["y"]
+    ex, ey = end["x"], end["y"]
+    steps = max(1, int(dist / 1.2))
+    for k in range(steps + 1):
+        t = k / steps
+        ix = int(sx + (ex - sx) * t)
+        iy = int(sy + (ey - sy) * t)
+        if 0 <= ix < width and 0 <= iy < height:
+            falloff = math.exp(-((k / steps) * (k / steps)) / 2.0)
+            line_grid[iy][ix] += falloff * 0.9
+
+
+def _constellation_value(x, y, stars, line_grid):
+    v = 0.0
+    for star in stars:
+        d = math.hypot(x - star["x"], y - star["y"])
+        v += math.exp(-((d / star["r"]) ** 2) / 2.0) * star["b"]
+    v += line_grid[y][x]
+    return min(1.0, max(0.0, 1.0 - math.exp(-v)))
+
+
 def render_constellations(width, height, seed, palette_name):
     """Constellations: starfield whose stars are loosely connected by lines."""
     stops = PALETTES[palette_name]
@@ -537,46 +597,9 @@ def render_constellations(width, height, seed, palette_name):
             "r": rng.uniform(0.7, 2.2),
             "b": rng.uniform(0.45, 1.0),
         })
-
-    max_dist = math.sqrt(width * width + height * height) * 0.32
-    line_grid = [[0.0] * width for _ in range(height)]
-
-    pairs = []
-    for i in range(len(stars)):
-        for j in range(i + 1, len(stars)):
-            sx, sy = stars[i]["x"], stars[i]["y"]
-            ex, ey = stars[j]["x"], stars[j]["y"]
-            dist = math.hypot(ex - sx, ey - sy)
-            if dist <= max_dist:
-                pairs.append((i, j, dist))
-
-    for (i, j, dist) in pairs:
-        sx, sy = stars[i]["x"], stars[i]["y"]
-        ex, ey = stars[j]["x"], stars[j]["y"]
-        steps = max(1, int(dist / 1.2))
-        for k in range(steps + 1):
-            t = k / steps
-            lx = sx + (ex - sx) * t
-            ly = sy + (ey - sy) * t
-            ix = int(lx)
-            iy = int(ly)
-            if 0 <= ix < width and 0 <= iy < height:
-                falloff = math.exp(-((k / steps) * (k / steps)) / 2.0)
-                line_grid[iy][ix] += falloff * 0.9
-
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            v = 0.0
-            for star in stars:
-                d = math.hypot(x - star["x"], y - star["y"])
-                v += math.exp(-((d / star["r"]) ** 2) / 2.0) * star["b"]
-            v += line_grid[y][x]
-            t = min(1.0, max(0.0, 1.0 - math.exp(-v)))
-            row.append(palette_color(stops, t))
-        pixels.append(row)
-    return pixels
+    line_grid = _constellation_lines(stars, width, height)
+    return _shade(width, height, stops,
+                  lambda x, y: _constellation_value(x, y, stars, line_grid))
 
 
 def render_cosmos(width, height, seed, palette_name):
@@ -714,20 +737,24 @@ def render_flowfield(width, height, seed, palette_name):
     return _glow_pixels(glow, width, height, stops)
 
 
-def render_torus(width, height, seed, palette_name):
-    """Torus knot: glowing parametric knot curve with depth shading."""
-    stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    R = rng.uniform(0.6, 1.2)
-    a, b = rng.choice(((2, 3), (3, 2), (3, 5), (5, 2)))
-    samples = max(2200, 4 * (width + height))
+def _torus_knot_points(tube, a, b, samples):
     pts = []
     for i in range(samples):
         t = 2.0 * math.pi * i / samples
         ct = math.cos(b * t)
-        pts.append(((2.0 + R * ct) * math.cos(a * t),
-                    (2.0 + R * ct) * math.sin(a * t),
-                    R * math.sin(b * t)))
+        pts.append(((2.0 + tube * ct) * math.cos(a * t),
+                    (2.0 + tube * ct) * math.sin(a * t),
+                    tube * math.sin(b * t)))
+    return pts
+
+
+def render_torus(width, height, seed, palette_name):
+    """Torus knot: glowing parametric knot curve with depth shading."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    tube = rng.uniform(0.6, 1.2)
+    a, b = rng.choice(((2, 3), (3, 2), (3, 5), (5, 2)))
+    pts = _torus_knot_points(tube, a, b, max(2200, 4 * (width + height)))
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
     zs = [p[2] for p in pts]
@@ -745,28 +772,15 @@ def render_torus(width, height, seed, palette_name):
         px = (x - cx) * s + (width - 1) / 2.0
         py = (cy - y) * s + (height - 1) / 2.0
         depth = 0.45 + 0.55 * (z - z_lo) / max(1e-9, z_hi - z_lo)
-        x0 = max(0, int(px - r_glow))
-        x1 = min(width - 1, int(px + r_glow) + 1)
-        y0 = max(0, int(py - r_glow))
-        y1 = min(height - 1, int(py + r_glow) + 1)
-        for yy in range(y0, y1 + 1):
-            grow = glow[yy]
-            dy2 = (yy - py) ** 2
-            for xx in range(x0, x1 + 1):
-                d = math.sqrt((xx - px) ** 2 + dy2)
-                if d < r_glow:
-                    g = (1.0 - d / r_glow) * depth
-                    if g > grow[xx]:
-                        grow[xx] = g
+        for yy, xx, d in _box_distances(px, py, r_glow, width, height, pad=1):
+            if d < r_glow:
+                glow[yy][xx] = max(glow[yy][xx], (1.0 - d / r_glow) * depth)
 
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            background = _contrast(fbm(x * 0.012, y * 0.012, seed, octaves=3), 1.6) * 0.4
-            row.append(palette_color(stops, max(background, glow[y][x])))
-        pixels.append(row)
-    return pixels
+    def value(x, y):
+        background = _contrast(fbm(x * 0.012, y * 0.012, seed, octaves=3), 1.6) * 0.4
+        return max(background, glow[y][x])
+
+    return _shade(width, height, stops, value)
 
 
 def render_voronoi(width, height, seed, palette_name):
@@ -819,6 +833,25 @@ def render_pinwheel(width, height, seed, palette_name):
     return pixels
 
 
+def _curve_distance_grid(pts, reach, width, height):
+    """Distance from each pixel near the curve to its closest sample (1e9 elsewhere)."""
+    min_d = [[1e9] * width for _ in range(height)]
+    for (px, py) in pts:
+        for yy, xx, d in _box_distances(px, py, reach, width, height):
+            if d < min_d[yy][xx]:
+                min_d[yy][xx] = d
+    return min_d
+
+
+def _lissajous_value(x, y, glow_values, n_curves):
+    v = 0.0
+    for (min_d, c) in glow_values:
+        d = min_d[y][x]
+        if d < 1e8:
+            v += math.exp(-((d / c["sigma"]) ** 2) / 2.0) * c["amp"]
+    return min(1.0, max(0.0, v / (n_curves * 0.9)))
+
+
 def render_lissajous(width, height, seed, palette_name):
     """Lissajous: glowing parametric harmonic curves traced through the canvas."""
     stops = PALETTES[palette_name]
@@ -840,47 +873,15 @@ def render_lissajous(width, height, seed, palette_name):
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
     samples = 1400
-    traced = []
-    for c in curves:
-        pts = []
-        for i in range(samples):
-            t = 2.0 * math.pi * i / samples
-            pts.append((cx + cx * c["ax"] * math.sin(c["fx"] * t + c["px"]),
-                        cy - cy * c["ay"] * math.sin(c["fy"] * t + c["py"])))
-        traced.append((pts, c))
-
     glow_values = []
-    for (pts, c) in traced:
-        min_d = [[1e9] * width for _ in range(height)]
-        R_GLOW = max(2, math.ceil(c["sigma"] * 3))
-        for (px, py) in pts:
-            x0 = max(0, int(px - R_GLOW))
-            x1 = min(width - 1, int(px + R_GLOW))
-            y0 = max(0, int(py - R_GLOW))
-            y1 = min(height - 1, int(py + R_GLOW))
-            for yy in range(y0, y1 + 1):
-                drow = min_d[yy]
-                dy = yy - py
-                dy2 = dy * dy
-                for xx in range(x0, x1 + 1):
-                    d = math.sqrt((xx - px) * (xx - px) + dy2)
-                    if d < drow[xx]:
-                        drow[xx] = d
-        glow_values.append((min_d, c))
-
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            v = 0.0
-            for (min_d, c) in glow_values:
-                d = min_d[y][x]
-                if d < 1e8:
-                    v += math.exp(-((d / c["sigma"]) ** 2) / 2.0) * c["amp"]
-            t = min(1.0, max(0.0, v / (n_curves * 0.9)))
-            row.append(palette_color(stops, t))
-        pixels.append(row)
-    return pixels
+    for c in curves:
+        pts = [(cx + cx * c["ax"] * math.sin(c["fx"] * t + c["px"]),
+                cy - cy * c["ay"] * math.sin(c["fy"] * t + c["py"]))
+               for t in (2.0 * math.pi * i / samples for i in range(samples))]
+        reach = max(2, math.ceil(c["sigma"] * 3))
+        glow_values.append((_curve_distance_grid(pts, reach, width, height), c))
+    return _shade(width, height, stops,
+                  lambda x, y: _lissajous_value(x, y, glow_values, n_curves))
 
 
 def render_geo(width, height, seed, palette_name):
@@ -909,6 +910,38 @@ def render_geo(width, height, seed, palette_name):
     return pixels
 
 
+def _prism_layers(rng, g, small):
+    """Nested polygons for one gem; layer 0 spans the full gem radius."""
+    layers = []
+    n_layers = rng.randint(2, 4)
+    shrink = rng.uniform(0.55, 0.8)
+    for k in range(n_layers):
+        # The innermost layer keeps (1 - shrink) of the gem radius.
+        radius = g["r"] * (1.0 - shrink * k / max(1, n_layers - 1))
+        sides = rng.randint(3, 6)
+        phase = rng.uniform(0.0, 6.28)
+        gain = rng.uniform(0.35, 0.9)
+        if radius < 1.0:
+            continue
+        poly = [(g["cx"] + radius * math.cos(math.tau * i / sides + phase),
+                 g["cy"] - radius * math.sin(math.tau * i / sides + phase))
+                for i in range(sides)]
+        layers.append((poly, max(2.0, gain * small * 0.025), gain))
+    return layers
+
+
+def _prism_value(x, y, scenes):
+    v = 0.0
+    for (g, layers) in scenes:
+        if abs(x - g["cx"]) > g["r"] or abs(y - g["cy"]) > g["r"]:
+            continue
+        for (poly, ridge, gain) in layers:
+            if _point_in_poly(x, y, poly):
+                d = _poly_min_dist(x, y, poly)
+                v += g["glow"] * (0.25 * gain + math.exp(-((d / ridge) ** 2) / 2.0))
+    return 1.0 - math.exp(-1.1 * v)
+
+
 def render_prism(width, height, seed, palette_name):
     """Prism: stacked faceted gem facets with ridge shading and soft glow."""
     stops = PALETTES[palette_name]
@@ -923,42 +956,8 @@ def render_prism(width, height, seed, palette_name):
             "r": rng.uniform(small * 0.08, small * 0.28),
             "glow": rng.uniform(0.5, 1.0),
         })
-
-    scenes = []
-    for g in gems:
-        layers = []
-        n_layers = rng.randint(2, 4)
-        shrink = rng.uniform(0.55, 0.8)
-        for k in range(n_layers):
-            # Layer 0 spans the full gem; the innermost keeps (1 - shrink) of it.
-            radius = g["r"] * (1.0 - shrink * k / max(1, n_layers - 1))
-            sides = rng.randint(3, 6)
-            phase = rng.uniform(0.0, 6.28)
-            gain = rng.uniform(0.35, 0.9)
-            if radius < 1.0:
-                continue
-            poly = [(g["cx"] + radius * math.cos(math.tau * i / sides + phase),
-                     g["cy"] - radius * math.sin(math.tau * i / sides + phase))
-                    for i in range(sides)]
-            layers.append((poly, max(2.0, gain * small * 0.025), gain))
-        scenes.append((g, layers))
-
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            v = 0.0
-            for (g, layers) in scenes:
-                if abs(x - g["cx"]) > g["r"] or abs(y - g["cy"]) > g["r"]:
-                    continue
-                for (poly, ridge, gain) in layers:
-                    if not _point_in_poly(x, y, poly):
-                        continue
-                    d = _poly_min_dist(x, y, poly)
-                    v += g["glow"] * (0.25 * gain + math.exp(-((d / ridge) ** 2) / 2.0))
-            row.append(palette_color(stops, 1.0 - math.exp(-1.1 * v)))
-        pixels.append(row)
-    return pixels
+    scenes = [(g, _prism_layers(rng, g, small)) for g in gems]
+    return _shade(width, height, stops, lambda x, y: _prism_value(x, y, scenes))
 
 
 def _seg_hit(x, y, p1, p2):
@@ -975,49 +974,75 @@ def _seg_hit(x, y, p1, p2):
     return math.hypot(x - px, y - py)
 
 
+def _make_shard(rng, width, height):
+    """One irregular polygon with 1-3 cracks between non-adjacent vertices."""
+    cx = rng.uniform(width * 0.2, width * 0.8)
+    cy = rng.uniform(height * 0.2, height * 0.8)
+    r = rng.uniform(min(width, height) * 0.15, min(width, height) * 0.42)
+    m = rng.randint(5, 8)
+    poly = []
+    for i in range(m):
+        ang = 2 * math.pi * i / m + rng.uniform(-0.12, 0.12)
+        rad = r * (0.55 + rng.uniform(0.45, 1.05))
+        poly.append((cx + rad * math.cos(ang), cy - rad * math.sin(ang)))
+    cracks = []
+    for _ in range(rng.randint(1, 3)):
+        i = rng.randrange(m)
+        # A non-adjacent vertex, so every crack actually crosses the shard.
+        j = (i + rng.randint(2, m - 2)) % m
+        cracks.append((poly[i], poly[j]))
+    return {"r": r, "poly": poly, "cracks": cracks}
+
+
+def _shard_value(x, y, shards):
+    v = 0.0
+    for s in shards:
+        poly = s["poly"]
+        sigma = max(1.0, s["r"] * 0.9)
+        halo = math.exp(-((_poly_min_dist(x, y, poly) / sigma) ** 2) / 2.0)
+        v += halo * (1.95 if _point_in_poly(x, y, poly) else 1.4)
+        crack_reach = max(s["r"] * 0.12, 2.0)
+        for (p1, p2) in s["cracks"]:
+            d = _seg_hit(x, y, p1, p2)
+            if d < crack_reach:
+                v += 0.9 * math.exp(-(d / sigma) ** 2 / 2.0)
+    return min(1.0, max(0.0, v / (len(shards) * 2.2)))
+
+
 def render_shard(width, height, seed, palette_name):
     """Shard: fractured irregular gem shards with glow halos and crack lines."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
-    n_shards = rng.randint(2, 4)
-    shards = []
-    for _ in range(n_shards):
-        cx = rng.uniform(width * 0.2, width * 0.8)
-        cy = rng.uniform(height * 0.2, height * 0.8)
-        r = rng.uniform(min(width, height) * 0.15, min(width, height) * 0.42)
-        m = rng.randint(5, 8)
-        poly = []
-        for i in range(m):
-            ang = 2 * math.pi * i / m + rng.uniform(-0.12, 0.12)
-            rad = r * (0.55 + rng.uniform(0.45, 1.05))
-            poly.append((cx + rad * math.cos(ang), cy - rad * math.sin(ang)))
-        cracks = []
-        for _ in range(rng.randint(1, 3)):
-            i = rng.randrange(m)
-            # A non-adjacent vertex, so every crack actually crosses the shard.
-            j = (i + rng.randint(2, m - 2)) % m
-            cracks.append((poly[i], poly[j]))
-        shards.append({"r": r, "poly": poly, "cracks": cracks})
+    shards = [_make_shard(rng, width, height) for _ in range(rng.randint(2, 4))]
+    return _shade(width, height, stops, lambda x, y: _shard_value(x, y, shards))
 
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            v = 0.0
-            for s in shards:
-                poly = s["poly"]
-                sigma = max(1.0, s["r"] * 0.9)
-                halo = math.exp(-((_poly_min_dist(x, y, poly) / sigma) ** 2) / 2.0)
-                v += halo * (1.95 if _point_in_poly(x, y, poly) else 1.4)
-                crack_reach = max(s["r"] * 0.12, 2.0)
-                for (p1, p2) in s["cracks"]:
-                    d = _seg_hit(x, y, p1, p2)
-                    if d < crack_reach:
-                        v += 0.9 * math.exp(-(d / sigma) ** 2 / 2.0)
-            t = min(1.0, max(0.0, v / (len(shards) * 2.2)))
-            row.append(palette_color(stops, t))
-        pixels.append(row)
-    return pixels
+
+def _make_trace(rng, width, height):
+    """Random node pads joined by PCB-style right-angled legs."""
+    nodes = [(rng.uniform(width * 0.08, width * 0.92),
+              rng.uniform(height * 0.08, height * 0.92))]
+    for _ in range(rng.randint(2, 5)):
+        nodes.append((rng.uniform(width * 0.04, width * 0.96),
+                      rng.uniform(height * 0.04, height * 0.96)))
+    segments = []
+    for (x0, y0), (x1, y1) in zip(nodes, nodes[1:]):
+        # One horizontal and one vertical leg per hop.
+        corner = (x1, y0) if rng.random() < 0.5 else (x0, y1)
+        segments.append(((x0, y0), corner))
+        segments.append((corner, (x1, y1)))
+    return nodes, segments
+
+
+def _circuit_value(x, y, traces, core, halo, pad):
+    v = 0.0
+    for (nodes, segments) in traces:
+        d = min(_seg_hit(x, y, p1, p2) for p1, p2 in segments)
+        v += math.exp(-((d / core) ** 2) / 2.0) + 0.3 * math.exp(-((d / halo) ** 2) / 2.0)
+        for (px, py) in nodes:
+            dn = math.hypot(x - px, y - py)
+            if dn < pad * 2.5:
+                v += 1.5 * math.exp(-((dn / pad) ** 2) / 2.0)
+    return 1.0 - math.exp(-1.2 * v)
 
 
 def render_circuit(width, height, seed, palette_name):
@@ -1028,36 +1053,9 @@ def render_circuit(width, height, seed, palette_name):
     core = max(0.7, small * 0.008)
     halo = max(2.0, small * 0.04)
     pad = max(1.5, small * 0.018)
-    traces = []
-    for _ in range(rng.randint(3, 6)):
-        nodes = [(rng.uniform(width * 0.08, width * 0.92),
-                  rng.uniform(height * 0.08, height * 0.92))]
-        for _ in range(rng.randint(2, 5)):
-            nodes.append((rng.uniform(width * 0.04, width * 0.96),
-                          rng.uniform(height * 0.04, height * 0.96)))
-        segments = []
-        for (x0, y0), (x1, y1) in zip(nodes, nodes[1:]):
-            # PCB-style routing: one horizontal and one vertical leg per hop.
-            corner = (x1, y0) if rng.random() < 0.5 else (x0, y1)
-            segments.append(((x0, y0), corner))
-            segments.append((corner, (x1, y1)))
-        traces.append((nodes, segments))
-
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            v = 0.0
-            for (nodes, segments) in traces:
-                d = min(_seg_hit(x, y, p1, p2) for p1, p2 in segments)
-                v += math.exp(-((d / core) ** 2) / 2.0) + 0.3 * math.exp(-((d / halo) ** 2) / 2.0)
-                for (px, py) in nodes:
-                    dn = math.hypot(x - px, y - py)
-                    if dn < pad * 2.5:
-                        v += 1.5 * math.exp(-((dn / pad) ** 2) / 2.0)
-            row.append(palette_color(stops, 1.0 - math.exp(-1.2 * v)))
-        pixels.append(row)
-    return pixels
+    traces = [_make_trace(rng, width, height) for _ in range(rng.randint(3, 6))]
+    return _shade(width, height, stops,
+                  lambda x, y: _circuit_value(x, y, traces, core, halo, pad))
 
 
 def render_cosmic(width, height, seed, palette_name):
@@ -1170,6 +1168,30 @@ def render_quasar(width, height, seed, palette_name):
     return pixels
 
 
+def _mandala_value(x, y, scene):
+    cx, cy = scene["center"]
+    dx = x - cx
+    dy = y - cy
+    r = math.hypot(dx, dy)
+    theta = math.atan2(dy, dx)
+    medallion = scene["medallion"]
+    v = math.exp(-(r * r) / (2.0 * medallion * medallion)) * 3.5
+    # ring glows; "wob" is the wobble amplitude as a fraction of the radius
+    noise = polar_noise(r * 0.05, theta, scene["seed"], 3.0)
+    for rib in scene["rings"]:
+        wobbled = rib["radius"] * (1.0 + rib["wob"] * (noise - 0.5))
+        v += math.exp(-((r - wobbled) ** 2) / (2.0 * rib["size"] ** 2)) * 1.6
+    for (r0, r1, phase) in scene["spokes"]:
+        dang = math.atan2(math.sin(theta - phase), math.cos(theta - phase))
+        if r0 <= r <= r1 and abs(dang) < 0.06:
+            v += 0.9
+    for (gx, gy, size) in scene["glyphs"]:
+        d = math.hypot(x - gx, y - gy)
+        if d < size * 0.9:
+            v += math.exp(-(d * d) / (2.0 * size * size)) * 2.2
+    return 1.0 - math.exp(-0.7 * v)
+
+
 def render_mandala(width, height, seed, palette_name):
     """Concentric mandala: noise-wobbled rings of glowing glyphs with radial spokes and a center medallion."""
     stops = PALETTES[palette_name]
@@ -1189,43 +1211,15 @@ def render_mandala(width, height, seed, palette_name):
         })
     # Spokes join neighbouring rings, which requires radial order.
     rings.sort(key=lambda rib: rib["radius"])
-    spokes = []
-    for inner, outer in zip(rings, rings[1:]):
-        spokes.append((inner["radius"], outer["radius"], rng.uniform(0.0, 6.28)))
-    glyphs = []
-    for rib in rings:
-        for gi in range(rib["glyphs"]):
-            ga = rib["phase"] + (gi / rib["glyphs"]) * 2.0 * math.pi
-            glyphs.append((cx + math.cos(ga) * rib["radius"],
-                           cy + math.sin(ga) * rib["radius"], rib["size"]))
-    medallion = max(3.0, max_r * 0.06)
-
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            dx = x - cx
-            dy = y - cy
-            r = math.hypot(dx, dy)
-            theta = math.atan2(dy, dx)
-            v = math.exp(-(r * r) / (2.0 * medallion * medallion)) * 3.5
-            # ring glows; "wob" is the wobble amplitude as a fraction of the radius
-            noise = polar_noise(r * 0.05, theta, seed, 3.0)
-            for rib in rings:
-                wobbled = rib["radius"] * (1.0 + rib["wob"] * (noise - 0.5))
-                v += math.exp(-((r - wobbled) ** 2) / (2.0 * rib["size"] ** 2)) * 1.6
-            for (r0, r1, phase) in spokes:
-                if r0 <= r <= r1:
-                    dang = math.atan2(math.sin(theta - phase), math.cos(theta - phase))
-                    if abs(dang) < 0.06:
-                        v += 0.9
-            for (gx, gy, size) in glyphs:
-                d = math.hypot(x - gx, y - gy)
-                if d < size * 0.9:
-                    v += math.exp(-(d * d) / (2.0 * size * size)) * 2.2
-            row.append(palette_color(stops, 1.0 - math.exp(-0.7 * v)))
-        pixels.append(row)
-    return pixels
+    spokes = [(inner["radius"], outer["radius"], rng.uniform(0.0, 6.28))
+              for inner, outer in zip(rings, rings[1:])]
+    glyphs = [(cx + math.cos(ga) * rib["radius"], cy + math.sin(ga) * rib["radius"], rib["size"])
+              for rib in rings
+              for ga in (rib["phase"] + (gi / rib["glyphs"]) * 2.0 * math.pi
+                         for gi in range(rib["glyphs"]))]
+    scene = {"center": (cx, cy), "medallion": max(3.0, max_r * 0.06), "seed": seed,
+             "rings": rings, "spokes": spokes, "glyphs": glyphs}
+    return _shade(width, height, stops, lambda x, y: _mandala_value(x, y, scene))
 
 
 def render_drift(width, height, seed, palette_name):
@@ -1337,6 +1331,27 @@ def render_ember(width, height, seed, palette_name):
     return _glow_pixels(glow_sum, width, height, stops)
 
 
+def _stamp_comet(glow_sum, c, width, height):
+    """Paint one comet's fading streak; the canvas wraps at its edges."""
+    steps = max(1, math.ceil(c["speed"] * 2))
+    radius = c["width_px"]
+    reach = math.ceil(radius * 2)
+    for s in range(steps):
+        t = (s + 0.5) / steps
+        px = c["x"] + math.cos(c["angle"]) * c["speed"] * t
+        py = c["y"] + math.sin(c["angle"]) * c["speed"] * t
+        ix, iy = math.floor(px), math.floor(py)
+        fall = max(0.0, 1.0 - t * 1.6)
+        g = fall ** 3 * (0.4 + 0.6 * (1.0 - t))
+        for ddx in range(-reach, reach + 1):
+            for ddy in range(-reach, reach + 1):
+                dx, dy = ix + ddx - px, iy + ddy - py
+                d2 = dx * dx + dy * dy
+                if d2 <= (radius * 2) ** 2:
+                    xx, yy = (ix + ddx) % width, (iy + ddy) % height
+                    glow_sum[yy * width + xx] += g * math.exp(-2 * d2 / radius ** 2)
+
+
 def render_comet(width, height, seed, palette_name):
     """Comet: fast glowing streaks with fading motion trails."""
     stops = PALETTES[palette_name]
@@ -1352,23 +1367,7 @@ def render_comet(width, height, seed, palette_name):
         })
     glow_sum = [0.0] * (width * height)
     for c in comets:
-        steps = max(1, math.ceil(c["speed"] * 2))
-        for s in range(steps):
-            t = (s + 0.5) / steps
-            px = c["x"] + math.cos(c["angle"]) * c["speed"] * t
-            py = c["y"] + math.sin(c["angle"]) * c["speed"] * t
-            ix, iy = math.floor(px), math.floor(py)
-            fall = max(0.0, 1.0 - t * 1.6)
-            g = fall ** 3 * (0.4 + 0.6 * (1.0 - t))
-            radius = c["width_px"]
-            reach = math.ceil(radius * 2)
-            for ddx in range(-reach, reach + 1):
-                for ddy in range(-reach, reach + 1):
-                    dx, dy = ix + ddx - px, iy + ddy - py
-                    d2 = dx * dx + dy * dy
-                    if d2 <= (radius * 2) ** 2:
-                        xx, yy = (ix + ddx) % width, (iy + ddy) % height
-                        glow_sum[yy * width + xx] += g * math.exp(-2 * d2 / radius ** 2)
+        _stamp_comet(glow_sum, c, width, height)
     return _glow_pixels(glow_sum, width, height, stops)
 
 
