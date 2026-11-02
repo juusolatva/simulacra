@@ -16,6 +16,7 @@ Styles:
     horizon   - layered mountain silhouettes over a gradient sky
     starburst - radiating starburst rays from a central point
     interference - layered sine waves creating interference patterns
+    galaxy      - spiral galaxy disk with central bulge and curved arms
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -78,6 +79,13 @@ PALETTES = {
         (152, 102, 26),
         (226, 158, 52),
         (255, 222, 140),
+    ],
+    "ultraviolet": [
+        (8, 2, 18),
+        (28, 8, 48),
+        (64, 18, 92),
+        (120, 36, 150),
+        (200, 140, 255),
     ],
 }
 
@@ -574,6 +582,49 @@ def render_cosmos(width, height, seed, palette_name):
     return pixels
 
 
+def render_galaxy(width, height, seed, palette_name):
+    """Galaxy: spiral disk of stars with a bright central bulge and curved arms."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    cx = (width - 1) / 2.0
+    cy = (height - 1) / 2.0
+    max_r = math.sqrt(cx * cx + cy * cy)
+    bulge_r = max_r * rng.uniform(0.10, 0.26)
+    bulge_amp = rng.uniform(0.9, 1.5)
+    n_arms = rng.randint(2, 3)
+    arms = []
+    for _ in range(n_arms):
+        arms.append({
+            "r0": max_r * rng.uniform(0.015, 0.05),
+            "width": max_r * rng.uniform(0.012, 0.03),
+            "phase": rng.uniform(0.0, 6.28),
+            "pitch": rng.uniform(1.5, 3.5),
+            "amp": rng.uniform(0.5, 1.0),
+        })
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = x - cx
+            dy = y - cy
+            r = math.sqrt(dx * dx + dy * dy)
+            theta = math.atan2(dy, dx)
+            n = fbm(x * 0.0035, y * 0.0035, seed, octaves=2)
+            v = math.exp(-((r - bulge_r) / (bulge_r * 2.5)) ** 2) * bulge_amp * (0.8 + 0.4 * n)
+            for arm in arms:
+                t = min(1.0, r / arm["r0"])
+                arm_theta = arm["phase"] + t * arm["pitch"]
+                d = abs(((arm_theta - theta + 3.14) % (2 * math.pi)) - 3.14)
+                if d > math.pi:
+                    d = 2 * math.pi - d
+                w = math.exp(-((d / arm["width"]) ** 2) / 2.0) * math.exp(-t)
+                v += w * arm["amp"]
+            t_val = min(1.0, max(0.0, v / (bulge_amp + n_arms * 1.2)))
+            row.append(palette_color(stops, t_val * 0.95))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -611,6 +662,8 @@ def render(width, height, seed, style, palette_name):
         return render_constellations(width, height, seed, palette_name)
     if style == "cosmos":
         return render_cosmos(width, height, seed, palette_name)
+    if style == "galaxy":
+        return render_galaxy(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -754,7 +807,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
