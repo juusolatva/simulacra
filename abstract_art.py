@@ -28,6 +28,7 @@ Styles:
     shard       - fractured irregular gem shards with glow halos and cracks
     circuit    - glowing printed-circuit traces with node pads
     cosmic     - starfield with nebula glow and curved spiral arm
+    quasar     - glowing relativistic accretion disk with Doppler-beamed jets
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1163,6 +1164,71 @@ def render_cosmic(width, height, seed, palette_name):
     return pixels
 
 
+def render_quasar(width, height, seed, palette_name):
+    """Quasar: glowing relativistic accretion disk with Doppler-beamed jets and lensing glow."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    cx = (width - 1) / 2.0
+    cy = (height - 1) / 2.0
+    beta = rng.uniform(0.55, 0.9)
+    spin = rng.uniform(0.0, 2 * math.pi)
+    r_shadow = max(1.5, min(width, height) * rng.uniform(0.05, 0.11))
+    r_outer = min(width, height) * rng.uniform(1.4, 3.2)
+    jet_axis = (math.cos(spin), math.sin(spin))
+    jet_half_angle = rng.uniform(0.15, 0.3)
+    jet_len = rng.uniform(min(width, height) * 1.0, min(width, height) * 2.2)
+    orbits = sorted(rng.uniform(r_shadow * 1.25, r_outer) for _ in range(rng.randint(5, 8)))
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = x - cx
+            dy = y - cy
+            r = math.hypot(dx, dy)
+            theta = math.atan2(dy, dx)
+            v = 0.0
+            # gravitational lensing glow ring around the shadow
+            lens_r = r_shadow * 2.4
+            lens_w = max(1.0, r_shadow * 0.9)
+            v += math.exp(-((r - lens_r) ** 2) / (2.0 * lens_w * lens_w)) * 2.2
+            # black hole shadow with a hot inner edge
+            if r < r_shadow:
+                hot = math.exp(-((r - r_shadow) / max(1.0, r_shadow * 0.15)) ** 2 / 2.0)
+                v += hot * 2.5
+            # relativistic accretion disk: glowing orbit rings, hotter toward the hole
+            doppler = 0.35 + 0.65 * (0.5 - 0.5 * math.cos(theta))
+            disk_scale = max(1.0, r_outer - r_shadow)
+            disk_t = (r - r_shadow) / disk_scale
+            disk_level = 1.0 - 0.45 * (r / max(r_outer, 1.0))
+            for ro in orbits:
+                w = max(0.4, (ro - r_shadow * 1.2) * 0.06)
+                g = math.exp(-((r - ro) ** 2) / (2.0 * w * w)) * doppler * disk_level
+                v += g * (1.5 - 0.6 * disk_t)
+            # relativistic jets along the spin axis, with cone and Doppler beaming
+            ux, uy = jet_axis
+            px_ = -uy
+            py_ = ux
+            t = dx * ux + dy * uy
+            perp = dx * px_ + dy * py_
+            for s in (1.0, -1.0):
+                t0 = s * jet_len
+                cone_r = jet_half_angle * max(jet_len, 1.0)
+                if abs(perp) < cone_r:
+                    jw = max(0.5, jet_len * 0.05)
+                    jg = math.exp(-((t - t0) ** 2) / (2.0 * jw * jw))
+                    jg *= 1.0 - abs(perp) / cone_r
+                    jg *= (0.35 + 0.65 * beta) if s > 0 else (0.35 + 0.65 * (1.0 - beta))
+                    v += jg * (1.5 - 0.5 * abs(t) / jet_len)
+            # faint starfield backdrop
+            n = fbm(x * 0.004, y * 0.004, seed, octaves=2)
+            v += max(0.0, n - 0.5) * 0.6
+            tval = min(1.0, max(0.0, v / (len(orbits) * 2.2 + 4.0)))
+            row.append(palette_color(stops, tval))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -1224,6 +1290,8 @@ def render(width, height, seed, style, palette_name):
         return render_circuit(width, height, seed, palette_name)
     if style == "cosmic":
         return render_cosmic(width, height, seed, palette_name)
+    if style == "quasar":
+        return render_quasar(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1370,7 +1438,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
