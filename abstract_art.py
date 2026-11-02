@@ -33,6 +33,7 @@ Styles:
     crystal    - noise-grown terrain quantized into faceted gem crystal faces
     ember      - rising glowing embers with flicker and soft falloff
     comet      - fast glowing streaks with fading motion trails
+    ink        - flowing liquid ink strokes with tapered tails and soft edges
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1458,6 +1459,67 @@ def render_comet(width, height, seed, palette_name):
 
 
 
+
+def render_ink(width, height, seed, palette_name):
+    """Ink: flowing liquid ink strokes with tapered tails and soft edges.
+
+    Seeded strokes are quadratic bezier curves drawn with a tapered round
+    brush. Brush radius follows the curve's local curvature via the bezier
+    derivative, and strokes are accumulated into a glow buffer that is then
+    mapped through the palette.
+    """
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    strokes = []
+    n_strokes = rng.randint(5, 9)
+    for _ in range(n_strokes):
+        x0 = rng.uniform(0.0, width - 1.0)
+        y0 = rng.uniform(0.0, height - 1.0)
+        x1 = rng.uniform(0.0, width - 1.0)
+        y1 = rng.uniform(0.0, height - 1.0)
+        cx = rng.uniform(0.0, width - 1.0)
+        cy = rng.uniform(0.0, height - 1.0)
+        strokes.append({
+            "p0x": x0, "p0y": y0, "p1x": x1, "p1y": y1,
+            "cx": cx, "cy": cy,
+            "brush": rng.uniform(0.8, 3.0),
+            "alpha": rng.uniform(0.35, 0.9),
+        })
+    glow_sum = [0.0] * (width * height)
+    for st in strokes:
+        steps = max(8, int(math.hypot(st["p1x"] - st["p0x"], st["p1y"] - st["p0y"]) / 4.0) + 1)
+        prev_t = 0.0
+        for s in range(steps):
+            t = (s + 0.5) / steps
+            u = 1.0 - t
+            px = u * u * st["p0x"] + 2 * u * t * st["cx"] + t * t * st["p1x"]
+            py = u * u * st["p0y"] + 2 * u * t * st["cy"] + t * t * st["p1y"]
+            u0 = 1.0 - prev_t
+            p0x = u0 * u0 * st["p0x"] + 2 * u0 * prev_t * st["cx"] + prev_t * prev_t * st["p1x"]
+            p0y = u0 * u0 * st["p0y"] + 2 * u0 * prev_t * st["cy"] + prev_t * prev_t * st["p1y"]
+            bx = -2 * (1.0 - t) * st["p0x"] + 2 * (1.0 - 2.0 * t) * st["cx"] + 2 * t * st["p1x"]
+            by = -2 * (1.0 - t) * st["p0y"] + 2 * (1.0 - 2.0 * t) * st["cy"] + 2 * t * st["p1y"]
+            dcurv = math.hypot(bx, by) * 0.5
+            brush_r = st["brush"] * (1.0 - min(1.0, prev_t / max(1e-9, t))) * (0.6 + 0.4 * dcurv)
+            fall = max(0.0, 1.0 - math.hypot(px - p0x, py - p0y) / max(1e-9, brush_r))
+            g = fall ** 2.5 * st["alpha"]
+            if g > 0.0:
+                for ddx in range(-2, 3):
+                    for ddy in range(-2, 3):
+                        gx = abs(ddx) + abs(ddy)
+                        g2 = g * max(0.0, 1.0 - gx / 3.0) ** 2
+                        glow_sum[(int(py) % height) * width + (int(px) % width)] += g2
+            prev_t = t
+    pixels = []
+    for t in glow_sum:
+        if t <= 0.0:
+            row = [stops[0]] * width
+        else:
+            tt = min(1.0, max(0.0, t * 0.9 - 0.15))
+            row = [palette_color(stops, tt) for _ in range(width)]
+        pixels.append(row)
+    return pixels
+
 def render(width, height, seed, style, palette_name):
     if style == "waves":
         return render_waves(width, height, seed, palette_name)
@@ -1529,6 +1591,8 @@ def render(width, height, seed, style, palette_name):
         return render_ember(width, height, seed, palette_name)
     if style == "comet":
         return render_comet(width, height, seed, palette_name)
+    if style == "ink":
+        return render_ink(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1675,7 +1739,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala", "drift", "crystal", "ember", "comet"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala", "drift", "crystal", "ember", "comet", "ink"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
