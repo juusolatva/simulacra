@@ -1706,6 +1706,38 @@ def render_plasma(width, height, seed, palette_name):
 
 # ---------------------------------------------------------------- png writer
 
+def write_animated_png(path, frames, width, height, fps=12):
+    """Write an animated PNG from a sequence of frames."""
+    if not frames:
+        raise ValueError("no frames to write")
+    frame_count = len(frames)
+    frame_duration = int((1.0 / fps) * 1000) & 0xFFFF
+    frame_delay = struct.pack(">I", frame_duration) + struct.pack(">H", frame_duration & 0xFFFF)
+
+    def chunk(tag, data):
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    acTL = struct.pack(">II", frame_count, int(1.0 / fps))
+    fcTL = struct.pack(">IIBB", 0, 0, 0, frame_duration)
+    png = (b"\x89PNG\r\n\x1a\n"
+           + chunk(b"IHDR", ihdr)
+           + chunk(b"acTL", acTL)
+           + chunk(b"fcTL", fcTL))
+    for pixels in frames:
+        raw = bytearray()
+        for y in range(height):
+            raw.append(0)
+            for (r, g, b) in pixels[y]:
+                raw += bytes((int(r), int(g), int(b)))
+        idat = zlib.compress(bytes(raw), 9)
+        png += chunk(b"IDAT", idat)
+    png += chunk(b"IEND", b"")
+    with open(path, "wb") as f:
+        f.write(png)
+
+
 def write_png(path, pixels, width, height):
     raw = bytearray()
 
@@ -1745,11 +1777,20 @@ def main():
     parser.add_argument("--width", type=int, default=256)
     parser.add_argument("--height", type=int, default=256)
     parser.add_argument("--out", default="art.png")
+    parser.add_argument("--frames", type=int, default=1, help="number of animation frames to generate (default 1)")
     args = parser.parse_args()
 
     pixels = render(args.width, args.height, args.seed, args.style, args.palette)
-    write_png(args.out, pixels, args.width, args.height)
-    print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, args.seed, args.palette))
+    if args.frames > 1:
+        frames = [
+            render(args.width, args.height, args.seed * 100 + i, args.style, args.palette)
+            for i in range(args.frames)
+        ]
+        write_animated_png(args.out, frames, args.width, args.height, fps=12)
+        print("wrote %d animation frames to %s (%s, seed=%d, palette=%s)" % (args.frames, args.out, args.style, args.seed, args.palette))
+    else:
+        write_png(args.out, pixels, args.width, args.height)
+        print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, args.seed, args.palette))
 
 
 if __name__ == "__main__":
