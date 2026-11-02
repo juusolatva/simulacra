@@ -29,6 +29,34 @@ def time_style(style, width, height, seed, palette, repeat):
     return best
 
 
+def load_baseline(path, width, height):
+    """Seconds per style from a ``--save`` file; the canvas size must match."""
+    with open(path) as handle:
+        saved = json.load(handle)
+    if [saved.get("width"), saved.get("height")] != [width, height]:
+        raise ValueError("baseline was recorded at %sx%s" % (saved.get("width"), saved.get("height")))
+    return saved["seconds"]
+
+
+def print_report(results, baseline):
+    """Print styles slowest first, with speedups when a baseline is given."""
+    header = "%-15s %9s" % ("style", "seconds")
+    if baseline:
+        header += " %9s %8s" % ("before", "speedup")
+    print(header)
+    for style in sorted(results, key=lambda name: results[name], reverse=True):
+        line = "%-15s %9.3f" % (style, results[style])
+        if style in baseline:
+            line += " %9.3f %7.1fx" % (baseline[style], baseline[style] / results[style])
+        print(line)
+    total = sum(results.values())
+    footer = "%-15s %9.3f" % ("TOTAL", total)
+    if baseline:
+        before = sum(baseline[s] for s in results if s in baseline)
+        footer += " %9.3f %7.1fx" % (before, before / total)
+    print(footer)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Benchmark abstract_art render times")
     parser.add_argument("--size", type=int, default=256, help="square canvas size (default 256)")
@@ -50,34 +78,16 @@ def main():
     height = args.height or args.size
     if width <= 0 or height <= 0 or args.repeat <= 0:
         parser.error("sizes and repeat must be positive")
-
     baseline = {}
     if args.compare:
-        with open(args.compare) as handle:
-            saved = json.load(handle)
-        if [saved.get("width"), saved.get("height")] != [width, height]:
-            parser.error("baseline was recorded at %sx%s" % (saved.get("width"), saved.get("height")))
-        baseline = saved["seconds"]
+        try:
+            baseline = load_baseline(args.compare, width, height)
+        except ValueError as error:
+            parser.error(str(error))
 
-    results = {}
-    for style in styles:
-        results[style] = time_style(style, width, height, args.seed, args.palette, args.repeat)
-
-    header = "%-15s %9s" % ("style", "seconds")
-    if baseline:
-        header += " %9s %8s" % ("before", "speedup")
-    print(header)
-    for style in sorted(results, key=lambda name: results[name], reverse=True):
-        line = "%-15s %9.3f" % (style, results[style])
-        if style in baseline:
-            line += " %9.3f %7.1fx" % (baseline[style], baseline[style] / results[style])
-        print(line)
-    total = sum(results.values())
-    footer = "%-15s %9.3f" % ("TOTAL", total)
-    if baseline:
-        before = sum(baseline[s] for s in results if s in baseline)
-        footer += " %9.3f %7.1fx" % (before, before / total)
-    print(footer)
+    results = {style: time_style(style, width, height, args.seed, args.palette, args.repeat)
+               for style in styles}
+    print_report(results, baseline)
 
     if args.save:
         with open(args.save, "w") as handle:
