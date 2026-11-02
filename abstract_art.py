@@ -13,6 +13,7 @@ Styles:
     petals   - radial petal flower arrangements modulated by noise
     horizon   - layered mountain silhouettes over a gradient sky
     starburst - radiating starburst rays from a central point
+    interference - layered sine waves creating interference patterns
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -455,6 +456,30 @@ def render_starburst(width, height, seed, palette_name):
     return pixels
 
 
+def render_interference(width, height, seed, palette_name):
+    """Interference: layered sine waves creating interference patterns."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    layers = [
+        (rng.uniform(0, 6.28), rng.uniform(0.5, 2.5), rng.uniform(0, 4.0), rng.uniform(0, 20.0)),
+        (rng.uniform(0, 6.28), rng.uniform(0.5, 2.5), rng.uniform(0, 4.0), rng.uniform(0, 14.0)),
+        (rng.uniform(0, 6.28), rng.uniform(0.5, 2.5), rng.uniform(0, 4.0), rng.uniform(0, 9.0)),
+    ]
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for (phase, freq, amp, amp2) in layers:
+                v += math.sin(x * freq + y * freq * 0.8 + phase) * amp
+            n = fbm(x * 0.006, y * 0.006, seed, octaves=2)
+            v += (n * 0.5 + 0.5) * 2.0
+            t = min(1.0, max(0.0, math.sin(v * 0.35) * 0.5 + 0.5 + (n * 0.5 + 0.5 - 0.5) * 0.3))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -486,6 +511,8 @@ def render(width, height, seed, style, palette_name):
         return render_horizon(width, height, seed, palette_name)
     if style == "starburst":
         return render_starburst(width, height, seed, palette_name)
+    if style == "interference":
+        return render_interference(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -629,7 +656,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
