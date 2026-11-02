@@ -9,6 +9,7 @@ Styles:
     mandelbrot - classic Mandelbrot set framed by a palette gradient
     spiral   - polar spiral arms modulated by smooth winding phases
     nebula   - layered radial glow clouds with noise-driven starlight
+    kaleidoscope - radial symmetry patterns via folded angular sectors
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -316,6 +317,46 @@ def render_nebula(width, height, seed, palette_name):
     return pixels
 
 
+def render_kaleidoscope(width, height, seed, palette_name):
+    """Kaleidoscope: radial symmetric pattern repeated by angular folds."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    folds = rng.randint(4, 8)
+    lines = rng.randint(2, 5)
+    pattern = []
+    for i in range(lines):
+        ang = rng.uniform(0.0, 6.28)
+        rad = rng.uniform(0.3, 0.9)
+        prad = rng.uniform(0.15, 0.6)
+        pts = []
+        for k in range(0, 12):
+            a = ang + (k * 6.28) / 12.0
+            pts.append((a, prad * math.cos(k * 0.4) + rad * math.sin(k * 0.9)))
+        pattern.append(pts)
+    pixels = []
+    cx = (width - 1) / 2.0
+    cy = (height - 1) / 2.0
+    max_r = math.sqrt(cx * cx + cy * cy)
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = x - cx
+            dy = y - cy
+            r = math.sqrt(dx * dx + dy * dy)
+            theta = math.atan2(dy, dx)
+            v = 0.0
+            for i in range(folds):
+                ang_off = (theta + i * (6.28 / folds)) % (6.28 / folds) - (6.28 / (2 * folds))
+                for (ang0, prad) in pattern[i % lines]:
+                    d = abs(((ang0 + i * (6.28 / folds) - theta) + 3.14) % (6.28) - 3.14)
+                    if d < 0.25 and r > 0.5:
+                        v += math.exp(-((r - prad) ** 2) / 0.8) * math.cos(d * 20.0)
+            t = min(1.0, max(0.0, v / (folds * lines * 0.7)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -339,6 +380,8 @@ def render(width, height, seed, style, palette_name):
         return render_spiral(width, height, seed, palette_name)
     if style == "nebula":
         return render_nebula(width, height, seed, palette_name)
+    if style == "kaleidoscope":
+        return render_kaleidoscope(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -482,7 +525,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
