@@ -1,0 +1,331 @@
+"""Procedurally generated abstract art.
+
+Pure Python (stdlib only) generative art engine.
+
+Styles:
+    waves    - layered sine waves over a palette gradient
+    blobs    - fractal (fBm) noise fields mapped through palettes
+    orbits   - starfield with noise-driven orbital rings
+    mandelbrot - classic Mandelbrot set framed by a palette gradient
+
+Usage:
+    python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
+"""
+
+import argparse
+import math
+import random
+import struct
+import zlib
+
+# ---------------------------------------------------------------- palettes
+
+PALETTES = {
+    "deep": [
+        (13, 19, 49),
+        (27, 42, 94),
+        (61, 90, 153),
+        (111, 163, 206),
+        (168, 208, 230),
+    ],
+    "sunset": [
+        (26, 5, 51),
+        (93, 31, 63),
+        (168, 50, 74),
+        (232, 99, 92),
+        (249, 168, 39),
+    ],
+    "forest": [
+        (11, 31, 18),
+        (20, 61, 36),
+        (47, 107, 60),
+        (85, 160, 106),
+        (142, 201, 160),
+    ],
+    "ember": [
+        (26, 12, 8),
+        (64, 28, 18),
+        (130, 56, 30),
+        (216, 102, 48),
+        (255, 178, 102),
+    ],
+    "ocean": [
+        (8, 16, 38),
+        (16, 42, 72),
+        (32, 72, 106),
+        (56, 108, 140),
+        (96, 148, 178),
+    ],
+}
+
+
+# ---------------------------------------------------------------- noise
+
+def _hash(x, y, seed):
+    n = (x * 3747612 + y * 6682691 + seed * 974631) & 0xFFFFFFFF
+    n = (n ^ (n >> 13)) * 0x5BD1E995 & 0xFFFFFFFF
+    n = (n ^ (n >> 16)) & 0xFFFFFFFF
+    return n / 4294967295.0
+
+
+def value_noise(x, y, seed, cell=8.0):
+    gx = math.floor(x / cell)
+    gy = math.floor(y / cell)
+    fx = x / cell - gx
+    fy = y / cell - gy
+    fx = fx * fx * (3 - 2 * fx)
+    fy = fy * fy * (3 - 2 * fy)
+    n00 = _hash(gx, gy, seed)
+    n10 = _hash(gx + 1, gy, seed)
+    n01 = _hash(gx, gy + 1, seed)
+    n11 = _hash(gx + 1, gy + 1, seed)
+    return (n00 * (1 - fx) * (1 - fy) + n10 * fx * (1 - fy)
+            + n01 * (1 - fx) * fy + n11 * fx * fy)
+
+
+def fbm(x, y, seed, octaves=4, persistence=0.5, lacunarity=2.0):
+    total = 0.0
+    norm = 0.0
+    freq = 1.0
+    amp = 1.0
+    for _ in range(octaves):
+        total += value_noise(x * freq, y * freq, seed) * amp
+        norm += amp
+        amp *= persistence
+        freq *= lacunarity
+    return total / norm
+
+
+# ---------------------------------------------------------------- palettes
+
+def palette_color(stops, t):
+    """Map t in [0,1] to an RGB tuple using linear interpolation."""
+    t = max(0.0, min(1.0, t))
+    if t <= 0.0:
+        return stops[0]
+    if t >= 1.0:
+        return stops[-1]
+    for i in range(len(stops) - 1):
+        span = (i + 1) - i
+        if t <= (i + 1) / span:
+            local = (t - i / span) * span
+            r = stops[i][0] + (stops[i + 1][0] - stops[i][0]) * local
+            g = stops[i][1] + (stops[i + 1][1] - stops[i][1]) * local
+            b = stops[i][2] + (stops[i + 1][2] - stops[i][2]) * local
+            return (int(r), int(g), int(b))
+    return stops[-1]
+
+
+# ---------------------------------------------------------------- styles
+
+def render_waves(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    layers = [
+        (30.0, 2.0, rng.uniform(0, 6.28)),
+        (18.0, 3.5, rng.uniform(0, 6.28)),
+        (12.0, 5.0, rng.uniform(0, 6.28)),
+        (7.0, 7.0, rng.uniform(0, 6.28)),
+    ]
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            n = fbm(x * 0.015, y * 0.015, seed, octaves=3)
+            base = n * 0.5 + 0.5
+            v = base * 0.5
+            for (amp, freq, phase) in layers:
+                v += amp * 0.5 * math.sin(x * freq + y * freq * 0.9 + phase) * (0.5 + 0.5 * n)
+            t = min(1.0, max(0.0, v * 1.4))
+            c = palette_color(stops, t)
+            row.append(c)
+        pixels.append(row)
+    return pixels
+
+
+def render_blobs(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            n = fbm(x * 0.02, y * 0.02, seed, octaves=5)
+            t = n * 0.5 + 0.5
+            c = palette_color(stops, t)
+            row.append(c)
+        pixels.append(row)
+    return pixels
+
+
+def render_orbits(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    stars = [
+        (rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.5, 3.0))
+        for _ in range(60)
+    ]
+    pixels = []
+    cx = width / 2.0
+    cy = height / 2.0
+    max_r = math.sqrt(cx * cx + cy * cy)
+    rings = [
+        (max_r * rng.uniform(0.15, 0.9), rng.uniform(0, len(stops) - 1), rng.uniform(0, 6.28))
+        for _ in range(6)
+    ]
+    for y in range(height):
+        row = []
+        for x in range(width):
+            n = fbm(x * 0.008, y * 0.008, seed, octaves=3)
+            t = n * 0.5 + 0.5
+            c = palette_color(stops, t)
+            r = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+            for (radius, idx, phase) in rings:
+                if r > radius * 0.9 and r < radius * 1.1 and int(idx) >= 0 and int(idx) < len(stops):
+                    c = stops[int(idx)]
+            for (sx, sy, sr) in stars:
+                d = math.hypot(x - sx, y - sy)
+                if d < sr * 1.2:
+                    c = (255, 255, 255)
+            row.append(c)
+        pixels.append(row)
+    return pixels
+
+
+def render_mandelbrot(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    pixels = []
+    cx = -0.6
+    cy = 0.0
+    scale = 3.2 / min(width, height)
+    max_iter = 60
+    for y in range(height):
+        row = []
+        vy = (1 - 2 * y / height) * scale + cy
+        for x in range(width):
+            vx = (1 - 2 * x / width) * scale + cx
+            n = 0
+            zx = 0.0
+            zy = 0.0
+            while zx * zx + zy * zy < 4.0 and n < max_iter:
+                zx = zx * zx - zy * zy + cx
+                zy = 2 * zx * zy + cy
+                n += 1
+            if n < max_iter:
+                t = n / max_iter
+            else:
+                t = 1.0
+            c = palette_color(stops, t)
+            row.append(c)
+        pixels.append(row)
+    return pixels
+
+
+# ---------------------------------------------------------------- render dispatch
+
+def render(width, height, seed, style, palette_name):
+    if style == "waves":
+        return render_waves(width, height, seed, palette_name)
+    if style == "blobs":
+        return render_blobs(width, height, seed, palette_name)
+    if style == "orbits":
+        return render_orbits(width, height, seed, palette_name)
+    if style == "mandelbrot":
+        return render_mandelbrot(width, height, seed, palette_name)
+    if style == "gems":
+        return render_gemstones(width, height, seed, palette_name)
+    if style == "rings":
+        return render_rings(width, height, seed, palette_name)
+    raise ValueError("unknown style: %s" % style)
+def render_gemstones(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    gems = []
+    for i in range(3):
+        cx = rng.uniform(0, width - 1)
+        cy = rng.uniform(0, height - 1)
+        cr = rng.uniform(6, 12)
+        gems.append((cx, cy, cr, rng.uniform(0, 6.28)))
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            c = stops[0]
+            for (cx, cy, cr, rot) in gems:
+                dx = x - cx
+                dy = y - cy
+                d2 = dx * dx + dy * dy
+                if d2 < cr * cr:
+                    t = math.sqrt(d2) / cr
+                    v = 1.0 - t
+                    local = (math.cos(rot + t * 3.0) + 1.0) / 2.0
+                    c = palette_color(stops, min(1.0, max(0.0, v * local)))
+            row.append(c)
+        pixels.append(row)
+    return pixels
+
+
+def render_rings(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    rings_cfg = []
+    n_rings = rng.randint(4, 9)
+    for i in range(n_rings):
+        rings_cfg.append((rng.uniform(2.0, 8.0), rng.uniform(0, 1.0), rng.uniform(0, 6.28)))
+    pixels = []
+    cx = (width - 1) / 2.0
+    cy = (height - 1) / 2.0
+    for y in range(height):
+        row = []
+        for x in range(width):
+            c = stops[0]
+            for (radius, t0, phase) in rings_cfg:
+                r = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+                if r > radius * 0.9 and r < radius * 1.1:
+                    t = (math.atan2(y - cy, x - cx) + math.pi) / (2 * math.pi) + phase
+                    c = palette_color(stops, min(1.0, max(0.0, t)))
+            row.append(c)
+        pixels.append(row)
+    return pixels
+
+
+# ---------------------------------------------------------------- png writer
+
+def write_png(path, pixels, width, height):
+    raw = bytearray()
+    for y in range(height):
+        raw.append(0)
+        for (r, g, b) in pixels[y]:
+            raw += bytes((r, g, b))
+
+    def chunk(tag, data):
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    png = (b"\x89PNG\r\n\x1a\n"
+           + chunk(b"IHDR", ihdr)
+           + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+           + chunk(b"IEND", b""))
+    with open(path, "wb") as f:
+        f.write(png)
+
+
+# ---------------------------------------------------------------- cli
+
+def main():
+    parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings"])
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--palette", default="deep")
+    parser.add_argument("--width", type=int, default=256)
+    parser.add_argument("--height", type=int, default=256)
+    parser.add_argument("--out", default="art.png")
+    args = parser.parse_args()
+
+    pixels = render(args.width, args.height, args.seed, args.style, args.palette)
+    write_png(args.out, pixels, args.width, args.height)
+    print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, args.seed, args.palette))
+
+
+if __name__ == "__main__":
+    main()
