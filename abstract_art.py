@@ -41,8 +41,10 @@ Usage:
 
 import argparse
 import math
+import os
 import random
 import struct
+import tempfile
 import zlib
 
 # ---------------------------------------------------------------- palettes
@@ -229,7 +231,8 @@ def render_waves(width, height, seed, palette_name):
             base = n * 0.5 + 0.5
             v = base * 0.5
             for (amp, freq, phase) in layers:
-                v += amp * 0.5 * math.sin(x * freq + y * freq * 0.9 + phase) * (0.5 + 0.5 * n)
+                angle = (x + y * 0.9) * freq * math.tau / max(width, height) + phase
+                v += amp / 67.0 * math.sin(angle) * (0.5 + 0.5 * n)
             t = min(1.0, max(0.0, v * 1.4))
             c = palette_color(stops, t)
             row.append(c)
@@ -286,30 +289,23 @@ def render_orbits(width, height, seed, palette_name):
 
 
 def render_mandelbrot(width, height, seed, palette_name):
+    """Mandelbrot escape times with an aspect-correct complex-plane viewport."""
     stops = PALETTES[palette_name]
-    pixels = []
-    cx = -0.6
-    cy = 0.0
     scale = 3.2 / min(width, height)
-    max_iter = 60
+    max_iter = 100
+    pixels = []
     for y in range(height):
         row = []
-        vy = (1 - 2 * y / height) * scale + cy
+        cy = ((height - 1) / 2.0 - y) * scale
         for x in range(width):
-            vx = (1 - 2 * x / width) * scale + cx
+            cx = (x - (width - 1) / 2.0) * scale - 0.6
+            zx = zy = 0.0
             n = 0
-            zx = 0.0
-            zy = 0.0
-            while zx * zx + zy * zy < 4.0 and n < max_iter:
-                zx = zx * zx - zy * zy + cx
-                zy = 2 * zx * zy + cy
+            while zx * zx + zy * zy <= 4.0 and n < max_iter:
+                zx, zy = zx * zx - zy * zy + cx, 2.0 * zx * zy + cy
                 n += 1
-            if n < max_iter:
-                t = n / max_iter
-            else:
-                t = 1.0
-            c = palette_color(stops, t)
-            row.append(c)
+            t = 1.0 if n == max_iter else math.sqrt(n / max_iter)
+            row.append(palette_color(stops, t))
         pixels.append(row)
     return pixels
 
@@ -392,136 +388,98 @@ def render_nebula(width, height, seed, palette_name):
 
 
 def render_kaleidoscope(width, height, seed, palette_name):
-    """Kaleidoscope: radial symmetric pattern repeated by angular folds."""
+    """Mirror a noise-modulated radial pattern into equal angular sectors."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
     folds = rng.randint(4, 8)
-    lines = rng.randint(2, 5)
-    pattern = []
-    for i in range(lines):
-        ang = rng.uniform(0.0, 6.28)
-        rad = rng.uniform(0.3, 0.9)
-        prad = rng.uniform(0.15, 0.6)
-        pts = []
-        for k in range(0, 12):
-            a = ang + (k * 6.28) / 12.0
-            pts.append((a, prad * math.cos(k * 0.4) + rad * math.sin(k * 0.9)))
-        pattern.append(pts)
+    phase = rng.uniform(0.0, math.tau)
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    scale = max(1.0, min(width, height) / 2.0)
+    sector = math.tau / folds
     pixels = []
-    cx = (width - 1) / 2.0
-    cy = (height - 1) / 2.0
-    max_r = math.sqrt(cx * cx + cy * cy)
     for y in range(height):
         row = []
         for x in range(width):
-            dx = x - cx
-            dy = y - cy
-            r = math.sqrt(dx * dx + dy * dy)
-            theta = math.atan2(dy, dx)
-            v = 0.0
-            for i in range(folds):
-                ang_off = (theta + i * (6.28 / folds)) % (6.28 / folds) - (6.28 / (2 * folds))
-                for (ang0, prad) in pattern[i % lines]:
-                    d = abs(((ang0 + i * (6.28 / folds) - theta) + 3.14) % (6.28) - 3.14)
-                    if d < 0.25 and r > 0.5:
-                        v += math.exp(-((r - prad) ** 2) / 0.8) * math.cos(d * 20.0)
-            t = min(1.0, max(0.0, v / (folds * lines * 0.7)))
-            row.append(palette_color(stops, t))
+            dx, dy = (x - cx) / scale, (y - cy) / scale
+            r = math.hypot(dx, dy)
+            angle = abs((math.atan2(dy, dx) + sector / 2) % sector - sector / 2)
+            u, v = r * math.cos(angle), r * math.sin(angle)
+            n = fbm(u * 32, v * 32, seed, octaves=3)
+            t = 0.5 + 0.5 * math.sin(r * 18 + angle * folds * 2 + n * 4 + phase)
+            row.append(palette_color(stops, t * math.exp(-0.35 * r * r)))
         pixels.append(row)
     return pixels
 
 
 def render_petals(width, height, seed, palette_name):
-    """Petals: radial flower-like petals arranged around a center."""
+    """Radial flower with tapered petals and a luminous center."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
-    n_petals = rng.randint(5, 8)
-    petal_len = rng.uniform(0.4, 0.9)
-    petal_w = rng.uniform(0.05, 0.15)
-    center = (width - 1) / 2.0
-    mid = (height - 1) / 2.0
+    count = rng.randint(5, 8)
+    length = rng.uniform(0.65, 0.95)
+    phase = rng.uniform(0.0, math.tau)
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    scale = max(1.0, min(width, height) / 2.0)
     pixels = []
     for y in range(height):
         row = []
         for x in range(width):
-            dx = x - center
-            dy = y - mid
-            r = math.sqrt(dx * dx + dy * dy)
+            dx, dy = (x - cx) / scale, (y - cy) / scale
+            r = math.hypot(dx, dy)
             theta = math.atan2(dy, dx)
-            v = 0.0
-            for i in range(n_petals):
-                ang = theta + (i * 6.28) / n_petals
-                d = abs(((ang - theta) + 3.14) % (6.28) - 3.14)
-                if d < petal_w:
-                    t = math.sin(math.pi * d / petal_w) * (r / (petal_len * 2.0))
-                    v += t
-            n = fbm(x * 0.005, y * 0.005, seed, octaves=2)
-            v += (n * 0.5 + 0.5) * 0.25
-            t = min(1.0, max(0.0, v / (n_petals * 0.9)))
-            row.append(palette_color(stops, t))
+            angular = (0.5 + 0.5 * math.cos(count * theta + phase)) ** 3
+            radial = math.exp(-((r - length * 0.52) / (length * 0.3)) ** 2)
+            center = math.exp(-(r / 0.16) ** 2)
+            row.append(palette_color(stops, min(1.0, angular * radial + center)))
         pixels.append(row)
     return pixels
 
 
 def render_horizon(width, height, seed, palette_name):
-    """Horizon: layered mountain ridge silhouettes over a gradient sky."""
+    """Layered mountain silhouettes over a vertical gradient sky."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
-    layers = [
-        (height * 0.28, rng.uniform(0.0, 1.0), rng.uniform(0, len(stops) - 1)),
-        (height * 0.45, rng.uniform(0.0, 1.0), rng.uniform(0, len(stops) - 1)),
-        (height * 0.62, rng.uniform(0.0, 1.0), rng.uniform(0, len(stops) - 1)),
-        (height * 0.78, rng.uniform(0.0, 1.0), rng.uniform(0, len(stops) - 1)),
-    ]
+    layers = [(fraction, rng.uniform(0, 100), 0.55 - i * 0.13)
+              for i, fraction in enumerate((0.35, 0.5, 0.65, 0.8))]
+    ridges = []
+    for fraction, offset, color in layers:
+        ridge = [height * (fraction + 0.18 * (fbm(
+            x / max(1, width - 1) * 40, offset, seed, octaves=3) - 0.5))
+                 for x in range(width)]
+        ridges.append((ridge, palette_color(stops, color)))
     pixels = []
-    sky_t = 0.5
     for y in range(height):
         row = []
+        sky = palette_color(stops, 0.85 - 0.35 * y / max(1, height - 1))
         for x in range(width):
-            n = fbm(x * 0.006, y * 0.006, seed, octaves=3)
-            t = n * 0.5 + 0.5
-            r = math.sqrt((x - width / 2.0) ** 2 + (y - height / 2.0) ** 2)
-            v = 0.0
-            for (frac, noise_off, idx) in layers:
-                base_y = height - height * frac + noise_off * height
-                ridge = math.sin(x * 0.008 + y * 0.002) * 0.5 + 0.5
-                t_ = min(1.0, max(0.0, (ridge + (n - noise_off) * 0.6 - 0.5) / 0.6))
-                if y > base_y and t_ > 0.5:
-                    v += 1.0 - min(1.0, (y - base_y) / (height * 0.2)) * 0.9
-            t_val = min(1.0, max(0.0, sky_t + (t - sky_t) * 0.6 - v * 0.8))
-            row.append(palette_color(stops, t_val))
+            color = sky
+            for ridge, mountain_color in ridges:
+                if y >= ridge[x]:
+                    color = mountain_color
+            row.append(color)
         pixels.append(row)
     return pixels
 
 
 def render_starburst(width, height, seed, palette_name):
-    """Starburst: radiating rays from a central focal point."""
+    """Glowing rays radiating from a central focal point."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
     rays = rng.randint(8, 14)
-    rays_len = rng.uniform(0.4, 0.9)
-    rays_w = rng.uniform(0.02, 0.08)
-    focal_x = width / 2.0
-    focal_y = height / 2.0
+    phase = rng.uniform(0.0, math.tau)
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    scale = max(1.0, min(width, height) / 2.0)
     pixels = []
     for y in range(height):
         row = []
         for x in range(width):
-            dx = x - focal_x
-            dy = y - focal_y
-            r = math.sqrt(dx * dx + dy * dy)
+            dx, dy = (x - cx) / scale, (y - cy) / scale
+            r = math.hypot(dx, dy)
             theta = math.atan2(dy, dx)
-            v = 0.0
-            for i in range(rays):
-                ang = theta + (i * 6.28) / rays
-                d = abs(((ang - theta) + 3.14) % (6.28) - 3.14)
-                if d < rays_w:
-                    t = math.sin(math.pi * d / rays_w) * (r / (rays_len * 2.0))
-                    v += t
-            n = fbm(x * 0.004, y * 0.004, seed, octaves=2)
-            v += (n * 0.5 + 0.5) * 0.2
-            t = min(1.0, max(0.0, v / (rays * 0.5)))
-            row.append(palette_color(stops, t))
+            ray = (0.5 + 0.5 * math.cos(theta * rays + phase)) ** 12
+            glow = math.exp(-(r / 0.18) ** 2)
+            t = glow + ray * math.exp(-r * 1.3) * (1 - math.exp(-r * 12))
+            row.append(palette_color(stops, min(1.0, t)))
         pixels.append(row)
     return pixels
 
@@ -573,7 +531,7 @@ def render_constellations(width, height, seed, palette_name):
             sx, sy = stars[i]["x"], stars[i]["y"]
             ex, ey = stars[j]["x"], stars[j]["y"]
             dist = math.hypot(ex - sx, ey - sy)
-            if dist < 4.0 and dist <= max_dist:
+            if dist <= max_dist:
                 pairs.append((i, j, dist))
 
     for (i, j, dist) in pairs:
@@ -599,7 +557,7 @@ def render_constellations(width, height, seed, palette_name):
                 d = math.hypot(x - star["x"], y - star["y"])
                 v += math.exp(-((d / star["r"]) ** 2) / 2.0) * star["b"]
             v += line_grid[y][x]
-            t = min(1.0, max(0.0, v / (n_stars * 1.3)))
+            t = min(1.0, max(0.0, 1.0 - math.exp(-v)))
             row.append(palette_color(stops, t))
         pixels.append(row)
     return pixels
@@ -648,7 +606,7 @@ def render_galaxy(width, height, seed, palette_name):
     rng = random.Random(seed)
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
-    max_r = math.sqrt(cx * cx + cy * cy)
+    max_r = max(1.0, math.hypot(cx, cy))
     bulge_r = max_r * rng.uniform(0.10, 0.26)
     bulge_amp = rng.uniform(0.9, 1.5)
     n_arms = rng.randint(2, 3)
@@ -656,7 +614,7 @@ def render_galaxy(width, height, seed, palette_name):
     for _ in range(n_arms):
         arms.append({
             "r0": max_r * rng.uniform(0.015, 0.05),
-            "width": max_r * rng.uniform(0.012, 0.03),
+            "width": rng.uniform(0.08, 0.18),
             "phase": rng.uniform(0.0, 6.28),
             "pitch": rng.uniform(1.5, 3.5),
             "amp": rng.uniform(0.5, 1.0),
@@ -670,16 +628,14 @@ def render_galaxy(width, height, seed, palette_name):
             r = math.sqrt(dx * dx + dy * dy)
             theta = math.atan2(dy, dx)
             n = fbm(x * 0.0035, y * 0.0035, seed, octaves=2)
-            v = math.exp(-((r - bulge_r) / (bulge_r * 2.5)) ** 2) * bulge_amp * (0.8 + 0.4 * n)
+            v = math.exp(-0.5 * (r / bulge_r) ** 2) * bulge_amp * (0.8 + 0.4 * n)
             for arm in arms:
-                t = min(1.0, r / arm["r0"])
+                t = math.log1p(r / arm["r0"])
                 arm_theta = arm["phase"] + t * arm["pitch"]
-                d = abs(((arm_theta - theta + 3.14) % (2 * math.pi)) - 3.14)
-                if d > math.pi:
-                    d = 2 * math.pi - d
-                w = math.exp(-((d / arm["width"]) ** 2) / 2.0) * math.exp(-t)
+                d = abs((arm_theta - theta + math.pi) % math.tau - math.pi)
+                w = math.exp(-0.5 * (d / arm["width"]) ** 2 - r / max_r)
                 v += w * arm["amp"]
-            t_val = min(1.0, max(0.0, v / (bulge_amp + n_arms * 1.2)))
+            t_val = 1.0 - math.exp(-v)
             row.append(palette_color(stops, t_val * 0.95))
         pixels.append(row)
     return pixels
@@ -718,34 +674,32 @@ def render_bloom(width, height, seed, palette_name):
 
 
 def render_flowfield(width, height, seed, palette_name):
-    """Flow field: luminous particle trails traced along noise-driven curl-ish flow lines."""
+    """Particle trails following a smooth, deterministic noise vector field."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
-    particles = []
+    glow = [0.0] * (width * height)
+    scale = max(1.0, min(width, height))
+    step = max(0.35, scale / 200.0)
     for _ in range(rng.randint(40, 80)):
-        particles.append({
-            "x": rng.uniform(0, width - 1),
-            "y": rng.uniform(0, height - 1),
-            "px": 0.0,
-            "py": 0.0,
-            "step": rng.uniform(1.5, 4.0),
-        })
-    pixels = [[stops[0]] * width for _ in range(height)]
-    for _ in range(220):
-        p = rng.choice(particles)
-        ox, oy = p["x"], p["y"]
-        n1 = fbm(ox * 0.004, oy * 0.004, seed, octaves=2)
-        n2 = fbm(ox * 0.004, oy * 0.004, seed, octaves=3)
-        angle = math.atan2(n2 - n1, n1 + n2 + 0.001) + rng.uniform(0, 6.28)
-        nx = ox + math.cos(angle) * p["step"]
-        ny = oy + math.sin(angle) * p["step"]
-        nx = min(width - 1, max(0, nx))
-        ny = min(height - 1, max(0, ny))
-        t = min(1.0, max(0.0, n1 * 0.5 + 0.5))
-        pixels[int(ny)][int(nx)] = palette_color(stops, t)
-        p["x"] = nx
-        p["y"] = ny
-    return pixels
+        x, y = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
+        for _ in range(120):
+            angle = fbm(x / scale * 40, y / scale * 40, seed, octaves=3) * math.tau * 2
+            ox, oy = x, y
+            x += math.cos(angle) * step
+            y += math.sin(angle) * step
+            # Subpixel segment samples keep trails connected at any resolution.
+            samples = max(1, math.ceil(step * 2))
+            previous = None
+            for i in range(samples + 1):
+                fraction = i / samples
+                px = math.floor(ox + (x - ox) * fraction)
+                py = math.floor(oy + (y - oy) * fraction)
+                if 0 <= px < width and 0 <= py < height and (px, py) != previous:
+                    glow[py * width + px] += 0.15
+                    previous = (px, py)
+            if not (0 <= x < width and 0 <= y < height):
+                break
+    return _glow_pixels(glow, width, height, stops)
 
 
 def render_torus(width, height, seed, palette_name):
@@ -753,8 +707,7 @@ def render_torus(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
     R = rng.uniform(0.6, 1.2)
-    a = rng.uniform(2.5, 4.0)
-    b = rng.uniform(2.0, 5.0)
+    a, b = rng.choice(((2, 3), (3, 2), (3, 5), (5, 2)))
     samples = 2200
     pts = []
     for i in range(samples):
@@ -812,23 +765,22 @@ def render_torus(width, height, seed, palette_name):
 
 
 def render_voronoi(width, height, seed, palette_name):
-    """Voronoi: glowing cell clouds born from randomly placed seed sites."""
+    """Voronoi cells shaded by nearest-site distance with glowing boundaries."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
-    n_cells = rng.randint(10, 16)
-    sigma = rng.uniform(6.0, 18.0)
-    sites = [(rng.uniform(0, width - 1), rng.uniform(0, height - 1)) for _ in range(n_cells)]
+    sites = [(rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.1, 0.7))
+             for _ in range(rng.randint(10, 16))]
+    scale = max(1.0, min(width, height))
     pixels = []
     for y in range(height):
         row = []
         for x in range(width):
-            v = 0.0
-            for (sx, sy) in sites:
-                dx = x - sx
-                dy = y - sy
-                d2 = dx * dx + dy * dy
-                v += math.exp(-d2 / (2.0 * sigma * sigma))
-            t = min(1.0, max(0.0, v / n_cells))
+            distances = sorted((math.hypot(x - sx, y - sy), color)
+                               for sx, sy, color in sites)
+            nearest, color = distances[0]
+            gap = distances[1][0] - nearest
+            edge = math.exp(-gap / max(0.5, scale * 0.012))
+            t = color * math.exp(-nearest / (scale * 0.3)) + edge * 0.5
             row.append(palette_color(stops, t))
         pixels.append(row)
     return pixels
@@ -851,7 +803,7 @@ def render_pinwheel(width, height, seed, palette_name):
             theta = math.atan2(dy, dx) if (dx or dy) else 0.0
             t = min(1.0, max(0.0, r / max_r))
             arm_phase = theta * n_arms + t * twist
-            d = abs(((arm_phase - theta + math.pi) % (2 * math.pi)) - math.pi)
+            d = abs(((arm_phase + math.pi) % (2 * math.pi)) - math.pi)
             w = math.exp(-((d / (0.35 * (1.0 - t))) ** 2) / 2.0)
             n = fbm(x * 0.006, y * 0.006, seed, octaves=2)
             v = w * (1.0 - 0.35 * t) + (n * 0.5 + 0.5) * 0.15
@@ -876,7 +828,7 @@ def render_lissajous(width, height, seed, palette_name):
             "px": rng.uniform(0.0, 6.28),
             "py": rng.uniform(0.0, 6.28),
             "amp": rng.uniform(0.5, 1.0),
-            "sigma": rng.uniform(10.0, 26.0),
+            "sigma": max(0.8, min(width, height) * rng.uniform(0.008, 0.02)),
         })
 
     cx = (width - 1) / 2.0
@@ -887,14 +839,14 @@ def render_lissajous(width, height, seed, palette_name):
         pts = []
         for i in range(samples):
             t = 2.0 * math.pi * i / samples
-            pts.append((cx + c["ax"] * math.sin(c["fx"] * t + c["px"]),
-                        cy - c["ay"] * math.sin(c["fy"] * t + c["py"])))
+            pts.append((cx + cx * c["ax"] * math.sin(c["fx"] * t + c["px"]),
+                        cy - cy * c["ay"] * math.sin(c["fy"] * t + c["py"])))
         traced.append((pts, c))
 
     glow_values = []
     for (pts, c) in traced:
         min_d = [[1e9] * width for _ in range(height)]
-        R_GLOW = max(2, int(c["sigma"] * 0.5))
+        R_GLOW = max(2, math.ceil(c["sigma"] * 3))
         for (px, py) in pts:
             x0 = max(0, int(px - R_GLOW))
             x1 = min(width - 1, int(px + R_GLOW))
@@ -926,59 +878,29 @@ def render_lissajous(width, height, seed, palette_name):
 
 
 def render_geo(width, height, seed, palette_name):
-    """Geometric rosette: layered rotated polygons with glow halos."""
+    """Layered rotated regular polygons with glowing edges."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
-    layers = []
-    n_layers = rng.randint(4, 6)
-    for i in range(n_layers):
-        layers.append({
-            "sides": rng.randint(3, 8),
-            "rot": rng.uniform(0.0, 6.28),
-            "r": rng.uniform(0.55, 0.95) * math.sqrt((width / 2.0) ** 2 + (height / 2.0) ** 2),
-            "w": rng.uniform(0.06, 0.16),
-            "phase": rng.uniform(0.0, 6.28),
-        })
-
-    # rasterize each polygon ring into a min-distance field, then compose
-    fields = []
-    for L in layers:
-        min_d = [[1e9] * width for _ in range(height)]
-        cx = (width - 1) / 2.0
-        cy = (height - 1) / 2.0
-        steps = int(L["sides"] * 8)
-        pts = []
-        for i in range(steps):
-            t = 2.0 * math.pi * i / steps
-            px = cx + L["r"] * math.cos(t + L["phase"])
-            py = cy - L["r"] * math.sin(t + L["phase"])
-            pts.append((px, py))
-        R_GLOW = max(2, int(L["w"] * 10))
-        for (px, py) in pts:
-            x0 = max(0, int(px - R_GLOW)); x1 = min(width - 1, int(px + R_GLOW))
-            y0 = max(0, int(py - R_GLOW)); y1 = min(height - 1, int(py + R_GLOW))
-            for yy in range(y0, y1 + 1):
-                drow = min_d[yy]; dy = yy - py; dy2 = dy * dy
-                for xx in range(x0, x1 + 1):
-                    d = math.sqrt((xx - px) * (xx - px) + dy2)
-                    if d < drow[xx]:
-                        drow[xx] = d
-        fields.append((min_d, L))
-
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    scale = max(1.0, min(width, height) / 2.0)
+    polygons = []
+    for _ in range(rng.randint(4, 6)):
+        sides = rng.randint(3, 8)
+        radius = scale * rng.uniform(0.45, 0.95)
+        phase = rng.uniform(0.0, math.tau)
+        polygons.append([(cx + radius * math.cos(i * math.tau / sides + phase),
+                          cy + radius * math.sin(i * math.tau / sides + phase))
+                         for i in range(sides)])
     pixels = []
     for y in range(height):
         row = []
         for x in range(width):
-            v = 0.0
-            for (min_d, L) in fields:
-                d = min_d[y][x]
-                if d < 1e8 and L["r"] * 0.9 < math.hypot(x - (width - 1) / 2.0, y - (height - 1) / 2.0) < L["r"] * 1.1:
-                    v += math.exp(-((d / max(2.0, L["w"])) ** 2) / 2.0)
-            t = min(1.0, max(0.0, v / (n_layers * 1.1)))
-            row.append(palette_color(stops, t))
+            v = sum(math.exp(-0.5 * (_poly_min_dist(x, y, poly) /
+                                    max(0.6, scale * 0.025)) ** 2)
+                    for poly in polygons)
+            row.append(palette_color(stops, 1 - math.exp(-v)))
         pixels.append(row)
     return pixels
-
 
 
 def render_prism(width, height, seed, palette_name):
@@ -1176,6 +1098,18 @@ def render_cosmic(width, height, seed, palette_name):
     return pixels
 
 
+def _quasar_jet_glow(along, perpendicular, length, opening, shadow, beta):
+    """Bipolar cone emission along the visible axis, fading toward the tips."""
+    distance = abs(along)
+    if distance <= shadow or distance >= length:
+        return 0.0
+    cone_width = max(0.75, opening * (distance - shadow))
+    cross_section = math.exp(-0.5 * (perpendicular / cone_width) ** 2)
+    launch = min(1.0, (distance - shadow) / max(1.0, shadow * 0.5))
+    beaming = 0.35 + 0.65 * (beta if along > 0 else 1.0 - beta)
+    return 3.0 * cross_section * launch * math.exp(-2 * distance / length) * beaming
+
+
 def render_quasar(width, height, seed, palette_name):
     """Quasar: glowing relativistic accretion disk with Doppler-beamed jets and lensing glow."""
     stops = PALETTES[palette_name]
@@ -1228,15 +1162,7 @@ def render_quasar(width, height, seed, palette_name):
             py_ = ux
             t = dx * ux + dy * uy
             perp = dx * px_ + dy * py_
-            for s in (1.0, -1.0):
-                t0 = s * jet_len
-                cone_r = jet_half_angle * max(jet_len, 1.0)
-                if abs(perp) < cone_r:
-                    jw = max(0.5, jet_len * 0.05)
-                    jg = math.exp(-((t - t0) ** 2) / (2.0 * jw * jw))
-                    jg *= 1.0 - abs(perp) / cone_r
-                    jg *= (0.35 + 0.65 * beta) if s > 0 else (0.35 + 0.65 * (1.0 - beta))
-                    v += jg * (1.5 - 0.5 * abs(t) / jet_len)
+            v += _quasar_jet_glow(t, perp, jet_len, jet_half_angle, r_shadow, beta)
             # faint starfield backdrop
             n = fbm(x * 0.004, y * 0.004, seed, octaves=2)
             v += max(0.0, n - 0.5) * 0.6
@@ -1370,6 +1296,13 @@ def render_crystal(width, height, seed, palette_name):
 
 
 
+def _glow_pixels(values, width, height, stops):
+    """Map a row-major intensity buffer to a rectangular RGB image."""
+    return [[palette_color(stops, 1.0 - math.exp(-max(0.0, value)))
+             for value in values[y * width:(y + 1) * width]]
+            for y in range(height)]
+
+
 def render_ember(width, height, seed, palette_name):
     """Ember: rising glowing embers with flicker and soft radial falloff."""
     stops = PALETTES[palette_name]
@@ -1402,15 +1335,7 @@ def render_ember(width, height, seed, palette_name):
                 dx = xx - cx
                 g = glow * max(0.0, 1.0 - (dx / ((e["size"] * 2.0) + 0.01)) ** 2) ** 2
                 glow_sum[yy * width + xx] += g
-    pixels = []
-    for t in glow_sum:
-        if t <= 0.0:
-            row = [stops[0]] * width
-        else:
-            tt = min(1.0, max(0.0, t * 0.9 - 0.15))
-            row = [palette_color(stops, tt) for _ in range(width)]
-        pixels.append(row)
-    return pixels
+    return _glow_pixels(glow_sum, width, height, stops)
 
 
 
@@ -1431,96 +1356,60 @@ def render_comet(width, height, seed, palette_name):
         })
     glow_sum = [0.0] * (width * height)
     for c in comets:
-        steps = int(max(1, c["trail"] / 4.0))
+        steps = max(1, math.ceil(c["speed"] * 2))
         for s in range(steps):
             t = (s + 0.5) / steps
             px = c["x"] + math.cos(c["angle"]) * c["speed"] * t
             py = c["y"] + math.sin(c["angle"]) * c["speed"] * t
-            ix = int(px) % width
-            iy = int(py) % height
+            ix, iy = math.floor(px), math.floor(py)
             fall = max(0.0, 1.0 - t * 1.6)
             g = fall ** 3 * (0.4 + 0.6 * (1.0 - t))
-            for ddx in range(-2, 3):
-                for ddy in range(-2, 3):
-                    xx = (ix + ddx + width) % width
-                    yy = (iy + ddy + height) % height
-                    gx = abs(ddx) + abs(ddy)
-                    g2 = g * max(0.0, 1.0 - gx / 3.0) ** 2
-                    glow_sum[yy * width + xx] += g2
-    pixels = []
-    for t in glow_sum:
-        if t <= 0.0:
-            row = [stops[0]] * width
-        else:
-            tt = min(1.0, max(0.0, t * 0.9 - 0.15))
-            row = [palette_color(stops, tt) for _ in range(width)]
-        pixels.append(row)
-    return pixels
+            radius = c["width_px"]
+            reach = math.ceil(radius * 2)
+            for ddx in range(-reach, reach + 1):
+                for ddy in range(-reach, reach + 1):
+                    dx, dy = ix + ddx - px, iy + ddy - py
+                    d2 = dx * dx + dy * dy
+                    if d2 <= (radius * 2) ** 2:
+                        xx, yy = (ix + ddx) % width, (iy + ddy) % height
+                        glow_sum[yy * width + xx] += g * math.exp(-2 * d2 / radius ** 2)
+    return _glow_pixels(glow_sum, width, height, stops)
 
 
 
 
 def render_ink(width, height, seed, palette_name):
-    """Ink: flowing liquid ink strokes with tapered tails and soft edges.
-
-    Seeded strokes are quadratic bezier curves drawn with a tapered round
-    brush. Brush radius follows the curve's local curvature via the bezier
-    derivative, and strokes are accumulated into a glow buffer that is then
-    mapped through the palette.
-    """
+    """Quadratic Bezier ink strokes rasterized with a tapered soft brush."""
     stops = PALETTES[palette_name]
     rng = random.Random(seed)
-    strokes = []
-    n_strokes = rng.randint(5, 9)
-    for _ in range(n_strokes):
-        x0 = rng.uniform(0.0, width - 1.0)
-        y0 = rng.uniform(0.0, height - 1.0)
-        x1 = rng.uniform(0.0, width - 1.0)
-        y1 = rng.uniform(0.0, height - 1.0)
-        cx = rng.uniform(0.0, width - 1.0)
-        cy = rng.uniform(0.0, height - 1.0)
-        strokes.append({
-            "p0x": x0, "p0y": y0, "p1x": x1, "p1y": y1,
-            "cx": cx, "cy": cy,
-            "brush": rng.uniform(0.8, 3.0),
-            "alpha": rng.uniform(0.35, 0.9),
-        })
-    glow_sum = [0.0] * (width * height)
-    for st in strokes:
-        steps = max(8, int(math.hypot(st["p1x"] - st["p0x"], st["p1y"] - st["p0y"]) / 4.0) + 1)
-        prev_t = 0.0
-        for s in range(steps):
-            t = (s + 0.5) / steps
-            u = 1.0 - t
-            px = u * u * st["p0x"] + 2 * u * t * st["cx"] + t * t * st["p1x"]
-            py = u * u * st["p0y"] + 2 * u * t * st["cy"] + t * t * st["p1y"]
-            u0 = 1.0 - prev_t
-            p0x = u0 * u0 * st["p0x"] + 2 * u0 * prev_t * st["cx"] + prev_t * prev_t * st["p1x"]
-            p0y = u0 * u0 * st["p0y"] + 2 * u0 * prev_t * st["cy"] + prev_t * prev_t * st["p1y"]
-            bx = -2 * (1.0 - t) * st["p0x"] + 2 * (1.0 - 2.0 * t) * st["cx"] + 2 * t * st["p1x"]
-            by = -2 * (1.0 - t) * st["p0y"] + 2 * (1.0 - 2.0 * t) * st["cy"] + 2 * t * st["p1y"]
-            dcurv = math.hypot(bx, by) * 0.5
-            brush_r = st["brush"] * (1.0 - min(1.0, prev_t / max(1e-9, t))) * (0.6 + 0.4 * dcurv)
-            fall = max(0.0, 1.0 - math.hypot(px - p0x, py - p0y) / max(1e-9, brush_r))
-            g = fall ** 2.5 * st["alpha"]
-            if g > 0.0:
-                for ddx in range(-2, 3):
-                    for ddy in range(-2, 3):
-                        gx = abs(ddx) + abs(ddy)
-                        g2 = g * max(0.0, 1.0 - gx / 3.0) ** 2
-                        glow_sum[(int(py) % height) * width + (int(px) % width)] += g2
-            prev_t = t
-    pixels = []
-    for t in glow_sum:
-        if t <= 0.0:
-            row = [stops[0]] * width
-        else:
-            tt = min(1.0, max(0.0, t * 0.9 - 0.15))
-            row = [palette_color(stops, tt) for _ in range(width)]
-        pixels.append(row)
-    return pixels
+    glow = [0.0] * (width * height)
+    for _ in range(rng.randint(5, 9)):
+        x0, y0 = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
+        x1, y1 = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
+        cx, cy = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
+        brush = max(0.8, min(width, height) * rng.uniform(0.008, 0.025))
+        alpha = rng.uniform(0.35, 0.9)
+        length = math.hypot(cx - x0, cy - y0) + math.hypot(x1 - cx, y1 - cy)
+        steps = max(8, math.ceil(length * 2))
+        for i in range(steps + 1):
+            t = i / steps
+            u = 1 - t
+            px = u * u * x0 + 2 * u * t * cx + t * t * x1
+            py = u * u * y0 + 2 * u * t * cy + t * t * y1
+            radius = max(0.5, brush * (1 - t) ** 0.7)
+            reach = math.ceil(radius * 2)
+            for yy in range(max(0, int(py) - reach), min(height, int(py) + reach + 1)):
+                for xx in range(max(0, int(px) - reach), min(width, int(px) + reach + 1)):
+                    d2 = (xx - px) ** 2 + (yy - py) ** 2
+                    if d2 <= (radius * 2) ** 2:
+                        glow[yy * width + xx] += alpha * math.exp(-2 * d2 / radius ** 2) * 0.3
+    return _glow_pixels(glow, width, height, stops)
+
 
 def render(width, height, seed, style, palette_name):
+    _validate_dimensions(width, height)
+    if palette_name not in PALETTES:
+        raise ValueError("unknown palette: %s" % palette_name)
     if style == "waves":
         return render_waves(width, height, seed, palette_name)
     if style == "blobs":
@@ -1706,65 +1595,88 @@ def render_plasma(width, height, seed, palette_name):
 
 # ---------------------------------------------------------------- png writer
 
-def write_animated_png(path, frames, width, height, fps=12):
-    """Write an animated PNG from a sequence of frames."""
-    if not frames:
-        raise ValueError("no frames to write")
-    frame_count = len(frames)
-    frame_duration = int((1.0 / fps) * 1000) & 0xFFFF
-    frame_delay = struct.pack(">I", frame_duration) + struct.pack(">H", frame_duration & 0xFFFF)
-
-    def chunk(tag, data):
-        return (struct.pack(">I", len(data)) + tag + data
-                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
-
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    acTL = struct.pack(">II", frame_count, int(1.0 / fps))
-    fcTL = struct.pack(">IIBB", 0, 0, 0, frame_duration)
-    png = (b"\x89PNG\r\n\x1a\n"
-           + chunk(b"IHDR", ihdr)
-           + chunk(b"acTL", acTL)
-           + chunk(b"fcTL", fcTL))
-    for pixels in frames:
-        raw = bytearray()
-        for y in range(height):
-            raw.append(0)
-            for (r, g, b) in pixels[y]:
-                raw += bytes((int(r), int(g), int(b)))
-        idat = zlib.compress(bytes(raw), 9)
-        png += chunk(b"IDAT", idat)
-    png += chunk(b"IEND", b"")
-    with open(path, "wb") as f:
-        f.write(png)
+def _validate_dimensions(width, height):
+    if (not isinstance(width, int) or not isinstance(height, int)
+            or width <= 0 or height <= 0):
+        raise ValueError("width and height must be positive integers")
 
 
-def write_png(path, pixels, width, height):
-    raw = bytearray()
+def _png_chunk(tag, data):
+    return (struct.pack(">I", len(data)) + tag + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+
+def _png_pixels(pixels, width, height):
+    """Encode linear RGB samples consistently for still and animated PNGs."""
+    _validate_dimensions(width, height)
+    if len(pixels) != height or any(len(row) != width for row in pixels):
+        raise ValueError("pixel array must match width and height")
 
     def to_srgb(c):
         c = max(0.0, min(1.0, c / 255.0))
         if c > 0.0031308:
-            c = 1.055 * (c ** (1.0 / 2.4)) - 0.055
+            c = 1.055 * c ** (1.0 / 2.4) - 0.055
         else:
-            c = 12.92 * c
-        return int(min(255.0, max(0.0, c * 255.0 + 0.5)))
+            c *= 12.92
+        return int(c * 255 + 0.5)
 
-    for y in range(height):
-        raw.append(0)
-        for (r, g, b) in pixels[y]:
-            raw += bytes((to_srgb(r), to_srgb(g), to_srgb(b)))
+    raw = bytearray()
+    for row in pixels:
+        raw.append(0)  # PNG filter: None
+        for r, g, b in row:
+            raw.extend((to_srgb(r), to_srgb(g), to_srgb(b)))
+    return zlib.compress(raw, 9)
 
-    def chunk(tag, data):
-        return (struct.pack(">I", len(data)) + tag + data
-                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
 
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    png = (b"\x89PNG\r\n\x1a\n"
-           + chunk(b"IHDR", ihdr)
-           + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
-           + chunk(b"IEND", b""))
-    with open(path, "wb") as f:
-        f.write(png)
+def _png_header(width, height):
+    _validate_dimensions(width, height)
+    return (b"\x89PNG\r\n\x1a\n" + _png_chunk(
+        b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)))
+
+
+def write_animated_png(path, frames, width, height, fps=12):
+    """Write a looping APNG; each frame replaces the complete canvas."""
+    if not frames:
+        raise ValueError("no frames to write")
+    if not isinstance(fps, int) or not 1 <= fps <= 65535:
+        raise ValueError("fps must be an integer between 1 and 65535")
+    header = _png_header(width, height)
+    sequence = 0
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                dir=os.path.dirname(os.path.abspath(path)), prefix=".abstract-art-",
+                delete=False) as output:
+            temporary = output.name
+            output.write(header)
+            output.write(_png_chunk(b"acTL", struct.pack(">II", len(frames), 0)))
+            for index, pixels in enumerate(frames):
+                data = _png_pixels(pixels, width, height)
+                control = struct.pack(">IIIIIHHBB", sequence, width, height, 0, 0, 1, fps, 0, 0)
+                output.write(_png_chunk(b"fcTL", control))
+                sequence += 1
+                if index == 0:
+                    output.write(_png_chunk(b"IDAT", data))
+                else:
+                    output.write(_png_chunk(b"fdAT", struct.pack(">I", sequence) + data))
+                    sequence += 1
+            output.write(_png_chunk(b"IEND", b""))
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+
+
+def write_png(path, pixels, width, height):
+    data = _png_pixels(pixels, width, height)
+    with open(path, "wb") as output:
+        output.write(_png_header(width, height))
+        output.write(_png_chunk(b"IDAT", data))
+        output.write(_png_chunk(b"IEND", b""))
 
 
 # ---------------------------------------------------------------- cli
@@ -1773,22 +1685,27 @@ def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
     parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala", "drift", "crystal", "ember", "comet", "ink"])
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--palette", default="deep")
+    parser.add_argument("--palette", default="deep", choices=sorted(PALETTES))
     parser.add_argument("--width", type=int, default=256)
     parser.add_argument("--height", type=int, default=256)
     parser.add_argument("--out", default="art.png")
-    parser.add_argument("--frames", type=int, default=1, help="number of animation frames to generate (default 1)")
+    parser.add_argument("--frames", type=int, default=1,
+                        help="number of frames using consecutive seeds (default 1)")
     args = parser.parse_args()
 
-    pixels = render(args.width, args.height, args.seed, args.style, args.palette)
+    if args.width <= 0 or args.height <= 0:
+        parser.error("width and height must be positive")
+    if args.frames <= 0:
+        parser.error("frames must be positive")
     if args.frames > 1:
         frames = [
-            render(args.width, args.height, args.seed * 100 + i, args.style, args.palette)
+            render(args.width, args.height, args.seed + i, args.style, args.palette)
             for i in range(args.frames)
         ]
         write_animated_png(args.out, frames, args.width, args.height, fps=12)
         print("wrote %d animation frames to %s (%s, seed=%d, palette=%s)" % (args.frames, args.out, args.style, args.seed, args.palette))
     else:
+        pixels = render(args.width, args.height, args.seed, args.style, args.palette)
         write_png(args.out, pixels, args.width, args.height)
         print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, args.seed, args.palette))
 
