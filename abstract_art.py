@@ -25,6 +25,7 @@ Styles:
     lissajous  - glowing parametric harmonic curves (Lissajous figures)
     geo        - layered geometric rosettes with glow halos
     prism      - stacked faceted gem facets with ridge shading and glow
+    shard       - fractured irregular gem shards with glow halos and cracks
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1023,6 +1024,66 @@ def render_prism(width, height, seed, palette_name):
     return pixels
 
 
+
+def _seg_hit(x, y, p1, p2):
+    """Distance from point to segment (clamped), used for crack lines."""
+    x1, y1 = p1
+    x2, y2 = p2
+    dx, dy = x2 - x1, y2 - y1
+    seg_len2 = dx * dx + dy * dy
+    if seg_len2 < 1e-12:
+        return math.hypot(x - x1, y - y1)
+    t = ((x - x1) * dx + (y - y1) * dy) / seg_len2
+    t = max(0.0, min(1.0, t))
+    px, py = x1 + t * dx, y1 + t * dy
+    return math.hypot(x - px, y - py)
+
+
+
+def render_shard(width, height, seed, palette_name):
+    """Shard: fractured irregular gem shards with glow halos and crack lines."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_shards = rng.randint(2, 4)
+    shards = []
+    for _ in range(n_shards):
+        cx = rng.uniform(width * 0.2, width * 0.8)
+        cy = rng.uniform(height * 0.2, height * 0.8)
+        r = rng.uniform(min(width, height) * 0.15, min(width, height) * 0.42)
+        m = rng.randint(5, 8)
+        poly = []
+        for i in range(m):
+            ang = 2 * math.pi * i / m + rng.uniform(-0.12, 0.12)
+            rad = r * (0.55 + rng.uniform(0.45, 1.05))
+            poly.append((cx + rad * math.cos(ang), cy - rad * math.sin(ang)))
+        cracks = []
+        for _ in range(rng.randint(1, 3)):
+            i = rng.randrange(m)
+            j = rng.randrange(m)
+            cracks.append((poly[i], poly[j]))
+        shards.append({"cx": cx, "cy": cy, "r": r, "poly": poly, "cracks": cracks})
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for s in shards:
+                poly = s["poly"]
+                if _point_in_poly(x, y, poly):
+                    d = _poly_min_dist(x, y, poly)
+                    v += 0.55 * math.exp(-((d / max(1.0, s["r"] * 0.9)) ** 2) / 2.0)
+                d = _poly_min_dist(x, y, poly)
+                v += math.exp(-((d / max(1.0, s["r"] * 0.9)) ** 2) / 2.0) * 1.4
+                for (p1, p2) in s["cracks"]:
+                    if _seg_hit(x, y, p1, p2) < max(s["r"] * 0.12, 2.0):
+                        v += 0.9 * math.exp(-(_seg_hit(x, y, p1, p2) / max(1.0, s["r"] * 0.9)) ** 2 / 2.0)
+            t = min(1.0, max(0.0, v / (len(shards) * 2.2)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -1078,6 +1139,8 @@ def render(width, height, seed, style, palette_name):
         return render_geo(width, height, seed, palette_name)
     if style == "prism":
         return render_prism(width, height, seed, palette_name)
+    if style == "shard":
+        return render_shard(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1224,7 +1287,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
