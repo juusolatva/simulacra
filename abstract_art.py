@@ -24,6 +24,7 @@ Styles:
     pinwheel   - swirling radial pinwheel arms modulated by noise
     lissajous  - glowing parametric harmonic curves (Lissajous figures)
     geo        - layered geometric rosettes with glow halos
+    prism      - stacked faceted gem facets with ridge shading and glow
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -155,6 +156,42 @@ def palette_color(stops, t):
             b = stops[i][2] + (stops[i + 1][2] - stops[i][2]) * local
             return (int(r), int(g), int(b))
     return stops[-1]
+
+
+
+def _point_in_poly(x, y, poly):
+    """Ray casting point-in-polygon test."""
+    inside = False
+    n = len(poly)
+    j = n - 1
+    for i in range(n):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _poly_min_dist(x, y, poly):
+    """Minimum distance from point to polygon ring segments."""
+    n = len(poly)
+    best = 1e9
+    for i in range(n):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % n]
+        dx, dy = x2 - x1, y2 - y1
+        seg_len2 = dx * dx + dy * dy
+        if seg_len2 < 1e-12:
+            d = math.hypot(x - x1, y - y1)
+        else:
+            t = ((x - x1) * dx + (y - y1) * dy) / seg_len2
+            t = max(0.0, min(1.0, t))
+            px, py = x1 + t * dx, y1 + t * dy
+            d = math.hypot(x - px, y - py)
+        if d < best:
+            best = d
+    return best
 
 
 # ---------------------------------------------------------------- styles
@@ -927,6 +964,65 @@ def render_geo(width, height, seed, palette_name):
     return pixels
 
 
+
+def render_prism(width, height, seed, palette_name):
+    """Prism: stacked faceted gem facets with ridge shading and soft glow."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_gems = rng.randint(2, 5)
+    gems = []
+    for _ in range(n_gems):
+        gems.append({
+            "cx": rng.uniform(width * 0.15, width * 0.85),
+            "cy": rng.uniform(height * 0.15, height * 0.85),
+            "r": rng.uniform(20.0, min(width, height) * 0.28),
+            "glow": rng.uniform(0.5, 1.0),
+        })
+
+    scenes = []
+    for g in gems:
+        layers = []
+        base_r = g["r"]
+        n_layers = rng.randint(2, 4)
+        shrink = rng.uniform(0.55, 0.8)
+        for k in range(n_layers):
+            layers.append({
+                "sides": rng.randint(3, 6),
+                "r": base_r * (1.0 - shrink * (k + 1) / max(1, n_layers - 1)),
+                "phase": rng.uniform(0.0, 6.28),
+                "gain": rng.uniform(0.35, 0.9),
+            })
+        scenes.append((g, layers))
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for (g, layers) in scenes:
+                cx, cy, r = g["cx"], g["cy"], g["r"]
+                if abs(x - cx) > r or abs(y - cy) > r:
+                    continue
+                for L in layers:
+                    rL = L["r"]
+                    if rL < 1.0:
+                        continue
+                    poly = [
+                        (cx + rL * math.cos(2 * math.pi * i / L["sides"] + L["phase"]),
+                         cy - rL * math.sin(2 * math.pi * i / L["sides"] + L["phase"]))
+                        for i in range(L["sides"])
+                    ]
+                    if not _point_in_poly(x, y, poly):
+                        continue
+                    d = _poly_min_dist(x, y, poly)
+                    w = max(2.0, L["gain"] * 6.0)
+                    v += math.exp(-((d / w) ** 2) / 2.0)
+            t = min(1.0, max(0.0, v / (len(scenes) * 1.4)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -980,6 +1076,8 @@ def render(width, height, seed, style, palette_name):
         return render_lissajous(width, height, seed, palette_name)
     if style == "geo":
         return render_geo(width, height, seed, palette_name)
+    if style == "prism":
+        return render_prism(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1126,7 +1224,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
