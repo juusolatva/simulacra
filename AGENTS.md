@@ -4,7 +4,23 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-`abstract_art.py` is a single-file, standard-library-only generative art tool: 36 styles, 9 palettes, and PNG/APNG writers, plus a CLI. `test_abstract_art.py` holds the `unittest` suite. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. Third-party dependencies are allowed (the standard-library-only rule has been dropped), and a native Rust core is being added for speed.
+`abstract_art.py` is a generative art tool: 36 styles, 9 palettes, PNG/APNG writers and a CLI. `test_abstract_art.py` holds the `unittest` suite and `bench_abstract_art.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders 18 of the styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
+
+## Progress
+
+| Stage | Status | Where |
+| --- | --- | --- |
+| Bug fixes: color handling, noise range, dark and flat styles, writers, `STYLES` registry, tests | Done | PR #1 |
+| SonarQube cleanup: complexity ≤ 15, umask-safe writers | Done | PR #1 |
+| Benchmark script (`bench_abstract_art.py`) | Done | PR #2 |
+| Python algorithmic fixes: exact culling, segment-based torus and lissajous | Done | PR #2 |
+| Rust core (PyO3 + rayon) with packed `render_rgb()` | Done | PR #2 |
+| Native styles, batch 1 (18): blobs, bloom, circuit, cosmic, drift, galaxy, geo, interference, kaleidoscope, mandala, nebula, orbits, pinwheel, plasma, prism, quasar, shard, waves | Done | PR #2 |
+| Native styles, batch 2 (11 per-pixel): crystal, voronoi, cosmos, mandelbrot, aurora, spiral, petals, starburst, rings, gems, horizon | **Next** | — |
+| Native styles, batch 3 (7 brush and trail): torus, lissajous, constellations, ink, flowfield, comet, ember | To do; needs ordered stamping, see Performance below | — |
+| More functionality and options | Planned after performance | — |
+
+Measured at 640×480: all 36 styles took 178 s in pure Python at the start; with the Rust core they take about 25 s, of which the 18 remaining Python styles are nearly all. Each native style takes 3–77 ms.
 
 ## Commands
 
@@ -28,10 +44,10 @@ Do not commit generated images.
 - **Noise:** `fbm()` returns values in `[0, 1]` centered near 0.5. Do **not** treat it as `[-1, 1]` (`n * 0.5 + 0.5` was a past bug in 8 styles). Use `_contrast(n, gain)` to stretch it, and `polar_noise()` for anything indexed by an angle, because raw `theta` creates a seam at ±π.
 - **Colors:** palette stops are sRGB, and the writers store samples unchanged. Do not reintroduce a linear-to-sRGB conversion.
 - **Writers:** `_atomic_write()` writes to a temporary file created with `os.open(..., 0o666)` and then calls `os.replace()`. Never call `os.umask()`, since it is process-wide and unsafe with threads.
-- **Rust core (`core/`, module `abstract_art_core`):** optional; imported as `_core` (None when missing). Python generates the scene (all `random.Random` use) and passes plain numbers to Rust, which shades rows in parallel (rayon) and returns packed RGB bytes. `NATIVE_STYLES` maps style names to Python wrappers that build the scene and call the core; `render()`/`render_rgb()` use it automatically. Pass seeds through `_seed32()`.
-- **Native output must be byte-identical to Python.** Port expressions operation-for-operation in the same order (no algebraic rewrites, no `mul_add`, no `clamp` where Python's `max/min` NaN behavior differs), and keep the Python renderer as the reference. `test_native_styles_match_python_exactly` enforces this; extend its cases when porting a style. Split a style into `_x_scene()` (random layout) and `_x_value()` (per pixel) first, verifying unchanged output with a fingerprint.
+- **Rust core (`core/`, module `abstract_art_core`):** optional; imported as `_core` (None when missing). Python generates the scene (all `random.Random` use) with a `_x_scene()` builder that returns plain data. `NATIVE_STYLES` maps each native style to its builder, and `_core.render(style, width, height, seed, stops, scene)` reads the scene into a per-style Rust struct (`#[derive(FromPyObject)]`, `from_item_all`), shades rows in parallel (rayon) and returns packed RGB bytes. `render()` and `render_rgb()` use it automatically. Pass seeds through `_seed32()`. `_core.STYLES` must match `NATIVE_STYLES` (tested).
+- **Native output must be byte-identical to Python.** Port expressions operation-for-operation in the same order (no algebraic rewrites, no `mul_add`, no `clamp` where Python's `max/min` NaN behavior differs), and keep the Python renderer as the reference. `test_native_styles_match_python_exactly` enforces this; extend its cases when porting a style. Move the style's random layout into `_x_scene()` first and have the Python renderer use it, verifying unchanged output with a fingerprint. Rust helpers that replicate Python semantics live in `core/src/geometry.rs` (`py_mod`, `py_sum`, polygon and segment distances) and `core/src/styles/mod.rs` (`gaussian`, `unit`, `center`, `small_side`).
 - **Packed frames:** `render_rgb()` returns `width * height * 3` bytes; the writers accept rows or packed bytes (`_packed_rgb`). The CLI uses packed frames.
-- **Helpers for keeping functions small:** `_shade(width, height, stops, value)` builds rows from a per-pixel `value(x, y)`. `_box_distances()` yields the cells around a point for curve stamping. `_glow_pixels()` maps a flat intensity buffer to rows.
+- **Helpers for keeping functions small:** `_shade(width, height, stops, value)` builds rows from a per-pixel `value(x, y)`. `_sample_by_length()` and `_segment_box()` sample curves and yield the pixels near a segment. `_RowFilter` hands per-pixel code only the objects that can reach a row. `_glow_pixels()` maps a flat intensity buffer to rows.
 
 ## Conventions
 
@@ -48,12 +64,13 @@ Project key: `juusolatva_abstract-art`.
 
 - **S2245 (pseudorandom generator):** false positive. Seeded `random.Random` is used deliberately for reproducible art.
 - **S5863 in the determinism test:** false positive. The two sides are separate renders that must be equal.
-- **pythonsecurity:S8707 (path traversal on `--out`):** accepted. A local CLI writes where its user asks.
+- **pythonsecurity:S8707 (path traversal on `--out`, or on the benchmark's `--save` and `--compare`):** accepted. A local tool reads and writes where its user asks.
+- **Re-raised findings:** moving code (for example into a new `_x_scene()` or helper) makes SonarQube report the same S2245 or S8707 again at the new location. Triage them the same way, noting in the comment that the code moved.
 - **S1172 (`seed` unused in `render_mandelbrot`):** accepted, because the shared renderer signature requires it.
 
 ## Known issues and follow-ups
 
-### Performance (the next planned work)
+### Performance
 
 Pure Python takes about 178 s for all 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core covers the 18 per-pixel styles in `NATIVE_STYLES` (blobs, bloom, circuit, cosmic, drift, galaxy, geo, interference, kaleidoscope, mandala, nebula, orbits, pinwheel, plasma, prism, quasar, shard, waves). They are 78–918× faster, and all 36 styles now take about 25 s. Algorithmic fixes are done in Python first because they carry over to Rust. Single-run timings on this machine vary by about ±30%, so use `--repeat` and compare against a fresh baseline.
 
