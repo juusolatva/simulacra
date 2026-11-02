@@ -9,6 +9,7 @@ Styles:
     mandelbrot - classic Mandelbrot set framed by a palette gradient
     spiral   - polar spiral arms modulated by smooth winding phases
     bloom    - radial glowing cloud blooms
+    flowfield - noise-driven particle flow trails
     constellations - starfield with connected constellation lines
     cosmos - concentric ripples from luminous centers
     nebula   - layered radial glow clouds with noise-driven starlight
@@ -657,6 +658,38 @@ def render_bloom(width, height, seed, palette_name):
     return pixels
 
 
+
+def render_flowfield(width, height, seed, palette_name):
+    """Flow field: luminous particle trails traced along noise-driven curl-ish flow lines."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    particles = []
+    for _ in range(rng.randint(40, 80)):
+        particles.append({
+            "x": rng.uniform(0, width - 1),
+            "y": rng.uniform(0, height - 1),
+            "px": 0.0,
+            "py": 0.0,
+            "step": rng.uniform(1.5, 4.0),
+        })
+    pixels = [[stops[0]] * width for _ in range(height)]
+    for _ in range(220):
+        p = rng.choice(particles)
+        ox, oy = p["x"], p["y"]
+        n1 = fbm(ox * 0.004, oy * 0.004, seed, octaves=2)
+        n2 = fbm(ox * 0.004, oy * 0.004, seed, octaves=3)
+        angle = math.atan2(n2 - n1, n1 + n2 + 0.001) + rng.uniform(0, 6.28)
+        nx = ox + math.cos(angle) * p["step"]
+        ny = oy + math.sin(angle) * p["step"]
+        nx = min(width - 1, max(0, nx))
+        ny = min(height - 1, max(0, ny))
+        t = min(1.0, max(0.0, n1 * 0.5 + 0.5))
+        pixels[int(ny)][int(nx)] = palette_color(stops, t)
+        p["x"] = nx
+        p["y"] = ny
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -698,6 +731,8 @@ def render(width, height, seed, style, palette_name):
         return render_galaxy(width, height, seed, palette_name)
     if style == "bloom":
         return render_bloom(width, height, seed, palette_name)
+    if style == "flowfield":
+        return render_flowfield(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -844,7 +879,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
