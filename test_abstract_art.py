@@ -84,6 +84,7 @@ class RenderingTests(unittest.TestCase):
             largest = max(largest, count)
         self.assertGreater(largest, 100)
 
+    @mock.patch.object(art, '_core', None)  # patches a Python helper the Rust path doesn't use
     def test_quasar_jets_change_visible_pixels(self):
         pixels = art.render(64, 64, 1, 'quasar', 'deep')
         with mock.patch.object(art, '_quasar_jet_glow', return_value=0.0):
@@ -277,6 +278,45 @@ class RenderingTests(unittest.TestCase):
             x, y = rng.randint(-60, 60), rng.randint(-60, 60)
             self.assertEqual(art._nearest_segment(x, y, segments),
                              min(art._seg_hit(x, y, s[0], s[1]) for s in segments))
+
+    def test_render_rgb_packs_render_output(self):
+        for style in ('ink', 'drift', 'orbits'):
+            with self.subTest(style=style):
+                rows = art.render(23, 17, 4, style, 'sunset')
+                packed = art.render_rgb(23, 17, 4, style, 'sunset')
+                self.assertEqual(packed, bytes(v for row in rows for c in row for v in c))
+
+    def test_writers_accept_packed_rgb(self):
+        rows = [[(0, 64, 255), (255, 128, 0)], [(1, 2, 3), (4, 5, 6)]]
+        packed = bytes(v for row in rows for c in row for v in c)
+        with tempfile.TemporaryDirectory() as directory:
+            from_rows = pathlib.Path(directory) / 'rows.png'
+            from_bytes = pathlib.Path(directory) / 'bytes.png'
+            art.write_png(from_rows, rows, 2, 2)
+            art.write_png(from_bytes, packed, 2, 2)
+            self.assertEqual(from_rows.read_bytes(), from_bytes.read_bytes())
+            with self.assertRaises(ValueError):
+                art.write_png(from_bytes, packed[:-1], 2, 2)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_styles_match_python_exactly(self):
+        cases = ((37, 23, 1, 'deep'), (64, 48, -7, 'neon'), (1, 1, 2 ** 40 + 3, 'gold'),
+                 (2, 5, 9, 'ocean'))
+        for style in art.NATIVE_STYLES:
+            for width, height, seed, palette in cases:
+                with self.subTest(style=style, size=(width, height), seed=seed):
+                    native = art.render_rgb(width, height, seed, style, palette)
+                    with mock.patch.object(art, '_core', None):
+                        python = art.render_rgb(width, height, seed, style, palette)
+                    self.assertEqual(native, python)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_noise_and_palette_match_python(self):
+        for x, y, seed, octaves in ((-3.7, 12.25, 77, 4), (1e6, -1e6, 0, 3), (0.5, 0.5, 2 ** 32 - 1, 1)):
+            self.assertEqual(art._core.fbm(x, y, seed, octaves), art.fbm(x, y, seed, octaves))
+        for t in (-1.0, 0.0, 0.3, 0.999, 1.0, 2.0):
+            self.assertEqual(art._core.palette_color(art.PALETTES['ember'], t),
+                             art.palette_color(art.PALETTES['ember'], t))
 
     def test_failed_still_write_preserves_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:

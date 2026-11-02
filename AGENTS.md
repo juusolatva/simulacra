@@ -9,7 +9,11 @@ Guidance for coding agents working in this repository. User-facing documentation
 ## Commands
 
 ```bash
-python3 -m unittest -q                     # full suite (~15 s)
+python3 -m unittest -q                     # full suite, pure Python (native tests skip)
+.venv/bin/python -m unittest -q            # with the Rust core: also checks native == Python
+source .venv/bin/activate && maturin develop --release -m core/Cargo.toml   # rebuild core
+cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/Cargo.toml --all-targets
+python3 bench_abstract_art.py --width 640 --height 480 --compare <saved.json>
 python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
 python3 abstract_art.py --help             # lists styles (from STYLES) and palettes
 ```
@@ -24,6 +28,9 @@ Do not commit generated images.
 - **Noise:** `fbm()` returns values in `[0, 1]` centered near 0.5. Do **not** treat it as `[-1, 1]` (`n * 0.5 + 0.5` was a past bug in 8 styles). Use `_contrast(n, gain)` to stretch it, and `polar_noise()` for anything indexed by an angle, because raw `theta` creates a seam at ±π.
 - **Colors:** palette stops are sRGB, and the writers store samples unchanged. Do not reintroduce a linear-to-sRGB conversion.
 - **Writers:** `_atomic_write()` writes to a temporary file created with `os.open(..., 0o666)` and then calls `os.replace()`. Never call `os.umask()`, since it is process-wide and unsafe with threads.
+- **Rust core (`core/`, module `abstract_art_core`):** optional; imported as `_core` (None when missing). Python generates the scene (all `random.Random` use) and passes plain numbers to Rust, which shades rows in parallel (rayon) and returns packed RGB bytes. `NATIVE_STYLES` maps style names to Python wrappers that build the scene and call the core; `render()`/`render_rgb()` use it automatically. Pass seeds through `_seed32()`.
+- **Native output must be byte-identical to Python.** Port expressions operation-for-operation in the same order (no algebraic rewrites, no `mul_add`, no `clamp` where Python's `max/min` NaN behavior differs), and keep the Python renderer as the reference. `test_native_styles_match_python_exactly` enforces this; extend its cases when porting a style. Split a style into `_x_scene()` (random layout) and `_x_value()` (per pixel) first, verifying unchanged output with a fingerprint.
+- **Packed frames:** `render_rgb()` returns `width * height * 3` bytes; the writers accept rows or packed bytes (`_packed_rgb`). The CLI uses packed frames.
 - **Helpers for keeping functions small:** `_shade(width, height, stops, value)` builds rows from a per-pixel `value(x, y)`. `_box_distances()` yields the cells around a point for curve stamping. `_glow_pixels()` maps a flat intensity buffer to rows.
 
 ## Conventions
@@ -48,7 +55,7 @@ Project key: `juusolatva_abstract-art`.
 
 ### Performance (the next planned work)
 
-Rendering is pure Python with per-pixel loops: about 178 s for all 36 styles at 640×480 (quasar alone 43 s; see `bench_abstract_art.py`). Algorithmic fixes are done in Python first because they carry over to Rust. The per-pixel work then moves to a Rust core (PyO3 + rayon). Python keeps the CLI, the API and scene generation (`random.Random`), so seeds stay compatible.
+Pure Python takes about 178 s for all 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core currently covers `drift` and `quasar`, about 870× faster at 640×480 (quasar 43 s to 0.05 s; 4K in about 1.4 s). The remaining 34 styles still render in Python; porting them, slowest first, is the next step. Algorithmic fixes are done in Python first because they carry over to Rust.
 
 - **Culling has been done** for the cases that keep output byte-identical: row filtering (`_RowFilter`) for stars in `orbits`, `nebula`, `cosmic` and `constellations`, and for glyphs in `mandala`; exact-zero ring bands in `mandala`; column bounds in `ember`; and bounding-box pruning of segments in `circuit` (`_nearest_segment`). A skip is allowed only where a contribution is exactly zero, either from a hard cutoff or because `exp()` underflows past `GAUSSIAN_ZERO` standard deviations.
 - **`render_torus` and `render_lissajous`** now sample their curves at a spacing tied to the glow width and measure distances to line segments (`_sample_by_length`, `_segment_box`), so curve drawing grows with the pixel count. This fixed the torus issue Greptile raised on PR #1. Their remaining cost is per-pixel work (background noise in torus).
@@ -58,7 +65,7 @@ Rendering is pure Python with per-pixel loops: about 178 s for all 36 styles at 
   - `render_geo` and `render_shard` measure every polygon edge at every pixel. Their Gaussian halos are too wide to cull exactly.
   - All noise-based styles pay for pure-Python `fbm()`.
 
-  These are the targets for the Rust core.
+  Except for quasar, which is now in the Rust core, these are the next styles to port.
 - **PNG encoding** builds a `bytearray` per pixel in Python. A 256-entry lookup table or `bytes` joins would be faster.
 - **No resource guard:** there are no limits on `--width`, `--height` or `--frames`, and the CLI holds all animation frames in memory before writing them.
 

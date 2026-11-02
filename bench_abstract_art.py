@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Benchmark render time per style.
+"""Benchmark render time per style (via render_rgb, the path the CLI uses).
 
 Examples:
     python3 bench_abstract_art.py                          # all styles, 256x256
@@ -24,7 +24,7 @@ def time_style(style, width, height, seed, palette, repeat):
     best = float("inf")
     for _ in range(repeat):
         start = time.perf_counter()
-        art.render(width, height, seed, style, palette)
+        art.render_rgb(width, height, seed, style, palette)
         best = min(best, time.perf_counter() - start)
     return best
 

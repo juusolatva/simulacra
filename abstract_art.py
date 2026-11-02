@@ -55,6 +55,12 @@ import random
 import struct
 import zlib
 
+try:
+    # Optional Rust core (see core/); every style also has a pure-Python renderer.
+    import abstract_art_core as _core
+except ImportError:
+    _core = None
+
 # ---------------------------------------------------------------- palettes
 
 PALETTES = {
@@ -1183,64 +1189,74 @@ def _quasar_jet_glow(along, perpendicular, length, opening, shadow, beta):
     return 3.0 * cross_section * launch * math.exp(-2 * distance / length) * beaming
 
 
-def render_quasar(width, height, seed, palette_name):
-    """Quasar: glowing relativistic accretion disk with Doppler-beamed jets and lensing glow."""
-    stops = PALETTES[palette_name]
+def _quasar_scene(width, height, seed):
+    """Random layout for a quasar; shared by the Python and Rust renderers."""
     rng = random.Random(seed)
-    cx = (width - 1) / 2.0
-    cy = (height - 1) / 2.0
     beta = rng.uniform(0.55, 0.9)
     spin = rng.uniform(0.0, 2 * math.pi)
     r_shadow = max(1.5, min(width, height) * rng.uniform(0.05, 0.11))
     r_outer = min(width, height) * rng.uniform(1.4, 3.2)
-    jet_axis = (math.cos(spin), math.sin(spin))
     jet_half_angle = rng.uniform(0.15, 0.3)
     jet_len = rng.uniform(min(width, height) * 1.0, min(width, height) * 2.2)
     orbits = sorted(rng.uniform(r_shadow * 1.25, r_outer) for _ in range(rng.randint(5, 8)))
+    return {
+        "center": ((width - 1) / 2.0, (height - 1) / 2.0),
+        "beta": beta,
+        "r_shadow": r_shadow,
+        "r_outer": r_outer,
+        "jet_axis": (math.cos(spin), math.sin(spin)),
+        "jet_half_angle": jet_half_angle,
+        "jet_len": jet_len,
+        # Each orbit ring has its own turbulence seed.
+        "orbits": [(ro, seed + int(ro * 10.0)) for ro in orbits],
+    }
 
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            dx = x - cx
-            dy = y - cy
-            r = math.hypot(dx, dy)
-            theta = math.atan2(dy, dx)
-            v = 0.0
-            # gravitational lensing glow ring around the shadow
-            lens_r = r_shadow * 2.4
-            lens_w = max(1.0, r_shadow * 0.9)
-            lens_wob = 0.7 + 0.6 * polar_noise(r * 0.35, theta, seed, 2.0)
-            lens_w = max(0.4, lens_w * lens_wob)
-            v += math.exp(-((r - lens_r) ** 2) / (2.0 * lens_w * lens_w)) * 2.2
-            # black hole shadow with a hot inner edge
-            if r < r_shadow:
-                hot = math.exp(-((r - r_shadow) / max(1.0, r_shadow * 0.15)) ** 2 / 2.0)
-                v += hot * 2.5
-            # relativistic accretion disk: glowing orbit rings, hotter toward the hole
-            doppler = 0.35 + 0.65 * (0.5 - 0.5 * math.cos(theta))
-            disk_scale = max(1.0, r_outer - r_shadow)
-            disk_t = (r - r_shadow) / disk_scale
-            disk_level = 1.0 - 0.45 * (r / max(r_outer, 1.0))
-            for ro in orbits:
-                w = max(0.4, (ro - r_shadow * 1.2) * 0.06)
-                # turbulence makes the glow rings irregular and organic
-                wob = 0.35 + 0.65 * polar_noise(r * 0.5, theta, seed + int(ro * 10.0),
-                                                3.0, octaves=3)
-                ro_t = ro + w * (wob - 0.5)
-                g = math.exp(-((r - ro_t) ** 2) / (2.0 * w * w)) * doppler * disk_level
-                v += g * (1.5 - 0.6 * disk_t)
-            # relativistic jets along the spin axis, with cone and Doppler beaming
-            ux, uy = jet_axis
-            t = dx * ux + dy * uy
-            perp = -dx * uy + dy * ux
-            v += _quasar_jet_glow(t, perp, jet_len, jet_half_angle, r_shadow, beta)
-            # faint starfield backdrop
-            n = fbm(x * 0.004, y * 0.004, seed, octaves=2)
-            v += max(0.0, n - 0.5) * 0.6
-            row.append(palette_color(stops, 1.0 - math.exp(-0.75 * v)))
-        pixels.append(row)
-    return pixels
+
+def _quasar_value(x, y, seed, q):
+    dx = x - q["center"][0]
+    dy = y - q["center"][1]
+    r_shadow, r_outer = q["r_shadow"], q["r_outer"]
+    r = math.hypot(dx, dy)
+    theta = math.atan2(dy, dx)
+    v = 0.0
+    # gravitational lensing glow ring around the shadow
+    lens_r = r_shadow * 2.4
+    lens_w = max(1.0, r_shadow * 0.9)
+    lens_wob = 0.7 + 0.6 * polar_noise(r * 0.35, theta, seed, 2.0)
+    lens_w = max(0.4, lens_w * lens_wob)
+    v += math.exp(-((r - lens_r) ** 2) / (2.0 * lens_w * lens_w)) * 2.2
+    # black hole shadow with a hot inner edge
+    if r < r_shadow:
+        hot = math.exp(-((r - r_shadow) / max(1.0, r_shadow * 0.15)) ** 2 / 2.0)
+        v += hot * 2.5
+    # relativistic accretion disk: glowing orbit rings, hotter toward the hole
+    doppler = 0.35 + 0.65 * (0.5 - 0.5 * math.cos(theta))
+    disk_scale = max(1.0, r_outer - r_shadow)
+    disk_t = (r - r_shadow) / disk_scale
+    disk_level = 1.0 - 0.45 * (r / max(r_outer, 1.0))
+    for ro, orbit_seed in q["orbits"]:
+        w = max(0.4, (ro - r_shadow * 1.2) * 0.06)
+        # turbulence makes the glow rings irregular and organic
+        wob = 0.35 + 0.65 * polar_noise(r * 0.5, theta, orbit_seed, 3.0, octaves=3)
+        ro_t = ro + w * (wob - 0.5)
+        g = math.exp(-((r - ro_t) ** 2) / (2.0 * w * w)) * doppler * disk_level
+        v += g * (1.5 - 0.6 * disk_t)
+    # relativistic jets along the spin axis, with cone and Doppler beaming
+    ux, uy = q["jet_axis"]
+    t = dx * ux + dy * uy
+    perp = -dx * uy + dy * ux
+    v += _quasar_jet_glow(t, perp, q["jet_len"], q["jet_half_angle"], r_shadow, q["beta"])
+    # faint starfield backdrop
+    n = fbm(x * 0.004, y * 0.004, seed, octaves=2)
+    v += max(0.0, n - 0.5) * 0.6
+    return 1.0 - math.exp(-0.75 * v)
+
+
+def render_quasar(width, height, seed, palette_name):
+    """Quasar: glowing relativistic accretion disk with Doppler-beamed jets and lensing glow."""
+    stops = PALETTES[palette_name]
+    q = _quasar_scene(width, height, seed)
+    return _shade(width, height, stops, lambda x, y: _quasar_value(x, y, seed, q))
 
 
 def _mandala_value(x, y, scene):
@@ -1636,14 +1652,68 @@ STYLES = {
 }
 
 
-def render(width, height, seed, style, palette_name):
-    """Render ``style`` and return ``height`` rows of ``width`` RGB tuples."""
+def _seed32(seed):
+    """The noise hash only uses a seed modulo 2**32; the Rust core takes it as u32."""
+    return seed & 0xFFFFFFFF
+
+
+def _native_drift(width, height, seed, stops):
+    return _core.render_drift(width, height, _seed32(seed), stops)
+
+
+def _native_quasar(width, height, seed, stops):
+    q = _quasar_scene(width, height, seed)
+    orbits = [(ro, _seed32(orbit_seed)) for ro, orbit_seed in q["orbits"]]
+    return _core.render_quasar(width, height, _seed32(seed), stops, q["center"], q["beta"],
+                               q["r_shadow"], q["r_outer"], q["jet_axis"],
+                               q["jet_half_angle"], q["jet_len"], orbits)
+
+
+# Styles with a Rust implementation. Python still generates each scene, so
+# seeds give the same composition; pixels may differ by one level where the
+# platform math library rounds differently.
+NATIVE_STYLES = {
+    "drift": _native_drift,
+    "quasar": _native_quasar,
+}
+
+
+def _check_render_args(width, height, style, palette_name):
     _validate_dimensions(width, height)
     if palette_name not in PALETTES:
         raise ValueError("unknown palette: %s" % palette_name)
     if style not in STYLES:
         raise ValueError("unknown style: %s" % style)
+
+
+def _native(style):
+    """The Rust renderer for ``style``, or None to use pure Python."""
+    return NATIVE_STYLES.get(style) if _core is not None else None
+
+
+def render(width, height, seed, style, palette_name):
+    """Render ``style`` and return ``height`` rows of ``width`` RGB tuples."""
+    _check_render_args(width, height, style, palette_name)
+    native = _native(style)
+    if native is not None:
+        rgb = native(width, height, seed, PALETTES[palette_name])
+        stride = width * 3
+        return [list(zip(rgb[o:o + stride:3], rgb[o + 1:o + stride:3], rgb[o + 2:o + stride:3]))
+                for o in range(0, stride * height, stride)]
     return STYLES[style](width, height, seed, palette_name)
+
+
+def render_rgb(width, height, seed, style, palette_name):
+    """Render ``style`` as packed RGB bytes: row-major, 3 bytes per pixel.
+
+    Much smaller and faster than ``render()`` for large images, since no
+    per-pixel tuples are created when the Rust core renders the style.
+    """
+    _check_render_args(width, height, style, palette_name)
+    native = _native(style)
+    if native is not None:
+        return native(width, height, seed, PALETTES[palette_name])
+    return _packed_rgb(STYLES[style](width, height, seed, palette_name), width, height)
 
 
 # ---------------------------------------------------------------- png writer
@@ -1659,22 +1729,38 @@ def _png_chunk(tag, data):
             + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
 
 
+def _packed_rgb(pixels, width, height):
+    """Validate a frame and return it as packed RGB bytes.
+
+    ``pixels`` is either ``height`` rows of ``width`` RGB tuples (channels are
+    clamped to 0..255) or a bytes-like object of ``width * height * 3`` bytes.
+    """
+    _validate_dimensions(width, height)
+    if isinstance(pixels, (bytes, bytearray, memoryview)):
+        data = bytes(pixels)
+        if len(data) != width * height * 3:
+            raise ValueError("pixel buffer must contain width * height * 3 bytes")
+        return data
+    if len(pixels) != height or any(len(row) != width for row in pixels):
+        raise ValueError("pixel array must match width and height")
+    data = bytearray()
+    for row in pixels:
+        for r, g, b in row:
+            data.extend((min(255, max(0, int(r))),
+                         min(255, max(0, int(g))),
+                         min(255, max(0, int(b)))))
+    return bytes(data)
+
+
 def _png_pixels(pixels, width, height):
     """Encode 8-bit sRGB samples as compressed PNG scanlines.
 
     Palette stops are authored as sRGB colors, so samples are written as-is.
     """
-    _validate_dimensions(width, height)
-    if len(pixels) != height or any(len(row) != width for row in pixels):
-        raise ValueError("pixel array must match width and height")
-
-    raw = bytearray()
-    for row in pixels:
-        raw.append(0)  # PNG filter: None
-        for r, g, b in row:
-            raw.extend((min(255, max(0, int(r))),
-                        min(255, max(0, int(g))),
-                        min(255, max(0, int(b)))))
+    data = _packed_rgb(pixels, width, height)
+    stride = width * 3
+    # Each scanline starts with filter type 0 (None).
+    raw = b"".join(b"\x00" + data[o:o + stride] for o in range(0, len(data), stride))
     return zlib.compress(raw, 9)
 
 
@@ -1777,13 +1863,13 @@ def main():
         parser.error("frames must be positive")
     if args.frames > 1:
         frames = [
-            render(args.width, args.height, args.seed + i, args.style, args.palette)
+            render_rgb(args.width, args.height, args.seed + i, args.style, args.palette)
             for i in range(args.frames)
         ]
         write_animated_png(args.out, frames, args.width, args.height, fps=12)
         print("wrote %d animation frames to %s (%s, seed=%d, palette=%s)" % (args.frames, args.out, args.style, args.seed, args.palette))
     else:
-        pixels = render(args.width, args.height, args.seed, args.style, args.palette)
+        pixels = render_rgb(args.width, args.height, args.seed, args.style, args.palette)
         write_png(args.out, pixels, args.width, args.height)
         print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, args.seed, args.palette))
 
