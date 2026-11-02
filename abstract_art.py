@@ -10,6 +10,7 @@ Styles:
     spiral   - polar spiral arms modulated by smooth winding phases
     bloom    - radial glowing cloud blooms
     flowfield - noise-driven particle flow trails
+    torus    - glowing parametric torus knot curves
     constellations - starfield with connected constellation lines
     cosmos - concentric ripples from luminous centers
     nebula   - layered radial glow clouds with noise-driven starlight
@@ -690,6 +691,69 @@ def render_flowfield(width, height, seed, palette_name):
     return pixels
 
 
+def render_torus(width, height, seed, palette_name):
+    """Torus knot: glowing parametric knot curve sampled through a palette gradient."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    R = rng.uniform(0.6, 1.2)
+    a = rng.uniform(2.5, 4.0)
+    b = rng.uniform(2.0, 5.0)
+    samples = 2200
+    pts = []
+    for i in range(samples):
+        t = 2.0 * math.pi * i / samples
+        ct = math.cos(b * t)
+        pts.append(((2.0 + R * ct) * math.cos(a * t),
+                    (2.0 + R * ct) * math.sin(a * t),
+                    R * math.sin(b * t)))
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    zs = [p[2] for p in pts]
+    cx = (min(xs) + max(xs)) / 2.0
+    cy = (min(ys) + max(ys)) / 2.0
+    cz = (min(zs) + max(zs)) / 2.0
+    span = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
+    s = min(width, height) / (2.0 * span + 1.0) * 0.85
+    screen = []
+    for (x, y, z) in pts:
+        px = (x - cx) * s + width / 2.0
+        py = (cy - y) * s + height / 2.0
+        pz = (z - cz) * s
+        screen.append((px, py, pz))
+
+    # rasterize: for each knot sample, flood its neighborhood and keep the
+    # minimum distance from every pixel to the curve
+    min_d = [[1e9] * width for _ in range(height)]
+    R_GLOW = 4.0
+    for (px, py, pz) in screen:
+        x0 = int(max(0.0, px - R_GLOW))
+        x1 = int(min(width - 1, px + R_GLOW))
+        y0 = int(max(0.0, py - R_GLOW))
+        y1 = int(min(height - 1, py + R_GLOW))
+        for yy in range(y0, y1 + 1):
+            drow = min_d[yy]
+            dy = yy - py
+            dy2 = dy * dy
+            for xx in range(x0, x1 + 1):
+                d = math.sqrt((xx - px) * (xx - px) + dy2)
+                if d < drow[xx]:
+                    drow[xx] = d
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            d = min_d[y][x]
+            if d <= R_GLOW:
+                tfrac = min(1.0, max(0.0, (R_GLOW - d) / R_GLOW))
+                c = palette_color(stops, tfrac * 0.85 + 0.05)
+            else:
+                c = palette_color(stops, fbm(x * 0.012, y * 0.012, seed, octaves=3) * 0.5 + 0.5)
+            row.append(c)
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -733,6 +797,8 @@ def render(width, height, seed, style, palette_name):
         return render_bloom(width, height, seed, palette_name)
     if style == "flowfield":
         return render_flowfield(width, height, seed, palette_name)
+    if style == "torus":
+        return render_torus(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -879,7 +945,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
