@@ -7,6 +7,7 @@ Styles:
     blobs    - fractal (fBm) noise fields mapped through palettes
     orbits   - starfield with noise-driven orbital rings
     mandelbrot - classic Mandelbrot set framed by a palette gradient
+    spiral   - polar spiral arms modulated by smooth winding phases
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -62,6 +63,13 @@ PALETTES = {
         (90, 10, 90),
         (180, 20, 160),
         (255, 110, 220),
+    ],
+    "gold": [
+        (18, 12, 2),
+        (72, 48, 8),
+        (152, 102, 26),
+        (226, 158, 52),
+        (255, 222, 140),
     ],
 }
 
@@ -230,6 +238,43 @@ def render_mandelbrot(width, height, seed, palette_name):
     return pixels
 
 
+def render_spiral(width, height, seed, palette_name):
+    """Polar spiral arms: smooth Gaussians placed where winding phases align."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    arms = []
+    n_arms = rng.randint(2, 5)
+    for _ in range(n_arms):
+        arms.append({
+            "turns": rng.uniform(1.0, 4.0),
+            "radius": rng.uniform(0.5, 3.0),
+            "phase": rng.uniform(0.0, 6.28),
+            "amp": rng.uniform(0.4, 1.0),
+            "width": rng.uniform(0.08, 0.35),
+        })
+    pixels = []
+    cx = (width - 1) / 2.0
+    cy = (height - 1) / 2.0
+    for y in range(height):
+        row = []
+        for x in range(width):
+            dx = x - cx
+            dy = y - cy
+            r = math.sqrt(dx * dx + dy * dy)
+            theta = math.atan2(dy, dx)
+            v = 0.0
+            for arm in arms:
+                d = (r * arm["turns"] - theta - arm["phase"]) % (2.0 * math.pi)
+                dist = abs(d - math.pi)
+                if dist > math.pi:
+                    dist = 2.0 * math.pi - dist
+                v += arm["amp"] * math.exp(-((dist / arm["width"]) ** 2) / 2.0) / (arm["width"] * math.sqrt(2.0 * math.pi))
+            t = min(1.0, max(0.0, v * 0.9 / (n_arms * 0.8)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -249,6 +294,8 @@ def render(width, height, seed, style, palette_name):
         return render_aurora(width, height, seed, palette_name)
     if style == "plasma":
         return render_plasma(width, height, seed, palette_name)
+    if style == "spiral":
+        return render_spiral(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -361,10 +408,19 @@ def render_plasma(width, height, seed, palette_name):
 
 def write_png(path, pixels, width, height):
     raw = bytearray()
+
+    def to_srgb(c):
+        c = max(0.0, min(1.0, c / 255.0))
+        if c > 0.0031308:
+            c = 1.055 * (c ** (1.0 / 2.4)) - 0.055
+        else:
+            c = 12.92 * c
+        return int(min(255.0, max(0.0, c * 255.0 + 0.5)))
+
     for y in range(height):
         raw.append(0)
         for (r, g, b) in pixels[y]:
-            raw += bytes((r, g, b))
+            raw += bytes((to_srgb(r), to_srgb(g), to_srgb(b)))
 
     def chunk(tag, data):
         return (struct.pack(">I", len(data)) + tag + data
@@ -383,7 +439,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
