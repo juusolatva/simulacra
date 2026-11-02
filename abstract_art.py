@@ -56,6 +56,13 @@ PALETTES = {
         (56, 108, 140),
         (96, 148, 178),
     ],
+    "neon": [
+        (10, 0, 20),
+        (40, 0, 60),
+        (90, 10, 90),
+        (180, 20, 160),
+        (255, 110, 220),
+    ],
 }
 
 
@@ -105,10 +112,13 @@ def palette_color(stops, t):
         return stops[0]
     if t >= 1.0:
         return stops[-1]
-    for i in range(len(stops) - 1):
-        span = (i + 1) - i
-        if t <= (i + 1) / span:
-            local = (t - i / span) * span
+    steps = len(stops) - 1
+    if steps < 1:
+        return stops[0]
+    for i in range(steps):
+        span = (i + 1) / steps
+        if t <= span:
+            local = (t - i / steps) * steps
             r = stops[i][0] + (stops[i + 1][0] - stops[i][0]) * local
             g = stops[i][1] + (stops[i + 1][1] - stops[i][1]) * local
             b = stops[i][2] + (stops[i + 1][2] - stops[i][2]) * local
@@ -235,6 +245,8 @@ def render(width, height, seed, style, palette_name):
         return render_gemstones(width, height, seed, palette_name)
     if style == "rings":
         return render_rings(width, height, seed, palette_name)
+    if style == "aurora":
+        return render_aurora(width, height, seed, palette_name)
     raise ValueError("unknown style: %s" % style)
 def render_gemstones(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
@@ -288,6 +300,37 @@ def render_rings(width, height, seed, palette_name):
     return pixels
 
 
+def render_aurora(width, height, seed, palette_name):
+    """Flowing ribbons: wavy curves sampled across the canvas, blurred by gaussian weighting."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    ribbons = []
+    for _ in range(rng.randint(3, 7)):
+        ribbons.append({
+            "y0": rng.uniform(0, height - 1),
+            "amp": rng.uniform(15.0, 70.0),
+            "freq": rng.uniform(0.004, 0.02),
+            "phase": rng.uniform(0.0, 6.28),
+            "bw": rng.uniform(0.6, 1.4),
+        })
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for rib in ribbons:
+                yy = rib["y0"] + rib["amp"] * math.sin(x * rib["freq"] + rib["phase"])
+                d = (y - yy) / rib["amp"]
+                w = math.exp(-d * d)
+                s = math.sin(x * rib["freq"] * 2.0 + rib["phase"])
+                v += w * (0.5 + 0.5 * s) * rib["bw"]
+            t = min(1.0, max(0.0, v / (len(ribbons) * 1.6)))
+            row.append(palette_color(stops, t * 0.9 + 0.05))
+        pixels.append(row)
+    return pixels
+
+
+
 # ---------------------------------------------------------------- png writer
 
 def write_png(path, pixels, width, height):
@@ -314,7 +357,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
