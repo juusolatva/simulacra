@@ -31,6 +31,7 @@ Styles:
     quasar     - glowing relativistic accretion disk with Doppler-beamed jets
     mandala    - concentric noise-wobbled rings of glowing glyphs with spokes
     crystal    - noise-grown terrain quantized into faceted gem crystal faces
+    ember      - rising glowing embers with flicker and soft falloff
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1366,6 +1367,51 @@ def render_crystal(width, height, seed, palette_name):
     return pixels
 
 
+
+def render_ember(width, height, seed, palette_name):
+    """Ember: rising glowing embers with flicker and soft radial falloff."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_embers = rng.randint(60, 110)
+    embers = []
+    for _ in range(n_embers):
+        embers.append({
+            "x": rng.uniform(0.0, width - 1.0),
+            "y": rng.uniform(0.0, height - 1.0),
+            "rise": rng.uniform(0.15, 0.55) * height,
+            "size": rng.uniform(0.6, 2.4),
+            "phase": rng.uniform(0.0, 6.28),
+            "flicker": rng.uniform(0.5, 1.0),
+        })
+    glow_sum = [0.0] * (width * height)
+    for e in embers:
+        flicker = e["flicker"] * (0.55 + 0.45 * math.sin(e["phase"] + 2.0 * math.sin(e["phase"])))
+        cx = e["x"]
+        cy_top = e["y"] - e["rise"]
+        for yy in range(height):
+            dy = yy - cy_top
+            if abs(dy) > e["rise"] * 3.0:
+                continue
+            fall = max(0.0, 1.0 - abs(dy) / (e["rise"] * 2.5 + 0.01))
+            if fall < 0.02:
+                continue
+            glow = fall ** 2 * (0.35 + 0.65 * flicker)
+            for xx in range(width):
+                dx = xx - cx
+                g = glow * max(0.0, 1.0 - (dx / ((e["size"] * 2.0) + 0.01)) ** 2) ** 2
+                glow_sum[yy * width + xx] += g
+    pixels = []
+    for t in glow_sum:
+        if t <= 0.0:
+            row = [stops[0]] * width
+        else:
+            tt = min(1.0, max(0.0, t * 0.9 - 0.15))
+            row = [palette_color(stops, tt) for _ in range(width)]
+        pixels.append(row)
+    return pixels
+
+
+
 def render(width, height, seed, style, palette_name):
     if style == "waves":
         return render_waves(width, height, seed, palette_name)
@@ -1433,6 +1479,8 @@ def render(width, height, seed, style, palette_name):
         return render_drift(width, height, seed, palette_name)
     if style == "crystal":
         return render_crystal(width, height, seed, palette_name)
+    if style == "ember":
+        return render_ember(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1579,7 +1627,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala", "drift", "crystal"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo", "prism", "shard", "circuit", "cosmic", "quasar", "mandala", "drift", "crystal", "ember"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
