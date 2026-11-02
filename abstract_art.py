@@ -20,6 +20,7 @@ Styles:
     starburst - radiating starburst rays from a central point
     interference - layered sine waves creating interference patterns
     galaxy      - spiral galaxy disk with central bulge and curved arms
+    voronoi    - glowing cell clouds from randomly placed seed sites
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -754,6 +755,29 @@ def render_torus(width, height, seed, palette_name):
     return pixels
 
 
+def render_voronoi(width, height, seed, palette_name):
+    """Voronoi: glowing cell clouds born from randomly placed seed sites."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    n_cells = rng.randint(10, 16)
+    sigma = rng.uniform(6.0, 18.0)
+    sites = [(rng.uniform(0, width - 1), rng.uniform(0, height - 1)) for _ in range(n_cells)]
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for (sx, sy) in sites:
+                dx = x - sx
+                dy = y - sy
+                d2 = dx * dx + dy * dy
+                v += math.exp(-d2 / (2.0 * sigma * sigma))
+            t = min(1.0, max(0.0, v / n_cells))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -799,6 +823,8 @@ def render(width, height, seed, style, palette_name):
         return render_flowfield(width, height, seed, palette_name)
     if style == "torus":
         return render_torus(width, height, seed, palette_name)
+    if style == "voronoi":
+        return render_voronoi(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -945,7 +971,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
