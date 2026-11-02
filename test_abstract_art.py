@@ -264,6 +264,20 @@ class RenderingTests(unittest.TestCase):
             art.write_animated_png(pathlib.Path(directory) / 'animated.png',
                                    [[[(0, 0, 0)]]] * 2, 1, 1)
 
+    def test_pruned_nearest_segment_matches_brute_force(self):
+        import random
+        rng = random.Random(3)
+        for _ in range(200):
+            segments = []
+            for _ in range(rng.randint(1, 8)):
+                p1 = (rng.uniform(-50, 50), rng.uniform(-50, 50))
+                p2 = (p1[0], rng.uniform(-50, 50)) if rng.random() < 0.5 else (rng.uniform(-50, 50), p1[1])
+                segments.append((p1, p2, min(p1[0], p2[0]), max(p1[0], p2[0]),
+                                 min(p1[1], p2[1]), max(p1[1], p2[1])))
+            x, y = rng.randint(-60, 60), rng.randint(-60, 60)
+            self.assertEqual(art._nearest_segment(x, y, segments),
+                             min(art._seg_hit(x, y, s[0], s[1]) for s in segments))
+
     def test_failed_still_write_preserves_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / 'existing.png'

@@ -274,26 +274,37 @@ def render_blobs(width, height, seed, palette_name):
     return pixels
 
 
+# exp(-q) is exactly 0.0 in double precision once q exceeds ~745.13, so a
+# Gaussian exp(-(d / sigma) ** 2 / 2) contributes exactly nothing beyond
+# d = sigma * sqrt(2 * 746). Culling past that distance keeps output identical.
+GAUSSIAN_ZERO = math.sqrt(2.0 * 746.0)
+
+
+class _RowFilter:
+    """Items that can affect a canvas row, kept in their original order.
+
+    An item whose vertical center is more than its reach away from a row
+    cannot affect any pixel in it (a point-to-pixel distance is never less
+    than the vertical offset). The last row's list is cached, so per-pixel
+    callers that scan rows in order filter once per row.
+    """
+
+    def __init__(self, items, center_y, reach):
+        self._entries = [(center_y(item), reach(item), item) for item in items]
+        self._row = None
+        self._items = []
+
+    def __call__(self, y):
+        if y != self._row:
+            self._row = y
+            self._items = [item for (cy, r, item) in self._entries if abs(y - cy) <= r]
+        return self._items
+
+
 def _shade(width, height, stops, value):
     """Build ``height`` rows of palette colors from ``value(x, y)`` in [0, 1]."""
     return [[palette_color(stops, value(x, y)) for x in range(width)]
             for y in range(height)]
-
-
-def _box_distances(px, py, reach, width, height, pad=0):
-    """Yield ``(row, col, distance)`` for canvas cells in a box around (px, py).
-
-    The box spans ``reach`` pixels each way, plus ``pad`` extra columns and
-    rows on the far side, clipped to the canvas.
-    """
-    x0 = max(0, int(px - reach))
-    x1 = min(width - 1, int(px + reach) + pad)
-    y0 = max(0, int(py - reach))
-    y1 = min(height - 1, int(py + reach) + pad)
-    for yy in range(y0, y1 + 1):
-        dy2 = (yy - py) * (yy - py)
-        for xx in range(x0, x1 + 1):
-            yield yy, xx, math.sqrt((xx - px) * (xx - px) + dy2)
 
 
 def _orbits_color(x, y, seed, stops, center, rings, stars):
@@ -304,7 +315,7 @@ def _orbits_color(x, y, seed, stops, center, rings, stars):
     for (radius, ring_color) in rings:
         if radius * 0.9 < r < radius * 1.1:
             c = ring_color
-    for (sx, sy, sr) in stars:
+    for (sx, sy, sr) in stars(y):
         if math.hypot(x - sx, y - sy) < sr * 1.2:
             c = (255, 255, 255)
     return c
@@ -322,7 +333,8 @@ def render_orbits(width, height, seed, palette_name):
     max_r = math.sqrt(cx * cx + cy * cy)
     rings = [(max_r * rng.uniform(0.15, 0.9), stops[rng.randrange(len(stops))])
              for _ in range(6)]
-    return [[_orbits_color(x, y, seed, stops, (cx, cy), rings, stars) for x in range(width)]
+    star_rows = _RowFilter(stars, lambda s: s[1], lambda s: s[2] * 1.2 + 1.0)
+    return [[_orbits_color(x, y, seed, stops, (cx, cy), rings, star_rows) for x in range(width)]
             for y in range(height)]
 
 
@@ -404,6 +416,7 @@ def render_nebula(width, height, seed, palette_name):
         (rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.5, 2.0))
         for _ in range(40)
     ]
+    star_rows = _RowFilter(stars, lambda s: s[1], lambda s: s[2] + 1.0)
     for y in range(height):
         row = []
         for x in range(width):
@@ -413,7 +426,7 @@ def render_nebula(width, height, seed, palette_name):
                 v += math.exp(-d2 / (2.0 * cloud["r"] ** 2)) * cloud["amp"]
             n = fbm(x * noise_k, y * noise_k, seed, octaves=4)
             v *= max(0.0, 0.2 + 1.6 * (_contrast(n, 2.0) - 0.2))
-            for (sx, sy, sr) in stars:
+            for (sx, sy, sr) in star_rows(y):
                 if math.hypot(x - sx, y - sy) < sr:
                     v += 1.2
                     break
@@ -577,7 +590,7 @@ def _draw_constellation_line(line_grid, start, end, dist, width, height):
 
 def _constellation_value(x, y, stars, line_grid):
     v = 0.0
-    for star in stars:
+    for star in stars(y):
         d = math.hypot(x - star["x"], y - star["y"])
         v += math.exp(-((d / star["r"]) ** 2) / 2.0) * star["b"]
     v += line_grid[y][x]
@@ -598,8 +611,9 @@ def render_constellations(width, height, seed, palette_name):
             "b": rng.uniform(0.45, 1.0),
         })
     line_grid = _constellation_lines(stars, width, height)
+    star_rows = _RowFilter(stars, lambda s: s["y"], lambda s: s["r"] * GAUSSIAN_ZERO + 1.0)
     return _shade(width, height, stops,
-                  lambda x, y: _constellation_value(x, y, stars, line_grid))
+                  lambda x, y: _constellation_value(x, y, star_rows, line_grid))
 
 
 def render_cosmos(width, height, seed, palette_name):
@@ -737,15 +751,46 @@ def render_flowfield(width, height, seed, palette_name):
     return _glow_pixels(glow, width, height, stops)
 
 
-def _torus_knot_points(tube, a, b, samples):
-    pts = []
-    for i in range(samples):
-        t = 2.0 * math.pi * i / samples
-        ct = math.cos(b * t)
-        pts.append(((2.0 + tube * ct) * math.cos(a * t),
-                    (2.0 + tube * ct) * math.sin(a * t),
-                    tube * math.sin(b * t)))
-    return pts
+def _sample_by_length(point_at, spacing, closed):
+    """Sample ``point_at(u)`` for u in [0, 1) roughly ``spacing`` pixels apart.
+
+    ``point_at`` returns a tuple whose first two items are screen x and y.
+    Closed curves repeat their first point at the end.
+    """
+    coarse = [point_at(i / 512) for i in range(513)]
+    length = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(coarse, coarse[1:]))
+    count = max(64, math.ceil(length / spacing))
+    points = [point_at(i / count) for i in range(count)]
+    if closed:
+        points.append(points[0])
+    return points
+
+
+def _segment_box(p0, p1, reach, width, height):
+    """Yield ``(row, col, distance, t)`` for pixels in the segment's box grown by ``reach``.
+
+    ``distance`` is to the closest point on the segment, which lies at
+    fraction ``t`` (0 at ``p0``, 1 at ``p1``) along it.
+    """
+    ax, ay = p0[0], p0[1]
+    dx, dy = p1[0] - ax, p1[1] - ay
+    len2 = dx * dx + dy * dy
+    x0 = max(0, int(min(ax, p1[0]) - reach))
+    x1 = min(width - 1, int(max(ax, p1[0]) + reach) + 1)
+    y0 = max(0, int(min(ay, p1[1]) - reach))
+    y1 = min(height - 1, int(max(ay, p1[1]) + reach) + 1)
+    for yy in range(y0, y1 + 1):
+        for xx in range(x0, x1 + 1):
+            t = 0.0 if len2 < 1e-12 else min(1.0, max(0.0, ((xx - ax) * dx + (yy - ay) * dy) / len2))
+            yield yy, xx, math.hypot(xx - (ax + t * dx), yy - (ay + t * dy)), t
+
+
+def _torus_knot_point(tube, a, b, u):
+    """Model-space (x, y, z) of the (a, b) torus knot at u in [0, 1)."""
+    t = math.tau * u
+    ct = math.cos(b * t)
+    return ((2.0 + tube * ct) * math.cos(a * t), (2.0 + tube * ct) * math.sin(a * t),
+            tube * math.sin(b * t))
 
 
 def render_torus(width, height, seed, palette_name):
@@ -754,26 +799,29 @@ def render_torus(width, height, seed, palette_name):
     rng = random.Random(seed)
     tube = rng.uniform(0.6, 1.2)
     a, b = rng.choice(((2, 3), (3, 2), (3, 5), (5, 2)))
-    pts = _torus_knot_points(tube, a, b, max(2200, 4 * (width + height)))
-    xs = [p[0] for p in pts]
-    ys = [p[1] for p in pts]
-    zs = [p[2] for p in pts]
+    model = [_torus_knot_point(tube, a, b, i / 2200) for i in range(2200)]
+    xs, ys, zs = zip(*model)
     cx = (min(xs) + max(xs)) / 2.0
     cy = (min(ys) + max(ys)) / 2.0
     z_lo, z_hi = min(zs), max(zs)
     span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-9)
     s = min(width, height) * 0.85 / span
-
-    # Each sample stamps a glow scaled by its depth (larger z = nearer); keeping
-    # the maximum lets the front strand win where the knot crosses itself.
-    glow = [[0.0] * width for _ in range(height)]
     r_glow = max(2.0, min(width, height) * 0.016)
-    for (x, y, z) in pts:
-        px = (x - cx) * s + (width - 1) / 2.0
-        py = (cy - y) * s + (height - 1) / 2.0
-        depth = 0.45 + 0.55 * (z - z_lo) / max(1e-9, z_hi - z_lo)
-        for yy, xx, d in _box_distances(px, py, r_glow, width, height, pad=1):
+
+    def screen(u):
+        x, y, z = _torus_knot_point(tube, a, b, u)
+        return ((x - cx) * s + (width - 1) / 2.0, (cy - y) * s + (height - 1) / 2.0,
+                0.45 + 0.55 * (z - z_lo) / max(1e-9, z_hi - z_lo))
+
+    # Glow falls off with the distance to the curve, scaled by the depth at the
+    # closest point (larger z = nearer). Keeping the maximum lets the front
+    # strand win where the knot crosses itself.
+    glow = [[0.0] * width for _ in range(height)]
+    points = _sample_by_length(screen, max(1.0, r_glow * 0.5), closed=True)
+    for p0, p1 in zip(points, points[1:]):
+        for yy, xx, d, t in _segment_box(p0, p1, r_glow, width, height):
             if d < r_glow:
+                depth = p0[2] + (p1[2] - p0[2]) * t
                 glow[yy][xx] = max(glow[yy][xx], (1.0 - d / r_glow) * depth)
 
     def value(x, y):
@@ -833,11 +881,11 @@ def render_pinwheel(width, height, seed, palette_name):
     return pixels
 
 
-def _curve_distance_grid(pts, reach, width, height):
-    """Distance from each pixel near the curve to its closest sample (1e9 elsewhere)."""
+def _curve_distance_grid(points, reach, width, height):
+    """Distance from each pixel near the polyline to it (1e9 elsewhere)."""
     min_d = [[1e9] * width for _ in range(height)]
-    for (px, py) in pts:
-        for yy, xx, d in _box_distances(px, py, reach, width, height):
+    for p0, p1 in zip(points, points[1:]):
+        for yy, xx, d, _ in _segment_box(p0, p1, reach, width, height):
             if d < min_d[yy][xx]:
                 min_d[yy][xx] = d
     return min_d
@@ -872,14 +920,17 @@ def render_lissajous(width, height, seed, palette_name):
 
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
-    samples = 1400
     glow_values = []
     for c in curves:
-        pts = [(cx + cx * c["ax"] * math.sin(c["fx"] * t + c["px"]),
-                cy - cy * c["ay"] * math.sin(c["fy"] * t + c["py"]))
-               for t in (2.0 * math.pi * i / samples for i in range(samples))]
+        def point_at(u, c=c):
+            t = math.tau * u
+            return (cx + cx * c["ax"] * math.sin(c["fx"] * t + c["px"]),
+                    cy - cy * c["ay"] * math.sin(c["fy"] * t + c["py"]))
+
         reach = max(2, math.ceil(c["sigma"] * 3))
-        glow_values.append((_curve_distance_grid(pts, reach, width, height), c))
+        # Non-integer frequencies leave the curve open over one period.
+        points = _sample_by_length(point_at, max(1.0, reach / 2), closed=False)
+        glow_values.append((_curve_distance_grid(points, reach, width, height), c))
     return _shade(width, height, stops,
                   lambda x, y: _lissajous_value(x, y, glow_values, n_curves))
 
@@ -1033,12 +1084,31 @@ def _make_trace(rng, width, height):
     return nodes, segments
 
 
+def _nearest_segment(x, y, segments):
+    """Same value as ``min(_seg_hit(x, y, p1, p2) for ...)``, with pruning.
+
+    A segment is skipped only when the distance to its bounding box (a lower
+    bound on the distance to the segment) clearly exceeds the best distance so
+    far, so the minimum, and therefore the output, is unchanged.
+    """
+    best = math.inf
+    for (p1, p2, x0, x1, y0, y1) in segments:
+        gx = max(x0 - x, 0.0, x - x1)
+        gy = max(y0 - y, 0.0, y - y1)
+        if gx * gx + gy * gy > (best + 1e-6) ** 2:
+            continue
+        d = _seg_hit(x, y, p1, p2)
+        if d < best:
+            best = d
+    return best
+
+
 def _circuit_value(x, y, traces, core, halo, pad):
     v = 0.0
-    for (nodes, segments) in traces:
-        d = min(_seg_hit(x, y, p1, p2) for p1, p2 in segments)
+    for (pad_rows, segments) in traces:
+        d = _nearest_segment(x, y, segments)
         v += math.exp(-((d / core) ** 2) / 2.0) + 0.3 * math.exp(-((d / halo) ** 2) / 2.0)
-        for (px, py) in nodes:
+        for (px, py) in pad_rows(y):
             dn = math.hypot(x - px, y - py)
             if dn < pad * 2.5:
                 v += 1.5 * math.exp(-((dn / pad) ** 2) / 2.0)
@@ -1053,7 +1123,11 @@ def render_circuit(width, height, seed, palette_name):
     core = max(0.7, small * 0.008)
     halo = max(2.0, small * 0.04)
     pad = max(1.5, small * 0.018)
-    traces = [_make_trace(rng, width, height) for _ in range(rng.randint(3, 6))]
+    traces = []
+    for nodes, segments in (_make_trace(rng, width, height) for _ in range(rng.randint(3, 6))):
+        boxes = [(p1, p2, min(p1[0], p2[0]), max(p1[0], p2[0]),
+                  min(p1[1], p2[1]), max(p1[1], p2[1])) for p1, p2 in segments]
+        traces.append((_RowFilter(nodes, lambda n: n[1], lambda n: pad * 2.5 + 1.0), boxes))
     return _shade(width, height, stops,
                   lambda x, y: _circuit_value(x, y, traces, core, halo, pad))
 
@@ -1074,6 +1148,7 @@ def render_cosmic(width, height, seed, palette_name):
     glow_sigma = small * 0.55
     arm_sigma = max(1.0, small * 0.08)
     star_sigma = max(1.0, small * 0.02)
+    star_rows = _RowFilter(stars, lambda s: s[1], lambda s: star_sigma * 3.0 + 1.0)
 
     pixels = []
     for y in range(height):
@@ -1087,7 +1162,7 @@ def render_cosmic(width, height, seed, palette_name):
             d2 = math.hypot(x - (ox + dist_along * math.cos(arm_ang)),
                             y - (oy + dist_along * math.sin(arm_ang)))
             v += math.exp(-((d2 / arm_sigma) ** 2) / 2.0) * 1.2
-            for (sx, sy, size, brightness) in stars:
+            for (sx, sy, size, brightness) in star_rows(y):
                 ds = math.hypot(x - sx, y - sy)
                 if ds < star_sigma * 3.0:
                     v += size * brightness * math.exp(-((ds / star_sigma) ** 2) / 2.0)
@@ -1179,13 +1254,15 @@ def _mandala_value(x, y, scene):
     # ring glows; "wob" is the wobble amplitude as a fraction of the radius
     noise = polar_noise(r * 0.05, theta, scene["seed"], 3.0)
     for rib in scene["rings"]:
+        if abs(r - rib["radius"]) > rib["reach"]:
+            continue
         wobbled = rib["radius"] * (1.0 + rib["wob"] * (noise - 0.5))
         v += math.exp(-((r - wobbled) ** 2) / (2.0 * rib["size"] ** 2)) * 1.6
     for (r0, r1, phase) in scene["spokes"]:
         dang = math.atan2(math.sin(theta - phase), math.cos(theta - phase))
         if r0 <= r <= r1 and abs(dang) < 0.06:
             v += 0.9
-    for (gx, gy, size) in scene["glyphs"]:
+    for (gx, gy, size) in scene["glyphs"](y):
         d = math.hypot(x - gx, y - gy)
         if d < size * 0.9:
             v += math.exp(-(d * d) / (2.0 * size * size)) * 2.2
@@ -1217,8 +1294,13 @@ def render_mandala(width, height, seed, palette_name):
               for rib in rings
               for ga in (rib["phase"] + (gi / rib["glyphs"]) * 2.0 * math.pi
                          for gi in range(rib["glyphs"]))]
+    for rib in rings:
+        # Wobble moves a ring by at most radius * wob / 2; beyond that plus the
+        # Gaussian's zero distance the ring contributes exactly 0.0.
+        rib["reach"] = rib["radius"] * rib["wob"] * 0.5 + rib["size"] * GAUSSIAN_ZERO + 1.0
+    glyph_rows = _RowFilter(glyphs, lambda g: g[1], lambda g: g[2] * 0.9 + 1.0)
     scene = {"center": (cx, cy), "medallion": max(3.0, max_r * 0.06), "seed": seed,
-             "rings": rings, "spokes": spokes, "glyphs": glyphs}
+             "rings": rings, "spokes": spokes, "glyphs": glyph_rows}
     return _shade(width, height, stops, lambda x, y: _mandala_value(x, y, scene))
 
 
@@ -1316,6 +1398,10 @@ def render_ember(width, height, seed, palette_name):
         flicker = e["flicker"] * (0.55 + 0.45 * math.sin(e["phase"] + 2.0 * math.sin(e["phase"])))
         cx = e["x"]
         cy_top = e["y"] - e["rise"]
+        # The horizontal falloff is exactly 0.0 once |dx| >= size * 2 + 0.01.
+        reach = e["size"] * 2.0 + 0.01 + 1.0
+        x_lo = max(0, math.floor(cx - reach))
+        x_hi = min(width, math.ceil(cx + reach) + 1)
         for yy in range(height):
             dy = yy - cy_top
             if abs(dy) > e["rise"] * 3.0:
@@ -1324,7 +1410,7 @@ def render_ember(width, height, seed, palette_name):
             if fall < 0.02:
                 continue
             glow = fall ** 2 * (0.35 + 0.65 * flicker)
-            for xx in range(width):
+            for xx in range(x_lo, x_hi):
                 dx = xx - cx
                 g = glow * max(0.0, 1.0 - (dx / ((e["size"] * 2.0) + 0.01)) ** 2) ** 2
                 glow_sum[yy * width + xx] += g

@@ -4,12 +4,12 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-`abstract_art.py` is a single-file, standard-library-only generative art tool: 36 styles, 9 palettes, and PNG/APNG writers, plus a CLI. `test_abstract_art.py` holds the `unittest` suite. There are no third-party dependencies; keep it that way unless the user explicitly agrees otherwise.
+`abstract_art.py` is a single-file, standard-library-only generative art tool: 36 styles, 9 palettes, and PNG/APNG writers, plus a CLI. `test_abstract_art.py` holds the `unittest` suite. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. Third-party dependencies are allowed (the standard-library-only rule has been dropped), and a native Rust core is being added for speed.
 
 ## Commands
 
 ```bash
-python3 -m unittest -q                     # full suite (~10 s)
+python3 -m unittest -q                     # full suite (~15 s)
 python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
 python3 abstract_art.py --help             # lists styles (from STYLES) and palettes
 ```
@@ -48,11 +48,17 @@ Project key: `juusolatva_abstract-art`.
 
 ### Performance (the next planned work)
 
-Everything is pure Python with per-pixel loops. The slowest styles take about 1–2 s at 128×128, which works out to minutes at 1024×1024. The plan is to profile first and make the cheap Python fixes. Rust via PyO3 is the fallback if that is not enough; it would keep the Python API and CLI unchanged.
+Rendering is pure Python with per-pixel loops: about 178 s for all 36 styles at 640×480 (quasar alone 43 s; see `bench_abstract_art.py`). Algorithmic fixes are done in Python first because they carry over to Rust. The per-pixel work then moves to a Rust core (PyO3 + rayon). Python keeps the CLI, the API and scene generation (`random.Random`), so seeds stay compatible.
 
-- **`render_torus` does far too much work on large canvases** (from the Greptile review of PR #1). Both the sample count (`max(2200, 4 * (width + height))`) and the glow radius grow with canvas size, so doubling both dimensions makes stamping about 8× slower, and neighbouring samples repaint the same pixels. Fix: keep the canvas-relative glow width, but compute each pixel's distance to the curve once (for example, stamp the minimum distance, as `_curve_distance_grid` does, then apply the glow per pixel).
-- **`render_quasar`** became slower (about 1.3 s to 1.8 s at 128²) after its noise was switched to the seam-free `polar_noise()`. It evaluates 3-octave noise once per orbit ring per pixel; that noise could be computed once per pixel or cached by radius.
-- **Missing bounding-box culling:** `render_orbits`, `render_nebula`, `render_cosmic` and `render_constellations` test every star at every pixel. `render_geo`, `render_shard` and `render_circuit` measure every polygon edge or segment at every pixel.
+- **Culling has been done** for the cases that keep output byte-identical: row filtering (`_RowFilter`) for stars in `orbits`, `nebula`, `cosmic` and `constellations`, and for glyphs in `mandala`; exact-zero ring bands in `mandala`; column bounds in `ember`; and bounding-box pruning of segments in `circuit` (`_nearest_segment`). A skip is allowed only where a contribution is exactly zero, either from a hard cutoff or because `exp()` underflows past `GAUSSIAN_ZERO` standard deviations.
+- **`render_torus` and `render_lissajous`** now sample their curves at a spacing tied to the glow width and measure distances to line segments (`_sample_by_length`, `_segment_box`), so curve drawing grows with the pixel count. This fixed the torus issue Greptile raised on PR #1. Their remaining cost is per-pixel work (background noise in torus).
+- **Still slow per pixel:**
+  - `render_quasar` evaluates 3-octave noise once per orbit ring per pixel.
+  - `render_circuit` still measures the nearest segment of every trace at every pixel.
+  - `render_geo` and `render_shard` measure every polygon edge at every pixel. Their Gaussian halos are too wide to cull exactly.
+  - All noise-based styles pay for pure-Python `fbm()`.
+
+  These are the targets for the Rust core.
 - **PNG encoding** builds a `bytearray` per pixel in Python. A 256-entry lookup table or `bytes` joins would be faster.
 - **No resource guard:** there are no limits on `--width`, `--height` or `--frames`, and the CLI holds all animation frames in memory before writing them.
 
@@ -63,5 +69,4 @@ Everything is pure Python with per-pixel loops. The slowest styles take about 1�
 - **Comet length:** `render_comet` scales comet length by `width` only, so trails are short on tall canvases.
 - **Cosmic arm:** the arm in `render_cosmic` is placed along a straight ray (`dist_along` formula), so despite the docstring it is not really curved.
 - **Pixel-based sizes:** some features are still measured in pixels: star dots in `orbits`, `nebula` and `constellations`; brush and ember widths in `ember` and `comet`; and pixel-scaled noise in `waves`, `orbits`, `interference`, `bloom`, `torus`, `pinwheel`, `galaxy` and `quasar`. Their detail changes with resolution.
-- **Lissajous sampling:** `render_lissajous` uses a fixed 1400 samples per curve, which may leave gaps on very large canvases.
 - **Noise octaves:** `fbm()` uses the same seed for every octave, so the octaves are correlated at the lattice points. Changing this would alter every noise-based style.
