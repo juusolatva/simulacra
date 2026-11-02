@@ -23,6 +23,7 @@ Styles:
     voronoi    - glowing cell clouds from randomly placed seed sites
     pinwheel   - swirling radial pinwheel arms modulated by noise
     lissajous  - glowing parametric harmonic curves (Lissajous figures)
+    geo        - layered geometric rosettes with glow halos
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -871,6 +872,61 @@ def render_lissajous(width, height, seed, palette_name):
     return pixels
 
 
+def render_geo(width, height, seed, palette_name):
+    """Geometric rosette: layered rotated polygons with glow halos."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    layers = []
+    n_layers = rng.randint(4, 6)
+    for i in range(n_layers):
+        layers.append({
+            "sides": rng.randint(3, 8),
+            "rot": rng.uniform(0.0, 6.28),
+            "r": rng.uniform(0.55, 0.95) * math.sqrt((width / 2.0) ** 2 + (height / 2.0) ** 2),
+            "w": rng.uniform(0.06, 0.16),
+            "phase": rng.uniform(0.0, 6.28),
+        })
+
+    # rasterize each polygon ring into a min-distance field, then compose
+    fields = []
+    for L in layers:
+        min_d = [[1e9] * width for _ in range(height)]
+        cx = (width - 1) / 2.0
+        cy = (height - 1) / 2.0
+        steps = int(L["sides"] * 8)
+        pts = []
+        for i in range(steps):
+            t = 2.0 * math.pi * i / steps
+            px = cx + L["r"] * math.cos(t + L["phase"])
+            py = cy - L["r"] * math.sin(t + L["phase"])
+            pts.append((px, py))
+        R_GLOW = max(2, int(L["w"] * 10))
+        for (px, py) in pts:
+            x0 = max(0, int(px - R_GLOW)); x1 = min(width - 1, int(px + R_GLOW))
+            y0 = max(0, int(py - R_GLOW)); y1 = min(height - 1, int(py + R_GLOW))
+            for yy in range(y0, y1 + 1):
+                drow = min_d[yy]; dy = yy - py; dy2 = dy * dy
+                for xx in range(x0, x1 + 1):
+                    d = math.sqrt((xx - px) * (xx - px) + dy2)
+                    if d < drow[xx]:
+                        drow[xx] = d
+        fields.append((min_d, L))
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for (min_d, L) in fields:
+                d = min_d[y][x]
+                if d < 1e8 and L["r"] * 0.9 < math.hypot(x - (width - 1) / 2.0, y - (height - 1) / 2.0) < L["r"] * 1.1:
+                    v += math.exp(-((d / max(2.0, L["w"])) ** 2) / 2.0)
+            t = min(1.0, max(0.0, v / (n_layers * 1.1)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -922,6 +978,8 @@ def render(width, height, seed, style, palette_name):
         return render_pinwheel(width, height, seed, palette_name)
     if style == "lissajous":
         return render_lissajous(width, height, seed, palette_name)
+    if style == "geo":
+        return render_geo(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1068,7 +1126,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous", "geo"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
