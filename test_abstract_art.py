@@ -313,7 +313,7 @@ class RenderingTests(unittest.TestCase):
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_style_lists_agree(self):
         self.assertEqual(sorted(art.NATIVE_STYLES), sorted(art._core.STYLES))
-        self.assertTrue(set(art.NATIVE_STYLES) <= set(art.STYLES))
+        self.assertLessEqual(set(art.NATIVE_STYLES), set(art.STYLES))
 
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_noise_and_palette_match_python(self):
