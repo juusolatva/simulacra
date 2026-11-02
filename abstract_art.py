@@ -22,6 +22,7 @@ Styles:
     galaxy      - spiral galaxy disk with central bulge and curved arms
     voronoi    - glowing cell clouds from randomly placed seed sites
     pinwheel   - swirling radial pinwheel arms modulated by noise
+    lissajous  - glowing parametric harmonic curves (Lissajous figures)
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -806,6 +807,70 @@ def render_pinwheel(width, height, seed, palette_name):
     return pixels
 
 
+def render_lissajous(width, height, seed, palette_name):
+    """Lissajous: glowing parametric harmonic curves traced through the canvas."""
+    stops = PALETTES[palette_name]
+    rng = random.Random(seed)
+    curves = []
+    n_curves = rng.randint(2, 3)
+    for _ in range(n_curves):
+        curves.append({
+            "ax": rng.uniform(0.25, 0.8),
+            "ay": rng.uniform(0.25, 0.8),
+            "fx": rng.uniform(1.0, 2.5),
+            "fy": rng.uniform(2.0, 4.5),
+            "px": rng.uniform(0.0, 6.28),
+            "py": rng.uniform(0.0, 6.28),
+            "amp": rng.uniform(0.5, 1.0),
+            "sigma": rng.uniform(10.0, 26.0),
+        })
+
+    cx = (width - 1) / 2.0
+    cy = (height - 1) / 2.0
+    samples = 1400
+    traced = []
+    for c in curves:
+        pts = []
+        for i in range(samples):
+            t = 2.0 * math.pi * i / samples
+            pts.append((cx + c["ax"] * math.sin(c["fx"] * t + c["px"]),
+                        cy - c["ay"] * math.sin(c["fy"] * t + c["py"])))
+        traced.append((pts, c))
+
+    glow_values = []
+    for (pts, c) in traced:
+        min_d = [[1e9] * width for _ in range(height)]
+        R_GLOW = max(2, int(c["sigma"] * 0.5))
+        for (px, py) in pts:
+            x0 = max(0, int(px - R_GLOW))
+            x1 = min(width - 1, int(px + R_GLOW))
+            y0 = max(0, int(py - R_GLOW))
+            y1 = min(height - 1, int(py + R_GLOW))
+            for yy in range(y0, y1 + 1):
+                drow = min_d[yy]
+                dy = yy - py
+                dy2 = dy * dy
+                for xx in range(x0, x1 + 1):
+                    d = math.sqrt((xx - px) * (xx - px) + dy2)
+                    if d < drow[xx]:
+                        drow[xx] = d
+        glow_values.append((min_d, c))
+
+    pixels = []
+    for y in range(height):
+        row = []
+        for x in range(width):
+            v = 0.0
+            for (min_d, c) in glow_values:
+                d = min_d[y][x]
+                if d < 1e8:
+                    v += math.exp(-((d / c["sigma"]) ** 2) / 2.0) * c["amp"]
+            t = min(1.0, max(0.0, v / (n_curves * 0.9)))
+            row.append(palette_color(stops, t))
+        pixels.append(row)
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 def render(width, height, seed, style, palette_name):
@@ -855,6 +920,8 @@ def render(width, height, seed, style, palette_name):
         return render_voronoi(width, height, seed, palette_name)
     if style == "pinwheel":
         return render_pinwheel(width, height, seed, palette_name)
+    if style == "lissajous":
+        return render_lissajous(width, height, seed, palette_name)
 
     raise ValueError("unknown style: %s" % style)
 
@@ -1001,7 +1068,7 @@ def write_png(path, pixels, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
-    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel"])
+    parser.add_argument("--style", default="waves", choices=["waves", "blobs", "orbits", "mandelbrot", "gems", "rings", "aurora", "plasma", "spiral", "nebula", "kaleidoscope", "petals", "horizon", "starburst", "interference", "constellations", "cosmos", "galaxy", "bloom", "flowfield", "torus", "voronoi", "pinwheel", "lissajous"])
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--palette", default="deep")
     parser.add_argument("--width", type=int, default=256)
