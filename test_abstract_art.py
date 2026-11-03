@@ -312,6 +312,32 @@ class RenderingTests(unittest.TestCase):
                         python = art.render_rgb(width, height, seed, style, palette)
                     self.assertEqual(native, python)
 
+    def test_every_palette_is_valid_and_starts_dark(self):
+        for name, stops in art.PALETTES.items():
+            with self.subTest(palette=name):
+                self.assertGreaterEqual(len(stops), 5)
+                for color in stops:
+                    self.assertEqual(len(color), 3)
+                    self.assertTrue(all(isinstance(c, int) and 0 <= c <= 255 for c in color))
+                # Many styles take their background from the first stop.
+                self.assertLess(max(stops[0]), 64)
+
+    def test_every_style_renders_with_every_palette(self):
+        for palette in art.PALETTES:
+            for style in art.STYLES:
+                with self.subTest(style=style, palette=palette):
+                    self.assertEqual(len(art.render_rgb(9, 7, 3, style, palette)), 9 * 7 * 3)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_matches_python_for_every_palette(self):
+        for palette in art.PALETTES:
+            for style in ('plasma', 'nebula', 'rings', 'mandelbrot', 'orbits'):
+                with self.subTest(style=style, palette=palette):
+                    native = art.render_rgb(31, 23, 6, style, palette)
+                    with mock.patch.object(art, '_core', None):
+                        python = art.render_rgb(31, 23, 6, style, palette)
+                    self.assertEqual(native, python)
+
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_style_lists_agree(self):
         self.assertEqual(sorted(art.NATIVE_STYLES), sorted(art._core.STYLES))
@@ -421,6 +447,73 @@ class RenderingTests(unittest.TestCase):
             self.assertEqual(pathlib.Path(first).read_bytes(), pathlib.Path(second).read_bytes())
         code, _, _ = self.run_cli('--random-seed', '--seed', '3')
         self.assertEqual(code, 2)
+
+    def test_parse_hex_palette(self):
+        self.assertEqual(art.parse_hex_palette('#0c061c,5814a8,f80'),
+                         [(12, 6, 28), (88, 20, 168), (255, 136, 0)])
+        self.assertEqual(art.parse_hex_palette(' #FFFFFF , #000 '), [(255, 255, 255), (0, 0, 0)])
+        for bad in ('', 'fff', '#fff,', 'fff,ggg', 'ffff,000', '0x1,fff', '1_0,fff', 'fff 000'):
+            with self.subTest(text=bad), self.assertRaises(ValueError):
+                art.parse_hex_palette(bad)
+
+    def test_cli_palette_stops_match_a_registered_palette(self):
+        stops = art.parse_hex_palette('0c061c,5814a8,ff8800')
+        with tempfile.TemporaryDirectory() as directory:
+            custom = pathlib.Path(directory) / 'custom.png'
+            code, out, _ = self.run_cli('--style', 'plasma', '--width', '12', '--height', '9',
+                                        '--palette-stops', '#0c061c,5814a8,ff8800',
+                                        '--out', str(custom))
+            self.assertIsNone(code)
+            self.assertIn('palette=custom', out)
+            self.assertNotIn('custom', art.PALETTES)
+            with mock.patch.dict(art.PALETTES, {'mine': stops}):
+                expected = art.render_rgb(12, 9, 1, 'plasma', 'mine')
+            written = pathlib.Path(directory) / 'expected.png'
+            art.write_png(written, expected, 12, 9)
+            self.assertEqual(custom.read_bytes(), written.read_bytes())
+
+    def test_cli_leaves_a_callers_custom_palette_alone(self):
+        mine = [(0, 0, 0), (9, 9, 9)]
+        with tempfile.TemporaryDirectory() as directory:
+            out = str(pathlib.Path(directory) / 'a.png')
+            with mock.patch.dict(art.PALETTES, {'custom': mine}):
+                self.run_cli('--width', '4', '--height', '4', '--out', out)
+                self.assertEqual(art.PALETTES['custom'], mine)
+                self.run_cli('--width', '4', '--height', '4', '--out', out,
+                             '--palette-stops', 'fff,000,f00')
+                self.assertEqual(art.PALETTES['custom'], mine)
+
+    def test_cli_rejects_bad_or_conflicting_palette_stops(self):
+        for args in (('--palette-stops', 'fff'), ('--palette-stops', 'xyz,fff'),
+                     ('--palette-stops', 'fff,000', '--palette', 'ocean')):
+            with self.subTest(args=args):
+                code, _, err = self.run_cli(*args)
+                self.assertEqual(code, 2)
+                self.assertIn('palette', err)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_orbits_matches_python_for_any_stop_count(self):
+        # orbits draws randrange(len(stops)), which consumes a stop-count-dependent
+        # number of random bits, so its scene depends on the palette size.
+        for count in (1, 2, 3, 4, 5, 7, 8, 9, 16, 17):
+            stops = [(i * 10 % 256, i * 40 % 256, i * 70 % 256) for i in range(count)]
+            with mock.patch.dict(art.PALETTES, {'mine': stops}):
+                for seed in (1, 2, 3, 99):
+                    with self.subTest(stops=count, seed=seed):
+                        native = art.render_rgb(37, 29, seed, 'orbits', 'mine')
+                        with mock.patch.object(art, '_core', None):
+                            python = art.render_rgb(37, 29, seed, 'orbits', 'mine')
+                        self.assertEqual(native, python)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_matches_python_for_custom_stops(self):
+        with mock.patch.dict(art.PALETTES, {'mine': art.parse_hex_palette('000,0f0,f0f,fff')}):
+            for style in ('plasma', 'rings', 'torus'):
+                with self.subTest(style=style):
+                    native = art.render_rgb(31, 23, 4, style, 'mine')
+                    with mock.patch.object(art, '_core', None):
+                        python = art.render_rgb(31, 23, 4, style, 'mine')
+                    self.assertEqual(native, python)
 
 
 if __name__ == '__main__':

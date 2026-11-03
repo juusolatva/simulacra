@@ -49,10 +49,12 @@ Palette stops are sRGB colors and are written to PNG unchanged.
 """
 
 import argparse
+import contextlib
 import itertools
 import math
 import os
 import random
+import re
 import secrets
 import struct
 import zlib
@@ -129,7 +131,76 @@ PALETTES = {
         (56, 160, 156),
         (176, 230, 220),
     ],
+    # Multi-hue palettes. They still start dark, because many styles draw their
+    # background from the first stop, and then sweep through several hues.
+    "rainbow": [
+        (12, 6, 28),
+        (88, 20, 168),
+        (30, 96, 230),
+        (24, 190, 96),
+        (250, 224, 40),
+        (250, 120, 24),
+        (236, 40, 56),
+    ],
+    "candy": [
+        (28, 10, 44),
+        (150, 40, 150),
+        (240, 90, 160),
+        (120, 220, 220),
+        (255, 240, 150),
+    ],
+    "tropical": [
+        (4, 24, 34),
+        (0, 110, 120),
+        (30, 190, 150),
+        (190, 230, 70),
+        (255, 90, 130),
+    ],
+    "jewel": [
+        (10, 6, 24),
+        (20, 70, 160),
+        (14, 140, 90),
+        (170, 40, 140),
+        (250, 190, 50),
+    ],
+    "vaporwave": [
+        (20, 8, 48),
+        (100, 40, 180),
+        (240, 70, 190),
+        (80, 220, 240),
+        (255, 230, 245),
+    ],
+    "sherbet": [
+        (36, 8, 52),
+        (160, 30, 120),
+        (250, 90, 80),
+        (255, 170, 60),
+        (255, 245, 190),
+    ],
 }
+
+
+_HEX_COLOR = re.compile(r"[0-9a-fA-F]{6}|[0-9a-fA-F]{3}")
+
+
+def parse_hex_palette(text):
+    """Parse comma-separated hex colors such as ``"#0c061c,5814a8,f80"`` into RGB stops.
+
+    Each color is ``rrggbb`` or the shorthand ``rgb`` (each digit doubled), with
+    an optional leading ``#``. At least two colors are required. The stops
+    run from the first (the background in many styles) to the last.
+    """
+    stops = []
+    for item in text.split(","):
+        digits = item.strip().removeprefix("#")
+        if not _HEX_COLOR.fullmatch(digits):
+            raise ValueError("invalid hex color %r (use rrggbb or rgb, e.g. #ff8800)" % item.strip())
+        if len(digits) == 3:
+            digits = "".join(c * 2 for c in digits)
+        stops.append((int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16)))
+    if len(stops) < 2:
+        raise ValueError("a palette needs at least two colors")
+    return stops
 
 
 # ---------------------------------------------------------------- noise
@@ -2031,6 +2102,13 @@ def _fps(text):
     return value
 
 
+def _hex_stops(text):
+    try:
+        return parse_hex_palette(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
+
+
 def _build_parser():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
     parser.add_argument("--style", default="waves", choices=list(STYLES))
@@ -2038,7 +2116,12 @@ def _build_parser():
     seeds.add_argument("--seed", type=int, default=1)
     seeds.add_argument("--random-seed", action="store_true",
                        help="pick a random seed and print it so the image can be reproduced")
-    parser.add_argument("--palette", default="deep", choices=sorted(PALETTES))
+    palettes = parser.add_mutually_exclusive_group()
+    palettes.add_argument("--palette", default="deep", choices=sorted(PALETTES))
+    palettes.add_argument("--palette-stops", type=_hex_stops, metavar="HEX,HEX,...",
+                          help="custom palette: two or more comma-separated hex colors from "
+                               "dark to light, e.g. 0c061c,5814a8,ff8800 (quote values "
+                               "starting with #)")
     parser.add_argument("--width", type=int, default=256)
     parser.add_argument("--height", type=int, default=256)
     parser.add_argument("--out", default="art.png")
@@ -2055,15 +2138,15 @@ def _build_parser():
     return parser
 
 
-def main():
-    parser = _build_parser()
-    args = parser.parse_args()
+def _list_names(args):
+    """Return the names requested by --list-styles / --list-palettes, or None."""
+    if not (args.list_styles or args.list_palettes):
+        return None
+    return (list(STYLES) if args.list_styles else []) + (
+        sorted(PALETTES) if args.list_palettes else [])
 
-    if args.list_styles or args.list_palettes:
-        names = (list(STYLES) if args.list_styles else []) + (
-            sorted(PALETTES) if args.list_palettes else [])
-        print("\n".join(names))
-        return
+
+def _check_args(parser, args):
     if args.width <= 0 or args.height <= 0:
         parser.error("width and height must be positive")
     if args.frames <= 0:
@@ -2073,19 +2156,54 @@ def main():
             check_limits(args.width, args.height, args.frames)
         except ValueError as error:
             parser.error(str(error))
+
+
+@contextlib.contextmanager
+def _temporary_palette(name, stops):
+    """Register ``stops`` as ``PALETTES[name]``, then restore what was there before."""
+    missing = object()
+    previous = PALETTES.get(name, missing)
+    PALETTES[name] = stops
+    try:
+        yield name
+    finally:
+        if previous is missing:
+            del PALETTES[name]
+        else:
+            PALETTES[name] = previous
+
+
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    names = _list_names(args)
+    if names is not None:
+        print("\n".join(names))
+        return
+    _check_args(parser, args)
     seed = secrets.randbelow(2 ** 31) if args.random_seed else args.seed
+    if not args.palette_stops:
+        _render_and_write(args, seed, args.palette)
+        return
+    # render_rgb() takes palette names, so register the stops for this render only.
+    with _temporary_palette("custom", args.palette_stops) as palette:
+        _render_and_write(args, seed, palette)
+
+
+def _render_and_write(args, seed, palette):
     if args.frames > 1:
         frames = [
-            render_rgb(args.width, args.height, seed + i, args.style, args.palette)
+            render_rgb(args.width, args.height, seed + i, args.style, palette)
             for i in range(args.frames)
         ]
         write_animated_png(args.out, frames, args.width, args.height, fps=args.fps)
         print("wrote %d animation frames to %s (%s, seed=%d, palette=%s, %d fps)"
-              % (args.frames, args.out, args.style, seed, args.palette, args.fps))
+              % (args.frames, args.out, args.style, seed, palette, args.fps))
     else:
-        pixels = render_rgb(args.width, args.height, seed, args.style, args.palette)
+        pixels = render_rgb(args.width, args.height, seed, args.style, palette)
         write_png(args.out, pixels, args.width, args.height)
-        print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, seed, args.palette))
+        print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, seed, palette))
 
 
 if __name__ == "__main__":
