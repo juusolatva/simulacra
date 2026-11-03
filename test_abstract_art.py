@@ -331,7 +331,7 @@ class RenderingTests(unittest.TestCase):
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_matches_python_for_every_palette(self):
         for palette in art.PALETTES:
-            for style in ('plasma', 'nebula', 'rings', 'mandelbrot'):
+            for style in ('plasma', 'nebula', 'rings', 'mandelbrot', 'orbits'):
                 with self.subTest(style=style, palette=palette):
                     native = art.render_rgb(31, 23, 6, style, palette)
                     with mock.patch.object(art, '_core', None):
@@ -472,6 +472,17 @@ class RenderingTests(unittest.TestCase):
             art.write_png(written, expected, 12, 9)
             self.assertEqual(custom.read_bytes(), written.read_bytes())
 
+    def test_cli_leaves_a_callers_custom_palette_alone(self):
+        mine = [(0, 0, 0), (9, 9, 9)]
+        with tempfile.TemporaryDirectory() as directory:
+            out = str(pathlib.Path(directory) / 'a.png')
+            with mock.patch.dict(art.PALETTES, {'custom': mine}):
+                self.run_cli('--width', '4', '--height', '4', '--out', out)
+                self.assertEqual(art.PALETTES['custom'], mine)
+                self.run_cli('--width', '4', '--height', '4', '--out', out,
+                             '--palette-stops', 'fff,000,f00')
+                self.assertEqual(art.PALETTES['custom'], mine)
+
     def test_cli_rejects_bad_or_conflicting_palette_stops(self):
         for args in (('--palette-stops', 'fff'), ('--palette-stops', 'xyz,fff'),
                      ('--palette-stops', 'fff,000', '--palette', 'ocean')):
@@ -479,6 +490,20 @@ class RenderingTests(unittest.TestCase):
                 code, _, err = self.run_cli(*args)
                 self.assertEqual(code, 2)
                 self.assertIn('palette', err)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_orbits_matches_python_for_any_stop_count(self):
+        # orbits draws randrange(len(stops)), which consumes a stop-count-dependent
+        # number of random bits, so its scene depends on the palette size.
+        for count in (1, 2, 3, 4, 5, 7, 8, 9, 16, 17):
+            stops = [(i * 10 % 256, i * 40 % 256, i * 70 % 256) for i in range(count)]
+            with mock.patch.dict(art.PALETTES, {'mine': stops}):
+                for seed in (1, 2, 3, 99):
+                    with self.subTest(stops=count, seed=seed):
+                        native = art.render_rgb(37, 29, seed, 'orbits', 'mine')
+                        with mock.patch.object(art, '_core', None):
+                            python = art.render_rgb(37, 29, seed, 'orbits', 'mine')
+                        self.assertEqual(native, python)
 
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_matches_python_for_custom_stops(self):

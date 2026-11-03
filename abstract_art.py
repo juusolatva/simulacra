@@ -2156,13 +2156,21 @@ def main():
         except ValueError as error:
             parser.error(str(error))
     seed = secrets.randbelow(2 ** 31) if args.random_seed else args.seed
-    if args.palette_stops:
-        # render_rgb() takes palette names, so register the stops for this render only.
-        PALETTES["custom"] = args.palette_stops
+    if not args.palette_stops:
+        _render_and_write(args, seed, args.palette)
+        return
+    # render_rgb() takes palette names, so register the stops for this render
+    # only, restoring any palette the caller had registered under the same name.
+    missing = object()
+    previous = PALETTES.get("custom", missing)
+    PALETTES["custom"] = args.palette_stops
     try:
-        _render_and_write(args, seed, "custom" if args.palette_stops else args.palette)
+        _render_and_write(args, seed, "custom")
     finally:
-        PALETTES.pop("custom", None)
+        if previous is missing:
+            del PALETTES["custom"]
+        else:
+            PALETTES["custom"] = previous
 
 
 def _render_and_write(args, seed, palette):
