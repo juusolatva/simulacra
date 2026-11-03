@@ -312,6 +312,32 @@ class RenderingTests(unittest.TestCase):
                         python = art.render_rgb(width, height, seed, style, palette)
                     self.assertEqual(native, python)
 
+    def test_every_palette_is_valid_and_starts_dark(self):
+        for name, stops in art.PALETTES.items():
+            with self.subTest(palette=name):
+                self.assertGreaterEqual(len(stops), 5)
+                for color in stops:
+                    self.assertEqual(len(color), 3)
+                    self.assertTrue(all(isinstance(c, int) and 0 <= c <= 255 for c in color))
+                # Many styles take their background from the first stop.
+                self.assertLess(max(stops[0]), 64)
+
+    def test_every_style_renders_with_every_palette(self):
+        for palette in art.PALETTES:
+            for style in art.STYLES:
+                with self.subTest(style=style, palette=palette):
+                    self.assertEqual(len(art.render_rgb(9, 7, 3, style, palette)), 9 * 7 * 3)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_matches_python_for_every_palette(self):
+        for palette in art.PALETTES:
+            for style in ('plasma', 'nebula', 'rings', 'mandelbrot'):
+                with self.subTest(style=style, palette=palette):
+                    native = art.render_rgb(31, 23, 6, style, palette)
+                    with mock.patch.object(art, '_core', None):
+                        python = art.render_rgb(31, 23, 6, style, palette)
+                    self.assertEqual(native, python)
+
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_style_lists_agree(self):
         self.assertEqual(sorted(art.NATIVE_STYLES), sorted(art._core.STYLES))

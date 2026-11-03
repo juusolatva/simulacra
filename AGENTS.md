@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-`abstract_art.py` is a generative art tool: 36 styles, 9 palettes, PNG/APNG writers and a CLI. `test_abstract_art.py` holds the `unittest` suite and `bench_abstract_art.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders all 36 styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
+`abstract_art.py` is a generative art tool: 36 styles, 15 palettes, PNG/APNG writers and a CLI. `test_abstract_art.py` holds the `unittest` suite and `bench_abstract_art.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders all 36 styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
 
 ## Progress
 
@@ -19,7 +19,8 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Native styles, batch 2 (11 per-pixel): crystal, voronoi, cosmos, mandelbrot, aurora, spiral, petals, starburst, rings, gems, horizon | Done | PR #3 |
 | Native styles, batch 3 (7 brush and trail): torus, lissajous, constellations, ink, flowfield, comet, ember | Done: sequential stamping in Python's order, parallel shading (`core/src/styles/brush.rs`) | this branch |
 | CLI safety and polish: size limits, `--fps`, `--random-seed`, `--list-styles`, `--list-palettes` | Done | this branch |
-| More functionality: real animation (shared time parameter), custom palettes, output options | Planned | — |
+| More built-in palettes: rainbow, candy, tropical, jewel, vaporwave, sherbet | Done | this branch |
+| More functionality: real animation (shared time parameter), palettes from the command line (hex stops), output options | Planned | — |
 
 Measured at 640×480: all 36 styles took 178 s in pure Python at the start. With all 36 styles native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
 

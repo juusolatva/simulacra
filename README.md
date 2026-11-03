@@ -1,6 +1,6 @@
 # Abstract Art
 
-Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **36 styles**, **9 palettes**, static PNG output, and looping animated PNG (APNG) output.
+Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **36 styles**, **15 palettes**, static PNG output, and looping animated PNG (APNG) output.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -56,7 +56,7 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 | `--style` | `waves` | One of the 36 style names listed below. |
 | `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
 | `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
-| `--palette` | `deep` | One of the 9 palette names listed below. |
+| `--palette` | `deep` | One of the 15 palette names listed below. |
 | `--width` | `256` | Output width in pixels; must be a positive integer. |
 | `--height` | `256` | Output height in pixels; must be a positive integer. |
 | `--out` | `art.png` | Destination path. Its parent directory must already exist. |
@@ -158,7 +158,7 @@ Changing dimensions can change the scene's arrangement as well as the number of 
 
 ## Palettes
 
-Each palette contains five RGB stops, ordered from dark to light. Intermediate colors are obtained by linear interpolation between adjacent stops.
+Each palette is a list of RGB stops, five or more, starting dark (many styles draw their background from the first stop). The single-hue palettes ramp from dark to light; the multi-hue palettes sweep through several hues. Intermediate colors are obtained by linear interpolation between adjacent stops.
 
 | Palette | Color progression |
 | --- | --- |
@@ -171,6 +171,12 @@ Each palette contains five RGB stops, ordered from dark to light. Intermediate c
 | `gold` | Dark brown through amber to pale gold. |
 | `ultraviolet` | Dark violet through purple to lavender. |
 | `lagoon` | Dark teal through turquoise to pale mint. |
+| `rainbow` | Near-black violet through indigo, blue, green, yellow and orange to red (seven stops). |
+| `candy` | Dark plum through magenta and pink to aqua and cream. |
+| `tropical` | Deep teal through turquoise and lime to hot pink. |
+| `jewel` | Near-black through sapphire, emerald and amethyst to gold. |
+| `vaporwave` | Dark indigo through violet and magenta to cyan and pale pink. |
+| `sherbet` | Dark purple through raspberry, coral and orange to cream. |
 
 The `ember` style and the `ember` palette are independent choices. You can use, for example, `--style ember --palette ocean`.
 
@@ -257,7 +263,7 @@ pixels = art.render(256, 256, 4, "geo", "ice")
 art.write_png("ice.png", pixels, 256, 256)
 ```
 
-Palette entries should be a nonempty list of RGB tuples with channels in the range 0–255. Five stops match the built-ins. Adding an entry at runtime affects that Python process. To make a palette available in subsequent CLI runs, add it to `PALETTES` in `abstract_art.py`; CLI palette choices are derived from that dictionary.
+Palette entries should be a nonempty list of RGB tuples with channels in the range 0–255. The built-ins have five stops, except `rainbow` with seven; any count of two or more works. Adding an entry at runtime affects that Python process. To make a palette available in subsequent CLI runs, add it to `PALETTES` in `abstract_art.py`; CLI palette choices are derived from that dictionary.
 
 ## How rendering works
 
