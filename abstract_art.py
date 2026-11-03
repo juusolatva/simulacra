@@ -49,6 +49,7 @@ Palette stops are sRGB colors and are written to PNG unchanged.
 """
 
 import argparse
+import contextlib
 import itertools
 import math
 import os
@@ -2137,15 +2138,15 @@ def _build_parser():
     return parser
 
 
-def main():
-    parser = _build_parser()
-    args = parser.parse_args()
+def _list_names(args):
+    """Return the names requested by --list-styles / --list-palettes, or None."""
+    if not (args.list_styles or args.list_palettes):
+        return None
+    return (list(STYLES) if args.list_styles else []) + (
+        sorted(PALETTES) if args.list_palettes else [])
 
-    if args.list_styles or args.list_palettes:
-        names = (list(STYLES) if args.list_styles else []) + (
-            sorted(PALETTES) if args.list_palettes else [])
-        print("\n".join(names))
-        return
+
+def _check_args(parser, args):
     if args.width <= 0 or args.height <= 0:
         parser.error("width and height must be positive")
     if args.frames <= 0:
@@ -2155,22 +2156,39 @@ def main():
             check_limits(args.width, args.height, args.frames)
         except ValueError as error:
             parser.error(str(error))
+
+
+@contextlib.contextmanager
+def _temporary_palette(name, stops):
+    """Register ``stops`` as ``PALETTES[name]``, then restore what was there before."""
+    missing = object()
+    previous = PALETTES.get(name, missing)
+    PALETTES[name] = stops
+    try:
+        yield name
+    finally:
+        if previous is missing:
+            del PALETTES[name]
+        else:
+            PALETTES[name] = previous
+
+
+def main():
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    names = _list_names(args)
+    if names is not None:
+        print("\n".join(names))
+        return
+    _check_args(parser, args)
     seed = secrets.randbelow(2 ** 31) if args.random_seed else args.seed
     if not args.palette_stops:
         _render_and_write(args, seed, args.palette)
         return
-    # render_rgb() takes palette names, so register the stops for this render
-    # only, restoring any palette the caller had registered under the same name.
-    missing = object()
-    previous = PALETTES.get("custom", missing)
-    PALETTES["custom"] = args.palette_stops
-    try:
-        _render_and_write(args, seed, "custom")
-    finally:
-        if previous is missing:
-            del PALETTES["custom"]
-        else:
-            PALETTES["custom"] = previous
+    # render_rgb() takes palette names, so register the stops for this render only.
+    with _temporary_palette("custom", args.palette_stops) as palette:
+        _render_and_write(args, seed, palette)
 
 
 def _render_and_write(args, seed, palette):
