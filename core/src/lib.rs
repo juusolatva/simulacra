@@ -17,7 +17,7 @@ mod abstract_art_core {
     use pyo3::types::PyBytes;
 
     use crate::palette::Palette;
-    use crate::styles::{Style, drift, fields, quasar, shapes};
+    use crate::styles::{Style, brush, drift, fields, quasar, shapes};
 
     type Stops = Vec<(i64, i64, i64)>;
 
@@ -27,7 +27,7 @@ mod abstract_art_core {
 
     /// Names of the styles this module can render.
     #[pymodule_export]
-    const STYLES: [&str; 29] = [
+    const STYLES: [&str; 36] = [
         "aurora",
         "blobs",
         "bloom",
@@ -57,6 +57,13 @@ mod abstract_art_core {
         "starburst",
         "voronoi",
         "waves",
+        "torus",
+        "lissajous",
+        "constellations",
+        "ink",
+        "flowfield",
+        "comet",
+        "ember",
     ];
 
     fn extract_style(style: &str, scene: &Bound<'_, PyAny>) -> PyResult<Box<dyn Style>> {
@@ -90,6 +97,13 @@ mod abstract_art_core {
             "starburst" => Box::new(scene.extract::<fields::Starburst>()?),
             "voronoi" => Box::new(scene.extract::<fields::Voronoi>()?),
             "waves" => Box::new(scene.extract::<fields::Waves>()?),
+            "torus" => Box::new(scene.extract::<brush::Torus>()?),
+            "lissajous" => Box::new(scene.extract::<brush::Lissajous>()?),
+            "constellations" => Box::new(scene.extract::<brush::Constellations>()?),
+            "ink" => Box::new(scene.extract::<brush::Ink>()?),
+            "flowfield" => Box::new(scene.extract::<brush::Flowfield>()?),
+            "comet" => Box::new(scene.extract::<brush::Comet>()?),
+            "ember" => Box::new(scene.extract::<brush::Ember>()?),
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "no native renderer for style {style:?}"

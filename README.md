@@ -268,7 +268,7 @@ For a fixed script version and Python environment, the same inputs produce repea
 
 ## Performance and limitations
 
-Without the Rust core, rendering runs on the CPU in Python loops: all 36 styles take about 3 minutes at 640 × 480. With the Rust core, the 29 per-pixel styles run in parallel on all CPU cores, hundreds of times faster, so only the 7 brush-and-trail styles still take noticeable time at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
+Without the Rust core, rendering runs on the CPU in Python loops: all 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 36 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
 
 - Start with 128 × 128 or 256 × 256 previews before increasing resolution.
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
@@ -282,7 +282,7 @@ Output is PNG/APNG only. There is no JPEG, SVG, GIF, or video export, and no bui
 
 ## Optional Rust core
 
-The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: `aurora`, `blobs`, `bloom`, `circuit`, `cosmic`, `cosmos`, `crystal`, `drift`, `galaxy`, `gems`, `geo`, `horizon`, `interference`, `kaleidoscope`, `mandala`, `mandelbrot`, `nebula`, `orbits`, `petals`, `pinwheel`, `plasma`, `prism`, `quasar`, `rings`, `shard`, `spiral`, `starburst`, `voronoi`, and `waves`. All other styles, and every style when the module is missing, use the pure-Python renderers.
+The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 36). When the module is missing, the pure-Python renderers produce the same images.
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 
