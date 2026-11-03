@@ -57,6 +57,7 @@ import random
 import re
 import secrets
 import struct
+import sys
 import zlib
 
 try:
@@ -315,19 +316,32 @@ def _poly_min_dist(x, y, poly):
 
 # ---------------------------------------------------------------- styles
 
-def _waves_scene(width, height, seed):
+def _loop(phase, cycles):
+    """Angle that completes ``cycles`` whole turns as ``phase`` goes 0 to 1.
+
+    Animated scenes add this to a phase or angle, so phase 1.0 repeats phase 0
+    and an animation over phases ``i / frames`` loops seamlessly. ``phase`` 0
+    adds exactly 0.0, which leaves a style's still image unchanged.
+
+    The phase is reduced to ``[0, 1)`` first, so a huge finite value neither
+    overflows the angle nor loses the fraction that tells frames apart.
+    """
+    return math.tau * cycles * (phase % 1.0)
+
+
+def _waves_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     return {"layers": [
-        (30.0, 2.0, rng.uniform(0, 6.28)),
-        (18.0, 3.5, rng.uniform(0, 6.28)),
-        (12.0, 5.0, rng.uniform(0, 6.28)),
-        (7.0, 7.0, rng.uniform(0, 6.28)),
+        (30.0, 2.0, rng.uniform(0, 6.28) + _loop(phase, 1)),
+        (18.0, 3.5, rng.uniform(0, 6.28) + _loop(phase, -1)),
+        (12.0, 5.0, rng.uniform(0, 6.28) + _loop(phase, 2)),
+        (7.0, 7.0, rng.uniform(0, 6.28) + _loop(phase, -2)),
     ]}
 
 
-def render_waves(width, height, seed, palette_name):
+def render_waves(width, height, seed, palette_name, phase=0.0):
     stops = PALETTES[palette_name]
-    layers = _waves_scene(width, height, seed)["layers"]
+    layers = _waves_scene(width, height, seed, phase)["layers"]
     pixels = []
     for y in range(height):
         row = []
@@ -449,19 +463,19 @@ def render_mandelbrot(width, height, seed, palette_name):
 
     return _shade(width, height, stops, value)
 
-def _spiral_scene(width, height, seed):
+def _spiral_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     arms = []
     for _ in range(rng.randint(2, 5)):
-        arms.append((rng.uniform(1.0, 4.0), rng.uniform(0.0, 6.28),
+        arms.append((rng.uniform(1.0, 4.0), rng.uniform(0.0, 6.28) + _loop(phase, 1),
                      rng.uniform(0.4, 1.0), rng.uniform(0.08, 0.35)))
     return {"arms": arms}
 
 
-def render_spiral(width, height, seed, palette_name):
+def render_spiral(width, height, seed, palette_name, phase=0.0):
     """Polar spiral arms: smooth Gaussians placed where winding phases align."""
     stops = PALETTES[palette_name]
-    arms = _spiral_scene(width, height, seed)["arms"]
+    arms = _spiral_scene(width, height, seed, phase)["arms"]
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
     max_r = max(1.0, math.hypot(cx, cy))
@@ -526,15 +540,15 @@ def render_nebula(width, height, seed, palette_name):
     return pixels
 
 
-def _kaleidoscope_scene(width, height, seed):
+def _kaleidoscope_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
-    return {"folds": rng.randint(4, 8), "phase": rng.uniform(0.0, math.tau)}
+    return {"folds": rng.randint(4, 8), "phase": rng.uniform(0.0, math.tau) + _loop(phase, 1)}
 
 
-def render_kaleidoscope(width, height, seed, palette_name):
+def render_kaleidoscope(width, height, seed, palette_name, phase=0.0):
     """Mirror a noise-modulated radial pattern into equal angular sectors."""
     stops = PALETTES[palette_name]
-    scene = _kaleidoscope_scene(width, height, seed)
+    scene = _kaleidoscope_scene(width, height, seed, phase)
     folds, phase = scene["folds"], scene["phase"]
     cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
     scale = max(1.0, min(width, height) / 2.0)
@@ -554,16 +568,16 @@ def render_kaleidoscope(width, height, seed, palette_name):
     return pixels
 
 
-def _petals_scene(width, height, seed):
+def _petals_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     return {"count": rng.randint(5, 8), "length": rng.uniform(0.65, 0.95),
-            "phase": rng.uniform(0.0, math.tau)}
+            "phase": rng.uniform(0.0, math.tau) + _loop(phase, 1)}
 
 
-def render_petals(width, height, seed, palette_name):
+def render_petals(width, height, seed, palette_name, phase=0.0):
     """Radial flower with tapered petals and a luminous center."""
     stops = PALETTES[palette_name]
-    scene = _petals_scene(width, height, seed)
+    scene = _petals_scene(width, height, seed, phase)
     count, length, phase = scene["count"], scene["length"], scene["phase"]
     cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
     scale = max(1.0, min(width, height) / 2.0)
@@ -610,15 +624,15 @@ def render_horizon(width, height, seed, palette_name):
         pixels.append(row)
     return pixels
 
-def _starburst_scene(width, height, seed):
+def _starburst_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
-    return {"rays": rng.randint(8, 14), "phase": rng.uniform(0.0, math.tau)}
+    return {"rays": rng.randint(8, 14), "phase": rng.uniform(0.0, math.tau) + _loop(phase, 1)}
 
 
-def render_starburst(width, height, seed, palette_name):
+def render_starburst(width, height, seed, palette_name, phase=0.0):
     """Glowing rays radiating from a central focal point."""
     stops = PALETTES[palette_name]
-    scene = _starburst_scene(width, height, seed)
+    scene = _starburst_scene(width, height, seed, phase)
     rays, phase = scene["rays"], scene["phase"]
     cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
     scale = max(1.0, min(width, height) / 2.0)
@@ -635,23 +649,23 @@ def render_starburst(width, height, seed, palette_name):
 
 
 
-def _interference_scene(width, height, seed):
+def _interference_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     size = max(width, height)
     layers = []
-    for _ in range(3):
+    for turns in (1, -1, 2):
         direction = rng.uniform(0.0, math.pi)
         # Spatial frequency in cycles across the canvas, far below Nyquist.
         k = rng.uniform(4.0, 18.0) * math.tau / size
-        layers.append((rng.uniform(0, 6.28), k * math.cos(direction),
+        layers.append((rng.uniform(0, 6.28) + _loop(phase, turns), k * math.cos(direction),
                        k * math.sin(direction), rng.uniform(1.0, 4.0)))
     return {"layers": layers}
 
 
-def render_interference(width, height, seed, palette_name):
+def render_interference(width, height, seed, palette_name, phase=0.0):
     """Interference: plane waves from several directions summed into moire bands."""
     stops = PALETTES[palette_name]
-    layers = _interference_scene(width, height, seed)["layers"]
+    layers = _interference_scene(width, height, seed, phase)["layers"]
     pixels = []
     for y in range(height):
         row = []
@@ -759,7 +773,7 @@ def render_cosmos(width, height, seed, palette_name):
 
     return _shade(width, height, stops, value)
 
-def _galaxy_scene(width, height, seed):
+def _galaxy_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     max_r = max(1.0, math.hypot((width - 1) / 2.0, (height - 1) / 2.0))
     bulge_r = max_r * rng.uniform(0.10, 0.26)
@@ -768,16 +782,16 @@ def _galaxy_scene(width, height, seed):
     for _ in range(rng.randint(2, 3)):
         r0 = max_r * rng.uniform(0.015, 0.05)
         arm_width = rng.uniform(0.08, 0.18)
-        phase = rng.uniform(0.0, 6.28)
+        arm_phase = rng.uniform(0.0, 6.28) + _loop(phase, 1)
         pitch = rng.uniform(1.5, 3.5)
-        arms.append((r0, arm_width, phase, pitch, rng.uniform(0.5, 1.0)))
+        arms.append((r0, arm_width, arm_phase, pitch, rng.uniform(0.5, 1.0)))
     return {"bulge_r": bulge_r, "bulge_amp": bulge_amp, "arms": arms}
 
 
-def render_galaxy(width, height, seed, palette_name):
+def render_galaxy(width, height, seed, palette_name, phase=0.0):
     """Galaxy: spiral disk of stars with a bright central bulge and curved arms."""
     stops = PALETTES[palette_name]
-    scene = _galaxy_scene(width, height, seed)
+    scene = _galaxy_scene(width, height, seed, phase)
     bulge_r, bulge_amp, arms = scene["bulge_r"], scene["bulge_amp"], scene["arms"]
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
@@ -956,16 +970,26 @@ def render_torus(width, height, seed, palette_name):
     return _shade(width, height, stops, value)
 
 
-def _voronoi_scene(width, height, seed):
+def _voronoi_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
-    return {"sites": [(rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.1, 0.7))
-                      for _ in range(rng.randint(10, 16))]}
+    sites = [(rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.1, 0.7))
+             for _ in range(rng.randint(10, 16))]
+    # Each site circles its home position. The offset is measured from where the
+    # circle starts, so phase 0 leaves the sites exactly where they were drawn.
+    reach = max(1.0, min(width, height)) * 0.06
+    drifting = []
+    for i, (x, y, color) in enumerate(sites):
+        start = i * 2.399963229728653  # golden angle spreads the starting points
+        angle = start + _loop(phase, 1)
+        drifting.append((x + reach * (math.cos(angle) - math.cos(start)),
+                         y + reach * (math.sin(angle) - math.sin(start)), color))
+    return {"sites": drifting}
 
 
-def render_voronoi(width, height, seed, palette_name):
+def render_voronoi(width, height, seed, palette_name, phase=0.0):
     """Voronoi cells shaded by nearest-site distance with glowing boundaries."""
     stops = PALETTES[palette_name]
-    sites = _voronoi_scene(width, height, seed)["sites"]
+    sites = _voronoi_scene(width, height, seed, phase)["sites"]
     scale = max(1.0, min(width, height))
 
     def value(x, y):
@@ -1073,24 +1097,24 @@ def render_lissajous(width, height, seed, palette_name):
                   lambda x, y: _lissajous_value(x, y, glow_values, scene["n_curves"]))
 
 
-def _geo_scene(width, height, seed):
+def _geo_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
     scale = max(1.0, min(width, height) / 2.0)
     polygons = []
-    for _ in range(rng.randint(4, 6)):
+    for n in range(rng.randint(4, 6)):
         sides = rng.randint(3, 8)
         radius = scale * rng.uniform(0.45, 0.95)
-        phase = rng.uniform(0.0, math.tau)
-        polygons.append([(cx + radius * math.cos(i * math.tau / sides + phase),
-                          cy + radius * math.sin(i * math.tau / sides + phase))
+        angle = rng.uniform(0.0, math.tau) + _loop(phase, 1 if n % 2 == 0 else -1)
+        polygons.append([(cx + radius * math.cos(i * math.tau / sides + angle),
+                          cy + radius * math.sin(i * math.tau / sides + angle))
                          for i in range(sides)])
     return {"polygons": polygons}
 
 
-def render_geo(width, height, seed, palette_name):
+def render_geo(width, height, seed, palette_name, phase=0.0):
     stops = PALETTES[palette_name]
-    polygons = _geo_scene(width, height, seed)["polygons"]
+    polygons = _geo_scene(width, height, seed, phase)["polygons"]
     sigma = max(0.6, max(1.0, min(width, height) / 2.0) * 0.025)
     pixels = []
     for y in range(height):
@@ -1679,7 +1703,7 @@ def render_ink(width, height, seed, palette_name):
     return _glow_pixels(glow, width, height, stops)
 
 
-def _gems_scene(width, height, seed):
+def _gems_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     small = max(1.0, min(width, height))
     gems = []
@@ -1687,13 +1711,13 @@ def _gems_scene(width, height, seed):
         cx = rng.uniform(0, width - 1)
         cy = rng.uniform(0, height - 1)
         cr = small * rng.uniform(0.1, 0.25)
-        gems.append((cx, cy, cr, rng.uniform(0, 6.28)))
+        gems.append((cx, cy, cr, rng.uniform(0, 6.28) + _loop(phase, 1)))
     return {"gems": gems}
 
 
-def render_gemstones(width, height, seed, palette_name):
+def render_gemstones(width, height, seed, palette_name, phase=0.0):
     stops = PALETTES[palette_name]
-    gems = _gems_scene(width, height, seed)["gems"]
+    gems = _gems_scene(width, height, seed, phase)["gems"]
 
     def pixel(x, y):
         c = stops[0]
@@ -1710,17 +1734,19 @@ def render_gemstones(width, height, seed, palette_name):
 
     return [[pixel(x, y) for x in range(width)] for y in range(height)]
 
-def _rings_scene(width, height, seed):
+def _rings_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     scale = max(1.0, min(width, height) / 2.0)
-    return {"rings": [(scale * rng.uniform(0.15, 0.95), rng.uniform(0.0, math.tau))
-                      for _ in range(rng.randint(4, 9))]}
+    # Neighbouring rings turn in opposite directions.
+    return {"rings": [(scale * rng.uniform(0.15, 0.95),
+                       rng.uniform(0.0, math.tau) + _loop(phase, 1 if i % 2 == 0 else -1))
+                      for i in range(rng.randint(4, 9))]}
 
 
-def render_rings(width, height, seed, palette_name):
+def render_rings(width, height, seed, palette_name, phase=0.0):
     """Concentric rings, each shaded by a smooth sweep of hue around its circle."""
     stops = PALETTES[palette_name]
-    rings_cfg = _rings_scene(width, height, seed)["rings"]
+    rings_cfg = _rings_scene(width, height, seed, phase)["rings"]
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
 
@@ -1736,24 +1762,24 @@ def render_rings(width, height, seed, palette_name):
     return [[pixel(x, y) for x in range(width)] for y in range(height)]
 
 
-def _aurora_scene(width, height, seed):
+def _aurora_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     ribbons = []
-    for _ in range(rng.randint(3, 7)):
+    for i in range(rng.randint(3, 7)):
         ribbons.append((
             rng.uniform(0, height - 1),                       # y0
             max(1.0, height * rng.uniform(0.06, 0.27)),       # amp
             rng.uniform(1.0, 5.0) / max(1, width),            # freq
-            rng.uniform(0.0, 6.28),                           # phase
+            rng.uniform(0.0, 6.28) + _loop(phase, 1 if i % 2 == 0 else -1),  # phase
             rng.uniform(0.6, 1.4),                            # bw
         ))
     return {"ribbons": ribbons}
 
 
-def render_aurora(width, height, seed, palette_name):
+def render_aurora(width, height, seed, palette_name, phase=0.0):
     """Flowing ribbons: wavy curves sampled across the canvas, blurred by gaussian weighting."""
     stops = PALETTES[palette_name]
-    ribbons = _aurora_scene(width, height, seed)["ribbons"]
+    ribbons = _aurora_scene(width, height, seed, phase)["ribbons"]
 
     def value(x, y):
         v = 0.0
@@ -1767,23 +1793,23 @@ def render_aurora(width, height, seed, palette_name):
 
     return _shade(width, height, stops, value)
 
-def _plasma_scene(width, height, seed):
+def _plasma_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     size = max(width, height)
     layers = []
     # (amplitude, cycles across the canvas) - kept well below the Nyquist limit
-    for amp, cycles in ((1.0, 1.5), (0.8, 2.5), (0.6, 4.0), (0.45, 6.5)):
+    for amp, cycles, turns in ((1.0, 1.5, 1), (0.8, 2.5, -1), (0.6, 4.0, 2), (0.45, 6.5, -1)):
         direction = rng.uniform(0.0, math.tau)
         k = cycles * math.tau / size
         layers.append((amp, k * math.cos(direction), k * math.sin(direction),
-                       rng.uniform(0.0, 6.28)))
+                       rng.uniform(0.0, 6.28) + _loop(phase, turns)))
     return {"layers": layers}
 
 
-def render_plasma(width, height, seed, palette_name):
+def render_plasma(width, height, seed, palette_name, phase=0.0):
     """Plasma effect: sine plane waves from several directions warped by noise."""
     stops = PALETTES[palette_name]
-    layers = _plasma_scene(width, height, seed)["layers"]
+    layers = _plasma_scene(width, height, seed, phase)["layers"]
     pixels = []
     for y in range(height):
         row = []
@@ -1851,10 +1877,15 @@ def _quasar_native_scene(width, height, seed):
 
 
 def _scene_without_stops(builder):
-    return lambda width, height, seed, stops: builder(width, height, seed)
+    return lambda width, height, seed, stops, phase=0.0: builder(width, height, seed)
 
 
-def _no_scene(width, height, seed, stops):
+def _animated_scene(builder):
+    """Like ``_scene_without_stops`` for styles whose scene moves with ``phase``."""
+    return lambda width, height, seed, stops, phase=0.0: builder(width, height, seed, phase)
+
+
+def _no_scene(width, height, seed, stops, phase=0.0):
     return {}
 
 
@@ -1862,7 +1893,7 @@ def _no_scene(width, height, seed, stops):
 # data (numbers, tuples, lists) the core receives. Python still makes every
 # random draw, and native output is tested to be byte-identical to Python.
 NATIVE_STYLES = {
-    "aurora": _scene_without_stops(_aurora_scene),
+    "aurora": _animated_scene(_aurora_scene),
     "blobs": _no_scene,
     "bloom": _scene_without_stops(_bloom_scene),
     "circuit": _scene_without_stops(_circuit_scene),
@@ -1870,27 +1901,28 @@ NATIVE_STYLES = {
     "cosmos": _scene_without_stops(_cosmos_scene),
     "crystal": _scene_without_stops(_crystal_scene),
     "drift": _no_scene,
-    "galaxy": _scene_without_stops(_galaxy_scene),
-    "gems": _scene_without_stops(_gems_scene),
-    "geo": _scene_without_stops(_geo_scene),
+    "galaxy": _animated_scene(_galaxy_scene),
+    "gems": _animated_scene(_gems_scene),
+    "geo": _animated_scene(_geo_scene),
     "horizon": _scene_without_stops(_horizon_scene),
-    "interference": _scene_without_stops(_interference_scene),
-    "kaleidoscope": _scene_without_stops(_kaleidoscope_scene),
+    "interference": _animated_scene(_interference_scene),
+    "kaleidoscope": _animated_scene(_kaleidoscope_scene),
     "mandala": _scene_without_stops(_mandala_scene),
     "mandelbrot": _no_scene,
     "nebula": _scene_without_stops(_nebula_scene),
-    "orbits": lambda width, height, seed, stops: _orbits_scene(width, height, seed, len(stops)),
-    "petals": _scene_without_stops(_petals_scene),
+    "orbits": lambda width, height, seed, stops, phase=0.0: _orbits_scene(
+        width, height, seed, len(stops)),
+    "petals": _animated_scene(_petals_scene),
     "pinwheel": _scene_without_stops(_pinwheel_scene),
-    "plasma": _scene_without_stops(_plasma_scene),
+    "plasma": _animated_scene(_plasma_scene),
     "prism": _scene_without_stops(_prism_scene),
     "quasar": _scene_without_stops(_quasar_native_scene),
-    "rings": _scene_without_stops(_rings_scene),
+    "rings": _animated_scene(_rings_scene),
     "shard": _scene_without_stops(_shard_scene),
-    "spiral": _scene_without_stops(_spiral_scene),
-    "starburst": _scene_without_stops(_starburst_scene),
-    "voronoi": _scene_without_stops(_voronoi_scene),
-    "waves": _scene_without_stops(_waves_scene),
+    "spiral": _animated_scene(_spiral_scene),
+    "starburst": _animated_scene(_starburst_scene),
+    "voronoi": _animated_scene(_voronoi_scene),
+    "waves": _animated_scene(_waves_scene),
     "torus": _scene_without_stops(_torus_scene),
     "lissajous": _scene_without_stops(_lissajous_scene),
     "constellations": _scene_without_stops(_constellation_scene),
@@ -1901,13 +1933,30 @@ NATIVE_STYLES = {
 }
 
 
-def _render_native(style, width, height, seed, stops):
-    scene = NATIVE_STYLES[style](width, height, seed, stops)
+# Styles that move with ``phase``, a loop position where 1.0 repeats 0.0. Other
+# styles ignore it, so their frames only differ by seed. Each is tested to match
+# its still image at phase 0 and to loop.
+ANIMATED_STYLES = frozenset({
+    "aurora", "galaxy", "gems", "geo", "interference", "kaleidoscope", "petals",
+    "plasma", "rings", "spiral", "starburst", "voronoi", "waves",
+})
+
+
+def _render_native(style, width, height, seed, stops, phase=0.0):
+    scene = NATIVE_STYLES[style](width, height, seed, stops, phase)
     return _core.render(style, width, height, _seed32(seed), stops, scene)
 
 
-def _check_render_args(width, height, style, palette_name):
+def _render_python(style, width, height, seed, palette_name, phase):
+    if style in ANIMATED_STYLES:
+        return STYLES[style](width, height, seed, palette_name, phase)
+    return STYLES[style](width, height, seed, palette_name)
+
+
+def _check_render_args(width, height, style, palette_name, phase=0.0):
     _validate_dimensions(width, height)
+    if isinstance(phase, bool) or not isinstance(phase, (int, float)) or not math.isfinite(phase):
+        raise ValueError("phase must be a finite number")
     if palette_name not in PALETTES:
         raise ValueError("unknown palette: %s" % palette_name)
     if style not in STYLES:
@@ -1918,27 +1967,33 @@ def _use_native(style):
     return _core is not None and style in NATIVE_STYLES
 
 
-def render(width, height, seed, style, palette_name):
-    """Render ``style`` and return ``height`` rows of ``width`` RGB tuples."""
-    _check_render_args(width, height, style, palette_name)
+def render(width, height, seed, style, palette_name, phase=0.0):
+    """Render ``style`` and return ``height`` rows of ``width`` RGB tuples.
+
+    ``phase`` is the position in a loop (1.0 repeats 0.0) for the styles in
+    ``ANIMATED_STYLES``; other styles ignore it.
+    """
+    _check_render_args(width, height, style, palette_name, phase)
     if _use_native(style):
-        rgb = _render_native(style, width, height, seed, PALETTES[palette_name])
+        rgb = _render_native(style, width, height, seed, PALETTES[palette_name], phase)
         stride = width * 3
         return [list(zip(rgb[o:o + stride:3], rgb[o + 1:o + stride:3], rgb[o + 2:o + stride:3]))
                 for o in range(0, stride * height, stride)]
-    return STYLES[style](width, height, seed, palette_name)
+    return _render_python(style, width, height, seed, palette_name, phase)
 
 
-def render_rgb(width, height, seed, style, palette_name):
+def render_rgb(width, height, seed, style, palette_name, phase=0.0):
     """Render ``style`` as packed RGB bytes: row-major, 3 bytes per pixel.
 
     Much smaller and faster than ``render()`` for large images, since no
     per-pixel tuples are created when the Rust core renders the style.
+    ``phase`` is as for ``render()``.
     """
-    _check_render_args(width, height, style, palette_name)
+    _check_render_args(width, height, style, palette_name, phase)
     if _use_native(style):
-        return _render_native(style, width, height, seed, PALETTES[palette_name])
-    return _packed_rgb(STYLES[style](width, height, seed, palette_name), width, height)
+        return _render_native(style, width, height, seed, PALETTES[palette_name], phase)
+    return _packed_rgb(_render_python(style, width, height, seed, palette_name, phase),
+                       width, height)
 
 
 # ---------------------------------------------------------------- png writer
@@ -2095,6 +2150,13 @@ def check_limits(width, height, frames):
                          % (frames, width, height, total, MAX_ANIMATION_BYTES))
 
 
+def _phase(text):
+    value = float(text)
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError("phase must be a finite number")
+    return value
+
+
 def _fps(text):
     value = int(text)
     if not 1 <= value <= 65535:
@@ -2126,7 +2188,14 @@ def _build_parser():
     parser.add_argument("--height", type=int, default=256)
     parser.add_argument("--out", default="art.png")
     parser.add_argument("--frames", type=int, default=1,
-                        help="number of frames using consecutive seeds (default 1)")
+                        help="number of frames (default 1). Styles with motion animate one "
+                             "scene in a seamless loop; others use consecutive seeds")
+    parser.add_argument("--phase", type=_phase, default=0.0,
+                        help="loop position for styles with motion; 1.0 repeats 0.0 "
+                             "(default 0). With --frames, the first frame's position")
+    parser.add_argument("--slideshow", action="store_true",
+                        help="make every frame an unrelated scene with consecutive seeds, "
+                             "even for styles with motion")
     parser.add_argument("--fps", type=_fps, default=12,
                         help="animation frame rate with --frames > 1 (default 12)")
     parser.add_argument("--no-limits", action="store_true",
@@ -2191,17 +2260,26 @@ def main():
         _render_and_write(args, seed, palette)
 
 
+def _frame_plan(args, seed):
+    """``(seed, phase)`` for each frame: one moving scene, or a slideshow of seeds."""
+    if args.style in ANIMATED_STYLES and not args.slideshow:
+        start = args.phase % 1.0  # keeps the per-frame steps from vanishing at huge phases
+        return [(seed, start + i / args.frames) for i in range(args.frames)]
+    if args.frames > 1 and not args.slideshow:
+        print("note: %s has no motion yet, so each frame uses the next seed "
+              "(a slideshow)" % args.style, file=sys.stderr)
+    return [(seed + i, args.phase) for i in range(args.frames)]
+
+
 def _render_and_write(args, seed, palette):
     if args.frames > 1:
-        frames = [
-            render_rgb(args.width, args.height, seed + i, args.style, palette)
-            for i in range(args.frames)
-        ]
+        frames = [render_rgb(args.width, args.height, frame_seed, args.style, palette, phase)
+                  for frame_seed, phase in _frame_plan(args, seed)]
         write_animated_png(args.out, frames, args.width, args.height, fps=args.fps)
         print("wrote %d animation frames to %s (%s, seed=%d, palette=%s, %d fps)"
               % (args.frames, args.out, args.style, seed, palette, args.fps))
     else:
-        pixels = render_rgb(args.width, args.height, seed, args.style, palette)
+        pixels = render_rgb(args.width, args.height, seed, args.style, palette, args.phase)
         write_png(args.out, pixels, args.width, args.height)
         print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, seed, palette))
 
