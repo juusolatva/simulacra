@@ -5,6 +5,7 @@
 pub mod brush;
 pub mod drift;
 pub mod fields;
+pub mod mosaic;
 pub mod quasar;
 pub mod shapes;
 

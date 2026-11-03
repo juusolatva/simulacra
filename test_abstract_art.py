@@ -97,7 +97,7 @@ class RenderingTests(unittest.TestCase):
         self.assertGreater(changed, 64)
 
     def test_all_styles_have_valid_dimensions_and_channels(self):
-        self.assertEqual(len(art.STYLES), 36)
+        self.assertEqual(len(art.STYLES), 37)
         for style in art.STYLES:
             with self.subTest(style=style):
                 pixels = art.render(40, 28, 1, style, 'deep')
@@ -312,6 +312,22 @@ class RenderingTests(unittest.TestCase):
                     with mock.patch.object(art, '_core', None):
                         python = art.render_rgb(width, height, seed, style, palette)
                     self.assertEqual(native, python)
+
+    def test_mosaic_tiles_are_flat_and_set_in_grout(self):
+        size = 320  # 5-pixel tiles: the first row and column of each tile are grout
+        scene = art._mosaic_scene(size, size, 4)
+        self.assertEqual((scene['cols'], scene['rows'], scene['tile']), (64, 64, 5.0))
+        pixels = art.render(size, size, 4, 'mosaic', 'rainbow')
+        grout = art.PALETTES['rainbow'][0]
+        for j in range(scene['rows']):
+            for i in range(scene['cols']):
+                y0, x0 = j * 5, i * 5
+                self.assertEqual(pixels[y0][x0 + 2], grout)
+                self.assertEqual(pixels[y0 + 2][x0], grout)
+                inside = {pixels[y][x] for y in range(y0 + 1, y0 + 5) for x in range(x0 + 1, x0 + 5)}
+                self.assertEqual(len(inside), 1, (i, j))
+        with mock.patch.object(art, '_core', None):  # grout matches in both renderers
+            self.assertEqual(art.render(size, size, 4, 'mosaic', 'rainbow'), pixels)
 
     def test_every_palette_is_valid_and_starts_dark(self):
         for name, stops in art.PALETTES.items():

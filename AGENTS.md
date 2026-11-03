@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-`abstract_art.py` is a generative art tool: 36 styles, 15 palettes, PNG/APNG writers and a CLI. `test_abstract_art.py` holds the `unittest` suite and `bench_abstract_art.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders all 36 styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
+`abstract_art.py` is a generative art tool: 37 styles, 15 palettes, PNG/APNG writers and a CLI. `test_abstract_art.py` holds the `unittest` suite and `bench_abstract_art.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders all 37 styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
 
 ## Progress
 
@@ -22,11 +22,12 @@ Guidance for coding agents working in this repository. User-facing documentation
 | More built-in palettes: rainbow, candy, tropical, jewel, vaporwave, sherbet | Done | this branch |
 | Real animation, batch 1 (13 styles): `phase` parameter, `ANIMATED_STYLES`, `--phase`, `--slideshow`; aurora, galaxy, gems, geo, interference, kaleidoscope, petals, plasma, rings, spiral, starburst, voronoi, waves | Done | this branch |
 | Real animation, batch 2 (8 styles): looping noise (`fbm(..., phase=)` / `fbm_loop`), `_circle_offset()`; blobs, bloom, cosmos, crystal, drift, horizon, nebula, pinwheel | Done | this branch |
+| New style `mosaic` (inspired by Jan Anderzen's tram-stop mosaics): per-tile patterns, animated, native | Done | this branch |
 | Real animation, later batches: the 15 remaining styles (brush and trail, torus, quasar, mandala, orbits, and others) | **Next** | — |
 | GIF output (own LZW writer, one shared 256-color table sampled from the palette), then output options | Planned | — |
 | Palettes from the command line: `--palette-stops` and `parse_hex_palette()` | Done | this branch |
 
-Measured at 640×480: all 36 styles took 178 s in pure Python at the start. With all 36 styles native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
+Measured at 640×480: all 36 styles took 178 s in pure Python at the start. With every style native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
 
 ## Commands
 
@@ -54,6 +55,7 @@ Do not commit generated images.
 - **Native output must be byte-identical to Python.** Port expressions operation-for-operation in the same order (no algebraic rewrites, no `mul_add`, no `clamp` where Python's `max/min` NaN behavior differs), and keep the Python renderer as the reference. `test_native_styles_match_python_exactly` enforces this; extend its cases when porting a style. Move the style's random layout into `_x_scene()` first and have the Python renderer use it, verifying unchanged output with a fingerprint. Rust helpers that replicate Python semantics live in `core/src/geometry.rs` (`py_mod`, `py_sum`, polygon and segment distances) and `core/src/styles/mod.rs` (`gaussian`, `unit`, `center`, `small_side`).
 - **Animation (`phase`):** a style moves by adding `_loop(phase, k)` (`tau * k * phase`, `k` a whole number, negative to reverse) to phases and angles in its `_x_scene()`, so the Rust shader needs no change and native stays byte-identical. Keep it free of new random draws (derive per-item values from the index) so scenes at phase 0 match the still image, and give each style an entry in `ANIMATED_STYLES` and `_animated_scene()` in `NATIVE_STYLES`. Offsets that are not whole turns, such as the drift in `voronoi`, are measured from their starting value so phase 0 adds exactly 0.0. - **Looping noise:** `fbm(..., phase=)` (Rust `fbm_loop`) blends a stack of ordinary 2D noise layers, each the same noise under the seed plus `7919 * layer`. Layer 0 is the real seed, so phase 0 is exactly the still noise, and the layer index wraps, so phase 1 repeats phase 0. Octave `i` steps through `_NOISE_LAYERS + i` layers per loop so the octaves do not all stall or pulse together. The blend is linear on purpose; with an eased blend the speed varied about 3x and hitched at the loop point. A style animates its noise by passing `phase` to `fbm` and putting `"phase"` in its scene for the shader. Circling objects use `_circle_offset()`, whose offset is exactly zero at phase 0.
 - **Still to do for animation:** brush and trail styles (moving strokes), torus (3D rotation), and the styles with several noise sources and objects (quasar, mandala, orbits, cosmic).
+- **Per-tile styles (`mosaic`):** `_mosaic_scene()` computes one palette position per tile on a grid about `_MOSAIC_TILES` tiles across the short side, so the work does not grow with the canvas, and the Rust shader (`core/src/styles/mosaic.rs`) only expands tiles and grout to pixels. Noise there is sampled in tile units, and `value_noise` has an 8-unit cell, so tile-space noise needs scales near 1 rather than the 0.01 used per pixel. Patterns move by whole tiles (`_mosaic_shift`), wrapping after one period per loop.
 - **Packed frames:** `render_rgb()` returns `width * height * 3` bytes; the writers accept rows or packed bytes (`_packed_rgb`). The CLI uses packed frames.
 - **Helpers for keeping functions small:** `_shade(width, height, stops, value)` builds rows from a per-pixel `value(x, y)`. `_sample_by_length()` and `_segment_box()` sample curves and yield the pixels near a segment. `_RowFilter` hands per-pixel code only the objects that can reach a row. `_glow_pixels()` maps a flat intensity buffer to rows.
 
