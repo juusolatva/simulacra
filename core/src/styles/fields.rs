@@ -7,18 +7,24 @@ use rayon::prelude::*;
 
 use super::{Style, center, gaussian, small_side, unit};
 use crate::geometry::py_mod;
-use crate::noise::{contrast, fbm};
+use crate::noise::{contrast, fbm, fbm_loop};
 use crate::palette::Palette;
 use crate::raster::{shade, shade_rgb};
 
-/// `render_blobs` (no random scene).
-pub struct Blobs;
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Blobs {
+    phase: f64,
+}
 
 impl Style for Blobs {
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let k = 40.0 / width.max(height) as f64;
         shade(width, height, palette, |x, y| {
-            contrast(fbm(x as f64 * k, y as f64 * k, seed, 5), 2.2)
+            contrast(
+                fbm_loop(x as f64 * k, y as f64 * k, seed, 5, self.phase),
+                2.2,
+            )
         })
     }
 }
@@ -117,6 +123,8 @@ impl Style for Kaleidoscope {
 pub struct Pinwheel {
     n_arms: i64,
     twist: f64,
+    spin: f64,
+    phase: f64,
 }
 
 impl Style for Pinwheel {
@@ -134,10 +142,10 @@ impl Style for Pinwheel {
                 0.0
             };
             let t = unit(r / max_r);
-            let arm_phase = theta * arms + t * self.twist;
+            let arm_phase = theta * arms + t * self.twist + self.spin;
             let d = (py_mod(arm_phase + PI, 2.0 * PI) - PI).abs();
             let w = gaussian(d, 0.35 * (1.0 - t));
-            let n = fbm(x as f64 * 0.006, y as f64 * 0.006, seed, 2);
+            let n = fbm_loop(x as f64 * 0.006, y as f64 * 0.006, seed, 2, self.phase);
             unit((w * (1.0 - 0.35 * t) + n * 0.15) / 1.2)
         })
     }
@@ -180,6 +188,7 @@ impl Style for Galaxy {
 pub struct Bloom {
     /// (x, y, radius, amp)
     blooms: Vec<(f64, f64, f64, f64)>,
+    phase: f64,
 }
 
 impl Style for Bloom {
@@ -187,7 +196,7 @@ impl Style for Bloom {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
             let mut v = 0.0;
-            let n = fbm(x * 0.006, y * 0.006, seed, 3);
+            let n = fbm_loop(x * 0.006, y * 0.006, seed, 3, self.phase);
             for &(bx, by, br, amp) in &self.blooms {
                 v += gaussian((x - bx).hypot(y - by), br) * amp;
             }
@@ -204,6 +213,7 @@ pub struct Nebula {
     clouds: Vec<(f64, f64, f64, f64)>,
     /// (x, y, radius)
     stars: Vec<(f64, f64, f64)>,
+    phase: f64,
 }
 
 impl Style for Nebula {
@@ -216,7 +226,7 @@ impl Style for Nebula {
                 let d2 = (x - ccx) * (x - ccx) + (y - ccy) * (y - ccy);
                 v += (-d2 / (2.0 * (cr * cr))).exp() * amp;
             }
-            let n = fbm(x * noise_k, y * noise_k, seed, 4);
+            let n = fbm_loop(x * noise_k, y * noise_k, seed, 4, self.phase);
             v *= (0.2 + 1.6 * (contrast(n, 2.0) - 0.2)).max(0.0);
             if self
                 .stars
@@ -516,6 +526,7 @@ impl Style for Mandelbrot {
 pub struct Horizon {
     /// (ridge height fraction, noise offset, palette position) per layer
     layers: Vec<(f64, f64, f64)>,
+    phase: f64,
 }
 
 impl Style for Horizon {
@@ -528,7 +539,10 @@ impl Style for Horizon {
             .map(|&(fraction, offset, color)| {
                 let ridge = (0..width)
                     .map(|x| {
-                        h * (fraction + 0.18 * (fbm(x as f64 / span * 40.0, offset, seed, 3) - 0.5))
+                        h * (fraction
+                            + 0.18
+                                * (fbm_loop(x as f64 / span * 40.0, offset, seed, 3, self.phase)
+                                    - 0.5))
                     })
                     .collect();
                 (ridge, palette.color(color))
@@ -584,6 +598,7 @@ impl Style for Voronoi {
 pub struct Crystal {
     light: (f64, f64, f64),
     half: (f64, f64, f64),
+    phase: f64,
 }
 
 impl Style for Crystal {
@@ -597,7 +612,15 @@ impl Style for Crystal {
         // Height field first: every pixel's gradient reads its neighbours.
         let field: Vec<f64> = (0..width * height)
             .into_par_iter()
-            .map(|i| fbm((i % width) as f64 * k, (i / width) as f64 * k, seed, 3))
+            .map(|i| {
+                fbm_loop(
+                    (i % width) as f64 * k,
+                    (i / width) as f64 * k,
+                    seed,
+                    3,
+                    self.phase,
+                )
+            })
             .collect();
         let at = |x: usize, y: usize| field[y * width + x];
 

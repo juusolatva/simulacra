@@ -228,13 +228,41 @@ def value_noise(x, y, seed, cell=8.0):
             + n01 * (1 - fx) * fy + n11 * fx * fy)
 
 
-def fbm(x, y, seed, octaves=4, persistence=0.5, lacunarity=2.0):
+# Noise that changes over a loop is blended from a stack of ordinary 2D noise
+# "layers", each the same noise under a different seed. Layer 0 uses the real seed,
+# so phase 0 gives exactly the still noise, and the layer index wraps, so phase 1
+# gives it again. Octave i steps through (_NOISE_LAYERS + i) layers per loop, so
+# the rates stay close and detail evolves together, but the layers are not crossed
+# at the same moments. The blend is linear on purpose: an eased blend stops every
+# octave at each layer, so the animation lurched and hitched where the loop wraps.
+_NOISE_LAYERS = 4
+
+
+def _value_noise_at(x, y, seed, z, period):
+    """Value noise at loop position ``z`` in ``[0, period)`` layers."""
+    layer = math.floor(z)
+    blend = z - layer
+    a = value_noise(x, y, seed + (layer % period) * 7919)
+    if blend <= 0.0:  # exactly on a layer; blend is never negative
+        return a
+    b = value_noise(x, y, seed + ((layer + 1) % period) * 7919)
+    return a * (1 - blend) + b * blend
+
+
+def fbm(x, y, seed, octaves=4, persistence=0.5, lacunarity=2.0, phase=0.0):
+    """Fractal noise in [0, 1]. ``phase`` (1.0 repeats 0.0) makes it evolve over a loop."""
     total = 0.0
     norm = 0.0
     freq = 1.0
     amp = 1.0
-    for _ in range(octaves):
-        total += value_noise(x * freq, y * freq, seed) * amp
+    phase %= 1.0
+    for octave in range(octaves):
+        if phase <= 0.0:  # reduced to [0, 1), so this is exactly phase 0
+            n = value_noise(x * freq, y * freq, seed)
+        else:
+            period = _NOISE_LAYERS + octave
+            n = _value_noise_at(x * freq, y * freq, seed, phase * period, period)
+        total += n * amp
         norm += amp
         amp *= persistence
         freq *= lacunarity
@@ -329,6 +357,19 @@ def _loop(phase, cycles):
     return math.tau * cycles * (phase % 1.0)
 
 
+def _circle_offset(index, reach, phase):
+    """Where item ``index`` sits on a circle of radius ``reach`` as ``phase`` runs 0 to 1.
+
+    The offset is measured from the circle's starting point, so phase 0 is exactly
+    ``(0.0, 0.0)`` and the item stays where its scene put it. The golden angle
+    spreads the starting points so items do not move in step.
+    """
+    start = index * 2.399963229728653
+    angle = start + _loop(phase, 1)
+    return (reach * (math.cos(angle) - math.cos(start)),
+            reach * (math.sin(angle) - math.sin(start)))
+
+
 def _waves_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     return {"layers": [
@@ -357,7 +398,11 @@ def render_waves(width, height, seed, palette_name, phase=0.0):
     return pixels
 
 
-def render_blobs(width, height, seed, palette_name):
+def _blobs_scene(width, height, seed, phase=0.0):
+    return {"phase": phase}
+
+
+def render_blobs(width, height, seed, palette_name, phase=0.0):
     stops = PALETTES[palette_name]
     # Noise coordinates scale with the canvas: about 5 base cells across.
     k = 40.0 / max(width, height)
@@ -365,7 +410,7 @@ def render_blobs(width, height, seed, palette_name):
     for y in range(height):
         row = []
         for x in range(width):
-            n = fbm(x * k, y * k, seed, octaves=5)
+            n = fbm(x * k, y * k, seed, octaves=5, phase=phase)
             row.append(palette_color(stops, _contrast(n, 2.2)))
         pixels.append(row)
     return pixels
@@ -498,26 +543,28 @@ def render_spiral(width, height, seed, palette_name, phase=0.0):
 
 
 
-def _nebula_scene(width, height, seed):
+def _nebula_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     diag = math.sqrt(width * width + height * height)
     clouds = []
-    for _ in range(rng.randint(3, 6)):
+    for i in range(rng.randint(3, 6)):
         ccx = rng.uniform(width * 0.1, width * 0.9)
         ccy = rng.uniform(height * 0.1, height * 0.9)
         cr = rng.uniform(0.08, 0.25) * diag
-        clouds.append((ccx, ccy, cr, rng.uniform(0.5, 1.5)))
+        amp = rng.uniform(0.5, 1.5)
+        dx, dy = _circle_offset(i, diag * 0.03, phase)
+        clouds.append((ccx + dx, ccy + dy, cr, amp))
     stars = [
         (rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.5, 2.0))
         for _ in range(40)
     ]
-    return {"clouds": clouds, "stars": stars}
+    return {"clouds": clouds, "stars": stars, "phase": phase}
 
 
-def render_nebula(width, height, seed, palette_name):
+def render_nebula(width, height, seed, palette_name, phase=0.0):
     """Nebula: stacked radial glow clouds over a noise starfield."""
     stops = PALETTES[palette_name]
-    scene = _nebula_scene(width, height, seed)
+    scene = _nebula_scene(width, height, seed, phase)
     clouds = scene["clouds"]
     noise_k = 24.0 / max(width, height)
     star_rows = _RowFilter(scene["stars"], lambda s: s[1], lambda s: s[2] + 1.0)
@@ -529,7 +576,7 @@ def render_nebula(width, height, seed, palette_name):
             for (ccx, ccy, cr, amp) in clouds:
                 d2 = (x - ccx) ** 2 + (y - ccy) ** 2
                 v += math.exp(-d2 / (2.0 * cr ** 2)) * amp
-            n = fbm(x * noise_k, y * noise_k, seed, octaves=4)
+            n = fbm(x * noise_k, y * noise_k, seed, octaves=4, phase=phase)
             v *= max(0.0, 0.2 + 1.6 * (_contrast(n, 2.0) - 0.2))
             for (sx, sy, sr) in star_rows(y):
                 if math.hypot(x - sx, y - sy) < sr:
@@ -595,20 +642,21 @@ def render_petals(width, height, seed, palette_name, phase=0.0):
 
 
 
-def _horizon_scene(width, height, seed):
+def _horizon_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     # (ridge height fraction, noise offset, palette position) per layer, far to near
     return {"layers": [(fraction, rng.uniform(0, 100), 0.55 - i * 0.13)
-                       for i, fraction in enumerate((0.35, 0.5, 0.65, 0.8))]}
+                       for i, fraction in enumerate((0.35, 0.5, 0.65, 0.8))],
+            "phase": phase}
 
 
-def render_horizon(width, height, seed, palette_name):
+def render_horizon(width, height, seed, palette_name, phase=0.0):
     """Layered mountain silhouettes over a vertical gradient sky."""
     stops = PALETTES[palette_name]
     ridges = []
-    for fraction, offset, color in _horizon_scene(width, height, seed)["layers"]:
+    for fraction, offset, color in _horizon_scene(width, height, seed, phase)["layers"]:
         ridge = [height * (fraction + 0.18 * (fbm(
-            x / max(1, width - 1) * 40, offset, seed, octaves=3) - 0.5))
+            x / max(1, width - 1) * 40, offset, seed, octaves=3, phase=phase) - 0.5))
                  for x in range(width)]
         ridges.append((ridge, palette_color(stops, color)))
     pixels = []
@@ -738,7 +786,7 @@ def render_constellations(width, height, seed, palette_name):
                   lambda x, y: _constellation_value(x, y, star_rows, line_grid))
 
 
-def _cosmos_scene(width, height, seed):
+def _cosmos_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     centers = []
     for _ in range(rng.randint(2, 5)):
@@ -747,16 +795,16 @@ def _cosmos_scene(width, height, seed):
             rng.uniform(height * 0.2, height * 0.8),                                # y
             rng.uniform(0.25, 0.6) * math.sqrt(width * width + height * height),    # max_r
             rng.randint(3, 8),                                                      # rings
-            rng.uniform(0.0, 6.28),                                                 # phase
+            rng.uniform(0.0, 6.28) - _loop(phase, 1),                               # phase (minus: bands move outward)
             rng.uniform(0.6, 1.4),                                                  # amp
         ))
     return {"centers": centers}
 
 
-def render_cosmos(width, height, seed, palette_name):
+def render_cosmos(width, height, seed, palette_name, phase=0.0):
     """Cosmos: concentric ripples emanating from random luminous centers."""
     stops = PALETTES[palette_name]
-    centers = _cosmos_scene(width, height, seed)["centers"]
+    centers = _cosmos_scene(width, height, seed, phase)["centers"]
 
     def value(x, y):
         v = 0.0
@@ -818,28 +866,30 @@ def render_galaxy(width, height, seed, palette_name, phase=0.0):
     return pixels
 
 
-def _bloom_scene(width, height, seed):
+def _bloom_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     scale = max(1.0, min(width, height))
     blooms = []
-    for _ in range(rng.randint(4, 9)):
+    for i in range(rng.randint(4, 9)):
         bx = rng.uniform(0, width - 1)
         by = rng.uniform(0, height - 1)
         br = scale * rng.uniform(0.08, 0.27)
-        blooms.append((bx, by, br, rng.uniform(0.4, 1.0)))
-    return {"blooms": blooms}
+        amp = rng.uniform(0.4, 1.0)
+        dx, dy = _circle_offset(i, scale * 0.05, phase)
+        blooms.append((bx + dx, by + dy, br, amp))
+    return {"blooms": blooms, "phase": phase}
 
 
-def render_bloom(width, height, seed, palette_name):
+def render_bloom(width, height, seed, palette_name, phase=0.0):
     """Radial blooms: soft glowing clouds modulated by noise."""
     stops = PALETTES[palette_name]
-    blooms = _bloom_scene(width, height, seed)["blooms"]
+    blooms = _bloom_scene(width, height, seed, phase)["blooms"]
     pixels = []
     for y in range(height):
         row = []
         for x in range(width):
             v = 0.0
-            n = fbm(x * 0.006, y * 0.006, seed, octaves=3)
+            n = fbm(x * 0.006, y * 0.006, seed, octaves=3, phase=phase)
             for (bx, by, br, amp) in blooms:
                 d = math.hypot(x - bx, y - by)
                 v += math.exp(-((d / br) ** 2) / 2.0) * amp
@@ -979,10 +1029,8 @@ def _voronoi_scene(width, height, seed, phase=0.0):
     reach = max(1.0, min(width, height)) * 0.06
     drifting = []
     for i, (x, y, color) in enumerate(sites):
-        start = i * 2.399963229728653  # golden angle spreads the starting points
-        angle = start + _loop(phase, 1)
-        drifting.append((x + reach * (math.cos(angle) - math.cos(start)),
-                         y + reach * (math.sin(angle) - math.sin(start)), color))
+        dx, dy = _circle_offset(i, reach, phase)
+        drifting.append((x + dx, y + dy, color))
     return {"sites": drifting}
 
 
@@ -1003,16 +1051,17 @@ def render_voronoi(width, height, seed, palette_name, phase=0.0):
     return _shade(width, height, stops, value)
 
 
-def _pinwheel_scene(width, height, seed):
+def _pinwheel_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
-    return {"n_arms": rng.randint(3, 5), "twist": rng.uniform(2.0, 7.0)}
+    return {"n_arms": rng.randint(3, 5), "twist": rng.uniform(2.0, 7.0),
+            "spin": _loop(phase, 1), "phase": phase}
 
 
-def render_pinwheel(width, height, seed, palette_name):
+def render_pinwheel(width, height, seed, palette_name, phase=0.0):
     """Pinwheel: swirling radial arms with noise-modulated twist."""
     stops = PALETTES[palette_name]
-    scene = _pinwheel_scene(width, height, seed)
-    n_arms, twist = scene["n_arms"], scene["twist"]
+    scene = _pinwheel_scene(width, height, seed, phase)
+    n_arms, twist, spin = scene["n_arms"], scene["twist"], scene["spin"]
     # 1.05 keeps t < 1 at the corners, so the arm width below never reaches zero.
     max_r = math.sqrt((width / 2.0) ** 2 + (height / 2.0) ** 2) * 1.05
     pixels = []
@@ -1024,10 +1073,10 @@ def render_pinwheel(width, height, seed, palette_name):
             r = math.sqrt(dx * dx + dy * dy)
             theta = math.atan2(dy, dx) if (dx or dy) else 0.0
             t = min(1.0, max(0.0, r / max_r))
-            arm_phase = theta * n_arms + t * twist
+            arm_phase = theta * n_arms + t * twist + spin
             d = abs(((arm_phase + math.pi) % (2 * math.pi)) - math.pi)
             w = math.exp(-((d / (0.35 * (1.0 - t))) ** 2) / 2.0)
-            n = fbm(x * 0.006, y * 0.006, seed, octaves=2)
+            n = fbm(x * 0.006, y * 0.006, seed, octaves=2, phase=phase)
             v = w * (1.0 - 0.35 * t) + n * 0.15
             t_val = min(1.0, max(0.0, v / 1.2))
             row.append(palette_color(stops, t_val))
@@ -1512,7 +1561,11 @@ def render_mandala(width, height, seed, palette_name):
     return _shade(width, height, stops, lambda x, y: _mandala_value(x, y, value_scene))
 
 
-def render_drift(width, height, seed, palette_name):
+def _drift_scene(width, height, seed, phase=0.0):
+    return {"phase": phase}
+
+
+def render_drift(width, height, seed, palette_name, phase=0.0):
     """Drift: liquid flow-fields where nested noise currents warp the sampling grid,
     producing smooth organic contours that feel like slow-moving currents."""
     stops = PALETTES[palette_name]
@@ -1524,26 +1577,26 @@ def render_drift(width, height, seed, palette_name):
         for x in range(width):
             u, w = x * k, y * k
             # current offsets from low-frequency turbulence
-            ox = (fbm(u * 0.55, w * 0.55, seed, octaves=3) - 0.5) * 24.0
-            oy = (fbm(u * 0.5 + 2.1, w * 0.5 + 5.7, seed, octaves=2) - 0.5) * 18.0
+            ox = (fbm(u * 0.55, w * 0.55, seed, octaves=3, phase=phase) - 0.5) * 24.0
+            oy = (fbm(u * 0.5 + 2.1, w * 0.5 + 5.7, seed, octaves=2, phase=phase) - 0.5) * 18.0
             # sample the value field displaced along the current
-            v = fbm(u + ox, w + oy, seed, octaves=4)
+            v = fbm(u + ox, w + oy, seed, octaves=4, phase=phase)
             row.append(palette_color(stops, _contrast(v, 2.6)))
         pixels.append(row)
     return pixels
 
 
-def _crystal_scene(width, height, seed):
+def _crystal_scene(width, height, seed, phase=0.0):
     """The fixed light and its Blinn-Phong half vector (no random draws)."""
     light = (0.45, -0.55, 0.70)
     ln = math.sqrt(sum(c * c for c in light))
     light = (light[0] / ln, light[1] / ln, light[2] / ln)
     hx, hy, hz = light[0], light[1], light[2] + 1.0  # half vector, viewer at +z
     hn = math.sqrt(hx * hx + hy * hy + hz * hz)
-    return {"light": light, "half": (hx / hn, hy / hn, hz / hn)}
+    return {"light": light, "half": (hx / hn, hy / hn, hz / hn), "phase": phase}
 
 
-def render_crystal(width, height, seed, palette_name):
+def render_crystal(width, height, seed, palette_name, phase=0.0):
     """Crystal: noise-grown terrain quantized into low-poly faceted gem faces.
 
     A height field is grown from fBm noise and its gradient is measured with
@@ -1552,7 +1605,7 @@ def render_crystal(width, height, seed, palette_name):
     flat facets that are lit with diffuse and Blinn-Phong specular terms.
     """
     stops = PALETTES[palette_name]
-    scene = _crystal_scene(width, height, seed)
+    scene = _crystal_scene(width, height, seed, phase)
     light, half = scene["light"], scene["half"]
     k = 28.0 / max(width, height)  # about 3.5 base noise cells across the canvas
     # Per-pixel slopes scale with k (median ~0.064 per noise unit); this maps the
@@ -1561,7 +1614,7 @@ def render_crystal(width, height, seed, palette_name):
     tilt_step = math.pi / 10
     az_step = math.pi / 4
 
-    field = [[fbm(x * k, y * k, seed, octaves=3) for x in range(width)]
+    field = [[fbm(x * k, y * k, seed, octaves=3, phase=phase) for x in range(width)]
              for y in range(height)]
 
     pixels = []
@@ -1894,26 +1947,26 @@ def _no_scene(width, height, seed, stops, phase=0.0):
 # random draw, and native output is tested to be byte-identical to Python.
 NATIVE_STYLES = {
     "aurora": _animated_scene(_aurora_scene),
-    "blobs": _no_scene,
-    "bloom": _scene_without_stops(_bloom_scene),
+    "blobs": _animated_scene(_blobs_scene),
+    "bloom": _animated_scene(_bloom_scene),
     "circuit": _scene_without_stops(_circuit_scene),
     "cosmic": _scene_without_stops(_cosmic_scene),
-    "cosmos": _scene_without_stops(_cosmos_scene),
-    "crystal": _scene_without_stops(_crystal_scene),
-    "drift": _no_scene,
+    "cosmos": _animated_scene(_cosmos_scene),
+    "crystal": _animated_scene(_crystal_scene),
+    "drift": _animated_scene(_drift_scene),
     "galaxy": _animated_scene(_galaxy_scene),
     "gems": _animated_scene(_gems_scene),
     "geo": _animated_scene(_geo_scene),
-    "horizon": _scene_without_stops(_horizon_scene),
+    "horizon": _animated_scene(_horizon_scene),
     "interference": _animated_scene(_interference_scene),
     "kaleidoscope": _animated_scene(_kaleidoscope_scene),
     "mandala": _scene_without_stops(_mandala_scene),
     "mandelbrot": _no_scene,
-    "nebula": _scene_without_stops(_nebula_scene),
+    "nebula": _animated_scene(_nebula_scene),
     "orbits": lambda width, height, seed, stops, phase=0.0: _orbits_scene(
         width, height, seed, len(stops)),
     "petals": _animated_scene(_petals_scene),
-    "pinwheel": _scene_without_stops(_pinwheel_scene),
+    "pinwheel": _animated_scene(_pinwheel_scene),
     "plasma": _animated_scene(_plasma_scene),
     "prism": _scene_without_stops(_prism_scene),
     "quasar": _scene_without_stops(_quasar_native_scene),
@@ -1937,8 +1990,9 @@ NATIVE_STYLES = {
 # styles ignore it, so their frames only differ by seed. Each is tested to match
 # its still image at phase 0 and to loop.
 ANIMATED_STYLES = frozenset({
-    "aurora", "galaxy", "gems", "geo", "interference", "kaleidoscope", "petals",
-    "plasma", "rings", "spiral", "starburst", "voronoi", "waves",
+    "aurora", "blobs", "bloom", "cosmos", "crystal", "drift", "galaxy", "gems", "geo",
+    "horizon", "interference", "kaleidoscope", "nebula", "petals", "pinwheel", "plasma",
+    "rings", "spiral", "starburst", "voronoi", "waves",
 })
 
 

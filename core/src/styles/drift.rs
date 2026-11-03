@@ -1,11 +1,14 @@
 //! `render_drift`: noise sampled through a current-warped coordinate grid.
 
-use crate::noise::{contrast, fbm};
+use crate::noise::{contrast, fbm_loop};
 use crate::palette::Palette;
 use crate::raster::shade;
 
-/// `render_drift` (no random scene).
-pub struct Drift;
+#[derive(pyo3::FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Drift {
+    phase: f64,
+}
 
 impl super::Style for Drift {
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
@@ -14,10 +17,10 @@ impl super::Style for Drift {
         shade(width, height, palette, |x, y| {
             let (u, w) = (x as f64 * k, y as f64 * k);
             // current offsets from low-frequency turbulence
-            let ox = (fbm(u * 0.55, w * 0.55, seed, 3) - 0.5) * 24.0;
-            let oy = (fbm(u * 0.5 + 2.1, w * 0.5 + 5.7, seed, 2) - 0.5) * 18.0;
+            let ox = (fbm_loop(u * 0.55, w * 0.55, seed, 3, self.phase) - 0.5) * 24.0;
+            let oy = (fbm_loop(u * 0.5 + 2.1, w * 0.5 + 5.7, seed, 2, self.phase) - 0.5) * 18.0;
             // sample the value field displaced along the current
-            contrast(fbm(u + ox, w + oy, seed, 4), 2.6)
+            contrast(fbm_loop(u + ox, w + oy, seed, 4, self.phase), 2.6)
         })
     }
 }
