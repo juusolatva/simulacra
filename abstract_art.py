@@ -595,16 +595,24 @@ def render_interference(width, height, seed, palette_name):
     return pixels
 
 
-def _constellation_lines(stars, width, height):
-    """Rasterize lines between nearby stars into an additive glow grid."""
+def _constellation_scene(width, height, seed):
+    rng = random.Random(seed)
+    stars = [(rng.uniform(0, width - 1), rng.uniform(0, height - 1),
+              rng.uniform(0.7, 2.2), rng.uniform(0.45, 1.0))      # x, y, radius, brightness
+             for _ in range(rng.randint(28, 48))]
     max_dist = math.sqrt(width * width + height * height) * 0.32
-    line_grid = [[0.0] * width for _ in range(height)]
     pairs = []
-    for i in range(len(stars)):
+    for i, (xi, yi, _, _) in enumerate(stars):
         for j in range(i + 1, len(stars)):
-            dist = math.hypot(stars[j]["x"] - stars[i]["x"], stars[j]["y"] - stars[i]["y"])
+            dist = math.hypot(stars[j][0] - xi, stars[j][1] - yi)
             if dist <= max_dist:
                 pairs.append((i, j, dist))
+    return {"stars": stars, "pairs": pairs}
+
+
+def _constellation_lines(stars, pairs, width, height):
+    """Rasterize lines between nearby stars into an additive glow grid."""
+    line_grid = [[0.0] * width for _ in range(height)]
     for (i, j, dist) in pairs:
         _draw_constellation_line(line_grid, stars[i], stars[j], dist, width, height)
     return line_grid
@@ -612,8 +620,8 @@ def _constellation_lines(stars, width, height):
 
 def _draw_constellation_line(line_grid, start, end, dist, width, height):
     """Accumulate one line, brightest at ``start`` and fading toward ``end``."""
-    sx, sy = start["x"], start["y"]
-    ex, ey = end["x"], end["y"]
+    sx, sy = start[0], start[1]
+    ex, ey = end[0], end[1]
     steps = max(1, int(dist / 1.2))
     for k in range(steps + 1):
         t = k / steps
@@ -626,9 +634,9 @@ def _draw_constellation_line(line_grid, start, end, dist, width, height):
 
 def _constellation_value(x, y, stars, line_grid):
     v = 0.0
-    for star in stars(y):
-        d = math.hypot(x - star["x"], y - star["y"])
-        v += math.exp(-((d / star["r"]) ** 2) / 2.0) * star["b"]
+    for sx, sy, radius, brightness in stars(y):
+        d = math.hypot(x - sx, y - sy)
+        v += math.exp(-((d / radius) ** 2) / 2.0) * brightness
     v += line_grid[y][x]
     return min(1.0, max(0.0, 1.0 - math.exp(-v)))
 
@@ -636,18 +644,10 @@ def _constellation_value(x, y, stars, line_grid):
 def render_constellations(width, height, seed, palette_name):
     """Constellations: starfield whose stars are loosely connected by lines."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    n_stars = rng.randint(28, 48)
-    stars = []
-    for _ in range(n_stars):
-        stars.append({
-            "x": rng.uniform(0, width - 1),
-            "y": rng.uniform(0, height - 1),
-            "r": rng.uniform(0.7, 2.2),
-            "b": rng.uniform(0.45, 1.0),
-        })
-    line_grid = _constellation_lines(stars, width, height)
-    star_rows = _RowFilter(stars, lambda s: s["y"], lambda s: s["r"] * GAUSSIAN_ZERO + 1.0)
+    scene = _constellation_scene(width, height, seed)
+    stars = scene["stars"]
+    line_grid = _constellation_lines(stars, scene["pairs"], width, height)
+    star_rows = _RowFilter(stars, lambda s: s[1], lambda s: s[2] * GAUSSIAN_ZERO + 1.0)
     return _shade(width, height, stops,
                   lambda x, y: _constellation_value(x, y, star_rows, line_grid))
 
@@ -763,15 +763,19 @@ def render_bloom(width, height, seed, palette_name):
     return pixels
 
 
+def _flowfield_scene(width, height, seed):
+    rng = random.Random(seed)
+    return {"starts": [(rng.uniform(0, width - 1), rng.uniform(0, height - 1))
+                       for _ in range(rng.randint(40, 80))]}
+
+
 def render_flowfield(width, height, seed, palette_name):
     """Particle trails following a smooth, deterministic noise vector field."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
     glow = [0.0] * (width * height)
     scale = max(1.0, min(width, height))
     step = max(0.35, scale / 200.0)
-    for _ in range(rng.randint(40, 80)):
-        x, y = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
+    for x, y in _flowfield_scene(width, height, seed)["starts"]:
         for _ in range(120):
             angle = fbm(x / scale * 40, y / scale * 40, seed, octaves=3) * math.tau * 2
             ox, oy = x, y
@@ -834,9 +838,8 @@ def _torus_knot_point(tube, a, b, u):
             tube * math.sin(b * t))
 
 
-def render_torus(width, height, seed, palette_name):
-    """Torus knot: glowing parametric knot curve with depth shading."""
-    stops = PALETTES[palette_name]
+def _torus_scene(width, height, seed):
+    """The knot's screen-space polyline as ``(x, y, depth)`` points."""
     rng = random.Random(seed)
     tube = rng.uniform(0.6, 1.2)
     a, b = rng.choice(((2, 3), (3, 2), (3, 5), (5, 2)))
@@ -854,11 +857,20 @@ def render_torus(width, height, seed, palette_name):
         return ((x - cx) * s + (width - 1) / 2.0, (cy - y) * s + (height - 1) / 2.0,
                 0.45 + 0.55 * (z - z_lo) / max(1e-9, z_hi - z_lo))
 
+    points = _sample_by_length(screen, max(1.0, r_glow * 0.5), closed=True)
+    return {"points": points, "r_glow": r_glow}
+
+
+def render_torus(width, height, seed, palette_name):
+    """Torus knot: glowing parametric knot curve with depth shading."""
+    stops = PALETTES[palette_name]
+    scene = _torus_scene(width, height, seed)
+    points, r_glow = scene["points"], scene["r_glow"]
+
     # Glow falls off with the distance to the curve, scaled by the depth at the
     # closest point (larger z = nearer). Keeping the maximum lets the front
     # strand win where the knot crosses itself.
     glow = [[0.0] * width for _ in range(height)]
-    points = _sample_by_length(screen, max(1.0, r_glow * 0.5), closed=True)
     for p0, p1 in zip(points, points[1:]):
         for yy, xx, d, t in _segment_box(p0, p1, r_glow, width, height):
             if d < r_glow:
@@ -939,16 +951,15 @@ def _curve_distance_grid(points, reach, width, height):
 
 def _lissajous_value(x, y, glow_values, n_curves):
     v = 0.0
-    for (min_d, c) in glow_values:
+    for (min_d, sigma, amp) in glow_values:
         d = min_d[y][x]
         if d < 1e8:
-            v += math.exp(-((d / c["sigma"]) ** 2) / 2.0) * c["amp"]
+            v += math.exp(-((d / sigma) ** 2) / 2.0) * amp
     return min(1.0, max(0.0, v / (n_curves * 0.9)))
 
 
-def render_lissajous(width, height, seed, palette_name):
-    """Lissajous: glowing parametric harmonic curves traced through the canvas."""
-    stops = PALETTES[palette_name]
+def _lissajous_scene(width, height, seed):
+    """Each curve as ``(points, reach, sigma, amp)``, plus the curve count."""
     rng = random.Random(seed)
     curves = []
     n_curves = rng.randint(2, 3)
@@ -966,7 +977,7 @@ def render_lissajous(width, height, seed, palette_name):
 
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
-    glow_values = []
+    result = []
     for c in curves:
         def point_at(u, c=c):
             t = math.tau * u
@@ -976,9 +987,18 @@ def render_lissajous(width, height, seed, palette_name):
         reach = max(2, math.ceil(c["sigma"] * 3))
         # Non-integer frequencies leave the curve open over one period.
         points = _sample_by_length(point_at, max(1.0, reach / 2), closed=False)
-        glow_values.append((_curve_distance_grid(points, reach, width, height), c))
+        result.append((points, reach, c["sigma"], c["amp"]))
+    return {"curves": result, "n_curves": n_curves}
+
+
+def render_lissajous(width, height, seed, palette_name):
+    """Lissajous: glowing parametric harmonic curves traced through the canvas."""
+    stops = PALETTES[palette_name]
+    scene = _lissajous_scene(width, height, seed)
+    glow_values = [(_curve_distance_grid(points, reach, width, height), sigma, amp)
+                   for points, reach, sigma, amp in scene["curves"]]
     return _shade(width, height, stops,
-                  lambda x, y: _lissajous_value(x, y, glow_values, n_curves))
+                  lambda x, y: _lissajous_value(x, y, glow_values, scene["n_curves"]))
 
 
 def _geo_scene(width, height, seed):
@@ -1476,54 +1496,52 @@ def _glow_pixels(values, width, height, stops):
             for y in range(height)]
 
 
+def _ember_scene(width, height, seed):
+    rng = random.Random(seed)
+    return {"embers": [(rng.uniform(0.0, width - 1.0),          # x
+                        rng.uniform(0.0, height - 1.0),         # y
+                        rng.uniform(0.15, 0.55) * height,       # rise
+                        rng.uniform(0.6, 2.4),                  # size
+                        rng.uniform(0.0, 6.28),                 # phase
+                        rng.uniform(0.5, 1.0))                  # flicker
+                       for _ in range(rng.randint(60, 110))]}
+
+
 def render_ember(width, height, seed, palette_name):
     """Ember: rising glowing embers with flicker and soft radial falloff."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    n_embers = rng.randint(60, 110)
-    embers = []
-    for _ in range(n_embers):
-        embers.append({
-            "x": rng.uniform(0.0, width - 1.0),
-            "y": rng.uniform(0.0, height - 1.0),
-            "rise": rng.uniform(0.15, 0.55) * height,
-            "size": rng.uniform(0.6, 2.4),
-            "phase": rng.uniform(0.0, 6.28),
-            "flicker": rng.uniform(0.5, 1.0),
-        })
     glow_sum = [0.0] * (width * height)
-    for e in embers:
-        flicker = e["flicker"] * (0.55 + 0.45 * math.sin(e["phase"] + 2.0 * math.sin(e["phase"])))
-        cx = e["x"]
-        cy_top = e["y"] - e["rise"]
+    for cx, y0, rise, size, phase, base_flicker in _ember_scene(width, height, seed)["embers"]:
+        flicker = base_flicker * (0.55 + 0.45 * math.sin(phase + 2.0 * math.sin(phase)))
+        cy_top = y0 - rise
         # The horizontal falloff is exactly 0.0 once |dx| >= size * 2 + 0.01.
-        reach = e["size"] * 2.0 + 0.01 + 1.0
+        reach = size * 2.0 + 0.01 + 1.0
         x_lo = max(0, math.floor(cx - reach))
         x_hi = min(width, math.ceil(cx + reach) + 1)
         for yy in range(height):
             dy = yy - cy_top
-            if abs(dy) > e["rise"] * 3.0:
+            if abs(dy) > rise * 3.0:
                 continue
-            fall = max(0.0, 1.0 - abs(dy) / (e["rise"] * 2.5 + 0.01))
+            fall = max(0.0, 1.0 - abs(dy) / (rise * 2.5 + 0.01))
             if fall < 0.02:
                 continue
             glow = fall ** 2 * (0.35 + 0.65 * flicker)
             for xx in range(x_lo, x_hi):
                 dx = xx - cx
-                g = glow * max(0.0, 1.0 - (dx / ((e["size"] * 2.0) + 0.01)) ** 2) ** 2
+                g = glow * max(0.0, 1.0 - (dx / ((size * 2.0) + 0.01)) ** 2) ** 2
                 glow_sum[yy * width + xx] += g
     return _glow_pixels(glow_sum, width, height, stops)
 
 
-def _stamp_comet(glow_sum, c, width, height):
+def _stamp_comet(glow_sum, comet, width, height):
     """Paint one comet's fading streak; the canvas wraps at its edges."""
-    steps = max(1, math.ceil(c["speed"] * 2))
-    radius = c["width_px"]
+    x0, y0, angle, speed, radius = comet
+    steps = max(1, math.ceil(speed * 2))
     reach = math.ceil(radius * 2)
     for s in range(steps):
         t = (s + 0.5) / steps
-        px = c["x"] + math.cos(c["angle"]) * c["speed"] * t
-        py = c["y"] + math.sin(c["angle"]) * c["speed"] * t
+        px = x0 + math.cos(angle) * speed * t
+        py = y0 + math.sin(angle) * speed * t
         ix, iy = math.floor(px), math.floor(py)
         fall = max(0.0, 1.0 - t * 1.6)
         g = fall ** 3 * (0.4 + 0.6 * (1.0 - t))
@@ -1536,30 +1554,28 @@ def _stamp_comet(glow_sum, c, width, height):
                     glow_sum[yy * width + xx] += g * math.exp(-2 * d2 / radius ** 2)
 
 
+def _comet_scene(width, height, seed):
+    rng = random.Random(seed)
+    # (x, y, angle, speed, brush radius in pixels)
+    return {"comets": [(rng.uniform(0.0, width - 1.0), rng.uniform(0.0, height - 1.0),
+                        rng.uniform(0.0, 2.0 * math.pi), rng.uniform(0.2, 0.6) * width,
+                        rng.uniform(0.8, 3.0))
+                       for _ in range(rng.randint(3, 6))]}
+
+
 def render_comet(width, height, seed, palette_name):
     """Comet: fast glowing streaks with fading motion trails."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    comets = []
-    for _ in range(rng.randint(3, 6)):
-        comets.append({
-            "x": rng.uniform(0.0, width - 1.0),
-            "y": rng.uniform(0.0, height - 1.0),
-            "angle": rng.uniform(0.0, 2.0 * math.pi),
-            "speed": rng.uniform(0.2, 0.6) * width,
-            "width_px": rng.uniform(0.8, 3.0),
-        })
     glow_sum = [0.0] * (width * height)
-    for c in comets:
-        _stamp_comet(glow_sum, c, width, height)
+    for comet in _comet_scene(width, height, seed)["comets"]:
+        _stamp_comet(glow_sum, comet, width, height)
     return _glow_pixels(glow_sum, width, height, stops)
 
 
-def render_ink(width, height, seed, palette_name):
-    """Quadratic Bezier ink strokes rasterized with a tapered soft brush."""
-    stops = PALETTES[palette_name]
+def _ink_scene(width, height, seed):
+    """Strokes as ``(x0, y0, x1, y1, cx, cy, brush, alpha, steps)``."""
     rng = random.Random(seed)
-    glow = [0.0] * (width * height)
+    strokes = []
     for _ in range(rng.randint(5, 9)):
         x0, y0 = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
         x1, y1 = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
@@ -1567,7 +1583,15 @@ def render_ink(width, height, seed, palette_name):
         brush = max(0.8, min(width, height) * rng.uniform(0.008, 0.025))
         alpha = rng.uniform(0.35, 0.9)
         length = math.hypot(cx - x0, cy - y0) + math.hypot(x1 - cx, y1 - cy)
-        steps = max(8, math.ceil(length * 2))
+        strokes.append((x0, y0, x1, y1, cx, cy, brush, alpha, max(8, math.ceil(length * 2))))
+    return {"strokes": strokes}
+
+
+def render_ink(width, height, seed, palette_name):
+    """Quadratic Bezier ink strokes rasterized with a tapered soft brush."""
+    stops = PALETTES[palette_name]
+    glow = [0.0] * (width * height)
+    for x0, y0, x1, y1, cx, cy, brush, alpha, steps in _ink_scene(width, height, seed)["strokes"]:
         for i in range(steps + 1):
             t = i / steps
             u = 1 - t
@@ -1795,6 +1819,13 @@ NATIVE_STYLES = {
     "starburst": _scene_without_stops(_starburst_scene),
     "voronoi": _scene_without_stops(_voronoi_scene),
     "waves": _scene_without_stops(_waves_scene),
+    "torus": _scene_without_stops(_torus_scene),
+    "lissajous": _scene_without_stops(_lissajous_scene),
+    "constellations": _scene_without_stops(_constellation_scene),
+    "ink": _scene_without_stops(_ink_scene),
+    "flowfield": _scene_without_stops(_flowfield_scene),
+    "comet": _scene_without_stops(_comet_scene),
+    "ember": _scene_without_stops(_ember_scene),
 }
 
 

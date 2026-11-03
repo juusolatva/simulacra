@@ -2,6 +2,7 @@
 //! `abstract_art.py` expression for expression; Python generates the scene
 //! (all random draws) and passes it in as a dict, extracted into these structs.
 
+pub mod brush;
 pub mod drift;
 pub mod fields;
 pub mod quasar;
