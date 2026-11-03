@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import inspect
 import io
 import math
 import os
@@ -514,6 +515,73 @@ class RenderingTests(unittest.TestCase):
                     with mock.patch.object(art, '_core', None):
                         python = art.render_rgb(31, 23, 4, style, 'mine')
                     self.assertEqual(native, python)
+
+    def test_animated_styles_are_registered_and_accept_a_phase(self):
+        self.assertTrue(art.ANIMATED_STYLES)
+        self.assertLessEqual(art.ANIMATED_STYLES, set(art.STYLES))
+        for style in art.ANIMATED_STYLES:
+            self.assertIn('phase', inspect.signature(art.STYLES[style]).parameters)
+
+    def test_animated_styles_move_and_loop(self):
+        for style in sorted(art.ANIMATED_STYLES):
+            with self.subTest(style=style):
+                start = art.render_rgb(40, 30, 5, style, 'rainbow')
+                self.assertEqual(start, art.render_rgb(40, 30, 5, style, 'rainbow', 0.0))
+                self.assertNotEqual(start, art.render_rgb(40, 30, 5, style, 'rainbow', 0.25))
+                # A whole loop returns to the start, up to rounding in the trigonometry.
+                for whole in (1.0, -1.0, 3.0):
+                    looped = art.render_rgb(40, 30, 5, style, 'rainbow', whole)
+                    self.assertLessEqual(max(abs(a - b) for a, b in zip(start, looped)), 3)
+
+    def test_styles_without_motion_ignore_the_phase(self):
+        for style in sorted(set(art.STYLES) - art.ANIMATED_STYLES):
+            with self.subTest(style=style):
+                self.assertEqual(art.render_rgb(24, 18, 3, style, 'deep', 0.37),
+                                 art.render_rgb(24, 18, 3, style, 'deep'))
+
+    def test_phase_must_be_a_finite_number(self):
+        for bad in (float('nan'), float('inf'), '0.5', None, True):
+            with self.subTest(phase=bad), self.assertRaises(ValueError):
+                art.render_rgb(8, 8, 1, 'waves', 'deep', bad)
+        self.assertEqual(len(art.render(8, 8, 1, 'waves', 'deep', 2)), 8)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_matches_python_at_any_phase(self):
+        for style in sorted(art.ANIMATED_STYLES):
+            for phase in (0.13, 0.5, 2.25, -0.4):
+                with self.subTest(style=style, phase=phase):
+                    native = art.render_rgb(37, 29, 6, style, 'neon', phase)
+                    with mock.patch.object(art, '_core', None):
+                        python = art.render_rgb(37, 29, 6, style, 'neon', phase)
+                    self.assertEqual(native, python)
+
+    def test_cli_frames_move_one_scene_for_animated_styles(self):
+        def plan(*args):
+            parsed = art._build_parser().parse_args(args)
+            with mock.patch('sys.stderr', io.StringIO()) as err:
+                return art._frame_plan(parsed, parsed.seed), err.getvalue()
+
+        frames, note = plan('--style', 'rings', '--seed', '7', '--frames', '4')
+        self.assertEqual(frames, [(7, 0.0), (7, 0.25), (7, 0.5), (7, 0.75)])
+        self.assertEqual(note, '')
+        frames, _ = plan('--style', 'rings', '--seed', '7', '--frames', '2', '--phase', '0.5')
+        self.assertEqual(frames, [(7, 0.5), (7, 1.0)])
+        frames, note = plan('--style', 'ink', '--seed', '7', '--frames', '3')
+        self.assertEqual(frames, [(7, 0.0), (8, 0.0), (9, 0.0)])
+        self.assertIn('slideshow', note)
+        frames, note = plan('--style', 'rings', '--seed', '7', '--frames', '2', '--slideshow')
+        self.assertEqual(frames, [(7, 0.0), (8, 0.0)])
+        self.assertEqual(note, '')
+
+    def test_cli_phase_renders_that_position(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = pathlib.Path(directory) / 'phase.png'
+            code, _, _ = self.run_cli('--style', 'rings', '--width', '10', '--height', '8',
+                                      '--phase', '0.3', '--out', str(out))
+            self.assertIsNone(code)
+            expected = pathlib.Path(directory) / 'expected.png'
+            art.write_png(expected, art.render_rgb(10, 8, 1, 'rings', 'deep', 0.3), 10, 8)
+            self.assertEqual(out.read_bytes(), expected.read_bytes())
 
 
 if __name__ == '__main__':

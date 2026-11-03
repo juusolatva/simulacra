@@ -31,6 +31,10 @@ _Avoid_: composition (when referring to this arrangement), frame
 One complete rendered image covering the canvas, whether presented as a still image or as part of an animation. Identical images can occupy separate positions in an animation.
 _Avoid_: scene (when referring to the rendered image)
 
+**Phase**:
+The position in a loop, from 0 up to 1, that styles with motion use to move their scene. Phase 1.0 looks the same as phase 0.0, and phase 0 gives the style's still image.
+_Avoid_: time, frame number
+
 **Animation**:
-A looping sequence of complete frames with the same canvas dimensions and a shared playback rate. Frames may show independently generated scenes; an animation does not imply continuous motion between them.
+A looping sequence of complete frames with the same canvas dimensions and a shared playback rate. For styles with motion, the frames show one scene at successive phases; for the others they may be independently generated scenes with no continuous motion between them.
 _Avoid_: simulation
