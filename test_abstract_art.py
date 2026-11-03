@@ -707,6 +707,17 @@ class RenderingTests(unittest.TestCase):
                     looped = art.render_rgb(40, 30, 5, style, 'rainbow', whole)
                     self.assertLessEqual(max(abs(a - b) for a, b in zip(start, looped)), 3)
 
+    def test_constellation_lines_are_measured_between_the_moved_stars(self):
+        for phase in (0.0, 0.3, 0.7):
+            scene = art._constellation_scene(120, 90, 4, phase)
+            stars = scene['stars']
+            for i, j, dist in scene['pairs']:
+                self.assertEqual(dist, math.hypot(stars[j][0] - stars[i][0],
+                                                  stars[j][1] - stars[i][1]))
+        still = art._constellation_scene(120, 90, 4)
+        moved = art._constellation_scene(120, 90, 4, 0.3)
+        self.assertEqual([p[:2] for p in still['pairs']], [p[:2] for p in moved['pairs']])
+
     def test_cosmos_bands_move_outward_as_the_phase_grows(self):
         # A ring's brightness is sin(2 * ring + phase), and ring index grows with distance.
         # A peak stays where 2 * ring + phase is constant, so the phase must fall for

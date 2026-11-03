@@ -758,7 +758,12 @@ def _constellation_scene(width, height, seed, phase=0.0):
             dist = math.hypot(stars[j][0] - xi, stars[j][1] - yi)
             if dist <= max_dist:
                 pairs.append((i, j, dist))
-    return {"stars": _drift_stars(stars, 0.025 * min(width, height), phase), "pairs": pairs}
+    stars = _drift_stars(stars, 0.025 * min(width, height), phase)
+    # Keep the pairs chosen from the starting positions, but measure each line's
+    # length where the stars now are: the line is drawn with that many samples.
+    pairs = [(i, j, math.hypot(stars[j][0] - stars[i][0], stars[j][1] - stars[i][1]))
+             for i, j, _ in pairs]
+    return {"stars": stars, "pairs": pairs}
 
 
 def _constellation_lines(stars, pairs, width, height):
