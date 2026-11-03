@@ -730,7 +730,23 @@ def render_interference(width, height, seed, palette_name, phase=0.0):
     return pixels
 
 
-def _constellation_scene(width, height, seed):
+def _drift_stars(stars, reach, phase):
+    """Move each star on a small circle and twinkle its brightness; phase 0 changes nothing."""
+    moved = []
+    for index, (x, y, radius, brightness) in enumerate(stars):
+        dx, dy = _circle_offset(index, reach, phase)
+        start = index * 2.399963229728653
+        twinkle = 1.0 + 0.25 * (math.sin(start + _loop(phase, 1)) - math.sin(start))
+        moved.append((x + dx, y + dy, radius, brightness * twinkle))
+    return moved
+
+
+def _constellation_scene(width, height, seed, phase=0.0):
+    """Stars as ``(x, y, radius, brightness)`` and the pairs joined by lines.
+
+    The pairs are chosen from the starting positions. Over a loop each star drifts
+    on a small circle (its lines follow) and twinkles once.
+    """
     rng = random.Random(seed)
     stars = [(rng.uniform(0, width - 1), rng.uniform(0, height - 1),
               rng.uniform(0.7, 2.2), rng.uniform(0.45, 1.0))      # x, y, radius, brightness
@@ -742,7 +758,7 @@ def _constellation_scene(width, height, seed):
             dist = math.hypot(stars[j][0] - xi, stars[j][1] - yi)
             if dist <= max_dist:
                 pairs.append((i, j, dist))
-    return {"stars": stars, "pairs": pairs}
+    return {"stars": _drift_stars(stars, 0.025 * min(width, height), phase), "pairs": pairs}
 
 
 def _constellation_lines(stars, pairs, width, height):
@@ -776,10 +792,10 @@ def _constellation_value(x, y, stars, line_grid):
     return min(1.0, max(0.0, 1.0 - math.exp(-v)))
 
 
-def render_constellations(width, height, seed, palette_name):
+def render_constellations(width, height, seed, palette_name, phase=0.0):
     """Constellations: starfield whose stars are loosely connected by lines."""
     stops = PALETTES[palette_name]
-    scene = _constellation_scene(width, height, seed)
+    scene = _constellation_scene(width, height, seed, phase)
     stars = scene["stars"]
     line_grid = _constellation_lines(stars, scene["pairs"], width, height)
     star_rows = _RowFilter(stars, lambda s: s[1], lambda s: s[2] * GAUSSIAN_ZERO + 1.0)
@@ -900,19 +916,25 @@ def render_bloom(width, height, seed, palette_name, phase=0.0):
     return pixels
 
 
-def _flowfield_scene(width, height, seed):
+def _flowfield_scene(width, height, seed, phase=0.0):
+    """Trail starting points; over a loop each circles a small radius, so the trails sweep."""
     rng = random.Random(seed)
-    return {"starts": [(rng.uniform(0, width - 1), rng.uniform(0, height - 1))
-                       for _ in range(rng.randint(40, 80))]}
+    reach = 0.04 * min(width, height)
+    starts = []
+    for index in range(rng.randint(40, 80)):
+        x, y = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
+        dx, dy = _circle_offset(index, reach, phase)
+        starts.append((x + dx, y + dy))
+    return {"starts": starts}
 
 
-def render_flowfield(width, height, seed, palette_name):
+def render_flowfield(width, height, seed, palette_name, phase=0.0):
     """Particle trails following a smooth, deterministic noise vector field."""
     stops = PALETTES[palette_name]
     glow = [0.0] * (width * height)
     scale = max(1.0, min(width, height))
     step = max(0.35, scale / 200.0)
-    for x, y in _flowfield_scene(width, height, seed)["starts"]:
+    for x, y in _flowfield_scene(width, height, seed, phase)["starts"]:
         for _ in range(120):
             angle = fbm(x / scale * 40, y / scale * 40, seed, octaves=3) * math.tau * 2
             ox, oy = x, y
@@ -1104,8 +1126,12 @@ def _lissajous_value(x, y, glow_values, n_curves):
     return min(1.0, max(0.0, v / (n_curves * 0.9)))
 
 
-def _lissajous_scene(width, height, seed):
-    """Each curve as ``(points, reach, sigma, amp)``, plus the curve count."""
+def _lissajous_scene(width, height, seed, phase=0.0):
+    """Each curve as ``(points, reach, sigma, amp)``, plus the curve count.
+
+    Over a loop the two phase offsets of each curve turn in opposite directions,
+    so the figure keeps morphing.
+    """
     rng = random.Random(seed)
     curves = []
     n_curves = rng.randint(2, 3)
@@ -1115,8 +1141,8 @@ def _lissajous_scene(width, height, seed):
             "ay": rng.uniform(0.25, 0.8),
             "fx": rng.uniform(1.0, 2.5),
             "fy": rng.uniform(2.0, 4.5),
-            "px": rng.uniform(0.0, 6.28),
-            "py": rng.uniform(0.0, 6.28),
+            "px": rng.uniform(0.0, 6.28) + _loop(phase, -1),
+            "py": rng.uniform(0.0, 6.28) + _loop(phase, 1),
             "amp": rng.uniform(0.5, 1.0),
             "sigma": max(0.8, min(width, height) * rng.uniform(0.008, 0.02)),
         })
@@ -1137,10 +1163,10 @@ def _lissajous_scene(width, height, seed):
     return {"curves": result, "n_curves": n_curves}
 
 
-def render_lissajous(width, height, seed, palette_name):
+def render_lissajous(width, height, seed, palette_name, phase=0.0):
     """Lissajous: glowing parametric harmonic curves traced through the canvas."""
     stops = PALETTES[palette_name]
-    scene = _lissajous_scene(width, height, seed)
+    scene = _lissajous_scene(width, height, seed, phase)
     glow_values = [(_curve_distance_grid(points, reach, width, height), sigma, amp)
                    for points, reach, sigma, amp in scene["curves"]]
     return _shade(width, height, stops,
@@ -1646,23 +1672,32 @@ def _glow_pixels(values, width, height, stops):
             for y in range(height)]
 
 
-def _ember_scene(width, height, seed):
+def _ember_scene(width, height, seed, phase=0.0):
+    """Embers as ``(x, y, rise, size, flicker phase, flicker)``.
+
+    Over a loop each ember sways on a small circle and its flicker runs one cycle.
+    """
     rng = random.Random(seed)
-    return {"embers": [(rng.uniform(0.0, width - 1.0),          # x
-                        rng.uniform(0.0, height - 1.0),         # y
-                        rng.uniform(0.15, 0.55) * height,       # rise
-                        rng.uniform(0.6, 2.4),                  # size
-                        rng.uniform(0.0, 6.28),                 # phase
-                        rng.uniform(0.5, 1.0))                  # flicker
-                       for _ in range(rng.randint(60, 110))]}
+    sway = 0.03 * min(width, height)
+    embers = []
+    for index in range(rng.randint(60, 110)):
+        x = rng.uniform(0.0, width - 1.0)
+        y = rng.uniform(0.0, height - 1.0)
+        rise = rng.uniform(0.15, 0.55) * height
+        size = rng.uniform(0.6, 2.4)
+        flicker_phase = rng.uniform(0.0, 6.28)
+        flicker = rng.uniform(0.5, 1.0)
+        dx, dy = _circle_offset(index, sway, phase)
+        embers.append((x + dx, y + dy, rise, size, flicker_phase + _loop(phase, 1), flicker))
+    return {"embers": embers}
 
 
-def render_ember(width, height, seed, palette_name):
-    """Ember: rising glowing embers with flicker and soft radial falloff."""
+def render_ember(width, height, seed, palette_name, phase=0.0):
+    """Ember: glowing embers that sway, with flicker and soft radial falloff."""
     stops = PALETTES[palette_name]
     glow_sum = [0.0] * (width * height)
-    for cx, y0, rise, size, phase, base_flicker in _ember_scene(width, height, seed)["embers"]:
-        flicker = base_flicker * (0.55 + 0.45 * math.sin(phase + 2.0 * math.sin(phase)))
+    for cx, y0, rise, size, spark, base_flicker in _ember_scene(width, height, seed, phase)["embers"]:
+        flicker = base_flicker * (0.55 + 0.45 * math.sin(spark + 2.0 * math.sin(spark)))
         cy_top = y0 - rise
         # The horizontal falloff is exactly 0.0 once |dx| >= size * 2 + 0.01.
         reach = size * 2.0 + 0.01 + 1.0
@@ -1704,44 +1739,60 @@ def _stamp_comet(glow_sum, comet, width, height):
                     glow_sum[yy * width + xx] += g * math.exp(-2 * d2 / radius ** 2)
 
 
-def _comet_scene(width, height, seed):
+def _comet_scene(width, height, seed, phase=0.0):
+    """Comets as ``(x, y, angle, speed, brush radius in pixels)``.
+
+    Over a loop each comet's head circles a point, dragging its streak around.
+    """
     rng = random.Random(seed)
-    # (x, y, angle, speed, brush radius in pixels)
-    return {"comets": [(rng.uniform(0.0, width - 1.0), rng.uniform(0.0, height - 1.0),
-                        rng.uniform(0.0, 2.0 * math.pi), rng.uniform(0.2, 0.6) * width,
-                        rng.uniform(0.8, 3.0))
-                       for _ in range(rng.randint(3, 6))]}
+    reach = 0.12 * min(width, height)
+    comets = []
+    for index in range(rng.randint(3, 6)):
+        x, y = rng.uniform(0.0, width - 1.0), rng.uniform(0.0, height - 1.0)
+        angle = rng.uniform(0.0, 2.0 * math.pi)
+        speed = rng.uniform(0.2, 0.6) * width
+        radius = rng.uniform(0.8, 3.0)
+        dx, dy = _circle_offset(index, reach, phase)
+        comets.append((x + dx, y + dy, angle, speed, radius))
+    return {"comets": comets}
 
 
-def render_comet(width, height, seed, palette_name):
+def render_comet(width, height, seed, palette_name, phase=0.0):
     """Comet: fast glowing streaks with fading motion trails."""
     stops = PALETTES[palette_name]
     glow_sum = [0.0] * (width * height)
-    for comet in _comet_scene(width, height, seed)["comets"]:
+    for comet in _comet_scene(width, height, seed, phase)["comets"]:
         _stamp_comet(glow_sum, comet, width, height)
     return _glow_pixels(glow_sum, width, height, stops)
 
 
-def _ink_scene(width, height, seed):
-    """Strokes as ``(x0, y0, x1, y1, cx, cy, brush, alpha, steps)``."""
+def _ink_scene(width, height, seed, phase=0.0):
+    """Strokes as ``(x0, y0, x1, y1, cx, cy, brush, alpha, steps)``.
+
+    Over a loop each stroke's control point circles, so the curve flexes while
+    its ends stay put.
+    """
     rng = random.Random(seed)
     strokes = []
-    for _ in range(rng.randint(5, 9)):
+    for index in range(rng.randint(5, 9)):
         x0, y0 = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
         x1, y1 = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
         cx, cy = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
         brush = max(0.8, min(width, height) * rng.uniform(0.008, 0.025))
         alpha = rng.uniform(0.35, 0.9)
+        dx, dy = _circle_offset(index, 0.15 * min(width, height), phase)
+        cx, cy = cx + dx, cy + dy
         length = math.hypot(cx - x0, cy - y0) + math.hypot(x1 - cx, y1 - cy)
         strokes.append((x0, y0, x1, y1, cx, cy, brush, alpha, max(8, math.ceil(length * 2))))
     return {"strokes": strokes}
 
 
-def render_ink(width, height, seed, palette_name):
+def render_ink(width, height, seed, palette_name, phase=0.0):
     """Quadratic Bezier ink strokes rasterized with a tapered soft brush."""
     stops = PALETTES[palette_name]
     glow = [0.0] * (width * height)
-    for x0, y0, x1, y1, cx, cy, brush, alpha, steps in _ink_scene(width, height, seed)["strokes"]:
+    for x0, y0, x1, y1, cx, cy, brush, alpha, steps in _ink_scene(
+            width, height, seed, phase)["strokes"]:
         for i in range(steps + 1):
             t = i / steps
             u = 1 - t
@@ -2201,12 +2252,12 @@ NATIVE_STYLES = {
     "voronoi": _animated_scene(_voronoi_scene),
     "waves": _animated_scene(_waves_scene),
     "torus": _scene_without_stops(_torus_scene),
-    "lissajous": _scene_without_stops(_lissajous_scene),
-    "constellations": _scene_without_stops(_constellation_scene),
-    "ink": _scene_without_stops(_ink_scene),
-    "flowfield": _scene_without_stops(_flowfield_scene),
-    "comet": _scene_without_stops(_comet_scene),
-    "ember": _scene_without_stops(_ember_scene),
+    "lissajous": _animated_scene(_lissajous_scene),
+    "constellations": _animated_scene(_constellation_scene),
+    "ink": _animated_scene(_ink_scene),
+    "flowfield": _animated_scene(_flowfield_scene),
+    "comet": _animated_scene(_comet_scene),
+    "ember": _animated_scene(_ember_scene),
     "mosaic": _animated_scene(_mosaic_scene),
 }
 
@@ -2218,6 +2269,7 @@ ANIMATED_STYLES = frozenset({
     "aurora", "blobs", "bloom", "cosmos", "crystal", "drift", "galaxy", "gems", "geo",
     "horizon", "interference", "kaleidoscope", "nebula", "petals", "pinwheel", "plasma",
     "mosaic", "rings", "spiral", "starburst", "voronoi", "waves",
+    "comet", "constellations", "ember", "flowfield", "ink", "lissajous",
 })
 
 
