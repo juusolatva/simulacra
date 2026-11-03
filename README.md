@@ -57,6 +57,7 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 | `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
 | `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
 | `--palette` | `deep` | One of the 15 palette names listed below. |
+| `--palette-stops` | — | A custom palette instead of a named one: two or more comma-separated hex colors from dark to light, such as `0c061c,5814a8,ff8800`. Colors are `rrggbb` or `rgb`, with an optional `#`. Quote the value if it contains `#`, which a shell treats as a comment otherwise. Cannot be combined with `--palette`. |
 | `--width` | `256` | Output width in pixels; must be a positive integer. |
 | `--height` | `256` | Output height in pixels; must be a positive integer. |
 | `--out` | `art.png` | Destination path. Its parent directory must already exist. |
@@ -245,6 +246,14 @@ art.write_animated_png("patterns.png", frames, width, height, fps=6)
 `write_animated_png(path, frames, width, height, fps=12)` expects a nonempty sequence of frames with the same dimensions. Pass a list or tuple; the writer uses `len(frames)`, so a generator is not accepted. `fps` must be an integer from 1 to 65,535. Output loops indefinitely, with each frame replacing the complete canvas.
 
 Both image writers accept nested rows or packed RGB bytes and validate their dimensions. Empty animation sequences and invalid frame rates raise `ValueError`. File-system errors, such as a missing output directory or insufficient write permissions, propagate to the caller.
+
+### Custom palettes from hex colors
+
+```bash
+python3 abstract_art.py --style plasma --palette-stops "#0c061c,#5814a8,#ff8800,#fff0c0" --out custom.png
+```
+
+The first color is the background in many styles, so start with a dark one. The output line reports the palette as `custom`. In Python, `parse_hex_palette("#0c061c,5814a8,f80")` returns the same stops as a list of RGB tuples, which you can register as described below.
 
 ### Add a palette in Python
 

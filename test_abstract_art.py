@@ -448,6 +448,48 @@ class RenderingTests(unittest.TestCase):
         code, _, _ = self.run_cli('--random-seed', '--seed', '3')
         self.assertEqual(code, 2)
 
+    def test_parse_hex_palette(self):
+        self.assertEqual(art.parse_hex_palette('#0c061c,5814a8,f80'),
+                         [(12, 6, 28), (88, 20, 168), (255, 136, 0)])
+        self.assertEqual(art.parse_hex_palette(' #FFFFFF , #000 '), [(255, 255, 255), (0, 0, 0)])
+        for bad in ('', 'fff', '#fff,', 'fff,ggg', 'ffff,000', '0x1,fff', '1_0,fff', 'fff 000'):
+            with self.subTest(text=bad), self.assertRaises(ValueError):
+                art.parse_hex_palette(bad)
+
+    def test_cli_palette_stops_match_a_registered_palette(self):
+        stops = art.parse_hex_palette('0c061c,5814a8,ff8800')
+        with tempfile.TemporaryDirectory() as directory:
+            custom = pathlib.Path(directory) / 'custom.png'
+            code, out, _ = self.run_cli('--style', 'plasma', '--width', '12', '--height', '9',
+                                        '--palette-stops', '#0c061c,5814a8,ff8800',
+                                        '--out', str(custom))
+            self.assertIsNone(code)
+            self.assertIn('palette=custom', out)
+            self.assertNotIn('custom', art.PALETTES)
+            with mock.patch.dict(art.PALETTES, {'mine': stops}):
+                expected = art.render_rgb(12, 9, 1, 'plasma', 'mine')
+            written = pathlib.Path(directory) / 'expected.png'
+            art.write_png(written, expected, 12, 9)
+            self.assertEqual(custom.read_bytes(), written.read_bytes())
+
+    def test_cli_rejects_bad_or_conflicting_palette_stops(self):
+        for args in (('--palette-stops', 'fff'), ('--palette-stops', 'xyz,fff'),
+                     ('--palette-stops', 'fff,000', '--palette', 'ocean')):
+            with self.subTest(args=args):
+                code, _, err = self.run_cli(*args)
+                self.assertEqual(code, 2)
+                self.assertIn('palette', err)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_matches_python_for_custom_stops(self):
+        with mock.patch.dict(art.PALETTES, {'mine': art.parse_hex_palette('000,0f0,f0f,fff')}):
+            for style in ('plasma', 'rings', 'torus'):
+                with self.subTest(style=style):
+                    native = art.render_rgb(31, 23, 4, style, 'mine')
+                    with mock.patch.object(art, '_core', None):
+                        python = art.render_rgb(31, 23, 4, style, 'mine')
+                    self.assertEqual(native, python)
+
 
 if __name__ == '__main__':
     unittest.main()

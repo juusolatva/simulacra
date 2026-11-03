@@ -20,7 +20,8 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Native styles, batch 3 (7 brush and trail): torus, lissajous, constellations, ink, flowfield, comet, ember | Done: sequential stamping in Python's order, parallel shading (`core/src/styles/brush.rs`) | this branch |
 | CLI safety and polish: size limits, `--fps`, `--random-seed`, `--list-styles`, `--list-palettes` | Done | this branch |
 | More built-in palettes: rainbow, candy, tropical, jewel, vaporwave, sherbet | Done | this branch |
-| More functionality: real animation (shared time parameter), palettes from the command line (hex stops), output options | Planned | — |
+| More functionality: real animation (shared time parameter), output options | Planned | — |
+| Palettes from the command line: `--palette-stops` and `parse_hex_palette()` | Done | this branch |
 
 Measured at 640×480: all 36 styles took 178 s in pure Python at the start. With all 36 styles native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
 
