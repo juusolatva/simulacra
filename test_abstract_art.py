@@ -545,6 +545,32 @@ class RenderingTests(unittest.TestCase):
                 art.render_rgb(8, 8, 1, 'waves', 'deep', bad)
         self.assertEqual(len(art.render(8, 8, 1, 'waves', 'deep', 2)), 8)
 
+    def test_huge_phases_are_reduced_to_a_loop_position(self):
+        for style in sorted(art.ANIMATED_STYLES):
+            with self.subTest(style=style):
+                self.assertEqual(art.render_rgb(20, 14, 3, style, 'neon', 1e308),
+                                 art.render_rgb(20, 14, 3, style, 'neon', 0.0))
+                # Whole turns, however large, leave the image where it was.
+                self.assertEqual(art.render_rgb(20, 14, 3, style, 'neon', 2.0 ** 40 + 0.25),
+                                 art.render_rgb(20, 14, 3, style, 'neon', 0.25))
+        with mock.patch.object(art, '_core', None):
+            self.assertEqual(art.render_rgb(12, 9, 3, 'waves', 'neon', 1e308),
+                             art.render_rgb(12, 9, 3, 'waves', 'neon', 0.0))
+
+    def test_cli_frames_keep_their_steps_at_a_huge_phase(self):
+        parsed = art._build_parser().parse_args(['--style', 'rings', '--frames', '4',
+                                                 '--phase', '1e16'])
+        self.assertEqual([phase for _, phase in art._frame_plan(parsed, 1)],
+                         [0.0, 0.25, 0.5, 0.75])
+
+    def test_cli_rejects_non_finite_phases_with_a_usage_error(self):
+        for bad in ('nan', 'inf', '-inf', 'x'):
+            with self.subTest(phase=bad):
+                code, _, err = self.run_cli('--phase', bad)
+                self.assertEqual(code, 2)
+                self.assertIn('--phase', err)
+                self.assertNotIn('Traceback', err)
+
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_matches_python_at_any_phase(self):
         for style in sorted(art.ANIMATED_STYLES):

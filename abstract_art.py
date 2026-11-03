@@ -322,8 +322,11 @@ def _loop(phase, cycles):
     Animated scenes add this to a phase or angle, so phase 1.0 repeats phase 0
     and an animation over phases ``i / frames`` loops seamlessly. ``phase`` 0
     adds exactly 0.0, which leaves a style's still image unchanged.
+
+    The phase is reduced to ``[0, 1)`` first, so a huge finite value neither
+    overflows the angle nor loses the fraction that tells frames apart.
     """
-    return math.tau * cycles * phase
+    return math.tau * cycles * (phase % 1.0)
 
 
 def _waves_scene(width, height, seed, phase=0.0):
@@ -2147,6 +2150,13 @@ def check_limits(width, height, frames):
                          % (frames, width, height, total, MAX_ANIMATION_BYTES))
 
 
+def _phase(text):
+    value = float(text)
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError("phase must be a finite number")
+    return value
+
+
 def _fps(text):
     value = int(text)
     if not 1 <= value <= 65535:
@@ -2180,7 +2190,7 @@ def _build_parser():
     parser.add_argument("--frames", type=int, default=1,
                         help="number of frames (default 1). Styles with motion animate one "
                              "scene in a seamless loop; others use consecutive seeds")
-    parser.add_argument("--phase", type=float, default=0.0,
+    parser.add_argument("--phase", type=_phase, default=0.0,
                         help="loop position for styles with motion; 1.0 repeats 0.0 "
                              "(default 0). With --frames, the first frame's position")
     parser.add_argument("--slideshow", action="store_true",
@@ -2253,7 +2263,8 @@ def main():
 def _frame_plan(args, seed):
     """``(seed, phase)`` for each frame: one moving scene, or a slideshow of seeds."""
     if args.style in ANIMATED_STYLES and not args.slideshow:
-        return [(seed, args.phase + i / args.frames) for i in range(args.frames)]
+        start = args.phase % 1.0  # keeps the per-frame steps from vanishing at huge phases
+        return [(seed, start + i / args.frames) for i in range(args.frames)]
     if args.frames > 1 and not args.slideshow:
         print("note: %s has no motion yet, so each frame uses the next seed "
               "(a slideshow)" % args.style, file=sys.stderr)
