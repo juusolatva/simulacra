@@ -1,6 +1,6 @@
 # Abstract Art
 
-Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **37 styles**, **15 palettes**, static PNG output, and looping animated PNG (APNG) output.
+Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **37 styles**, **15 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -61,10 +61,10 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 | `--width` | `256` | Output width in pixels; must be a positive integer. |
 | `--height` | `256` | Output height in pixels; must be a positive integer. |
 | `--out` | `art.png` | Destination path. Its parent directory must already exist. |
-| `--frames` | `1` | Positive frame count. `1` writes a static PNG; larger values write APNG. Styles with motion (see [Animation](#animation)) animate one scene in a seamless loop; the others use consecutive seeds. |
+| `--frames` | `1` | Positive frame count. `1` writes a still image; larger values write an animation (APNG, or GIF if `--out` ends in `.gif`). Styles with motion (see [Animation](#animation)) animate one scene in a seamless loop; the others use consecutive seeds. |
 | `--phase` | `0` | Loop position for styles with motion; `1.0` repeats `0.0`. For a still image it picks the moment; with `--frames` it is the first frame's position. |
 | `--slideshow` | off | Make every frame an unrelated scene with consecutive seeds, even for styles with motion. |
-| `--fps` | `12` | Animation frame rate, an integer from 1 to 65,535. Only used with `--frames` greater than 1. |
+| `--fps` | `12` | Animation frame rate, an integer from 1 to 65,535. Only used with `--frames` greater than 1. GIF delays are whole hundredths of a second, so GIF rates are rounded and capped at 50. |
 | `--no-limits` | off | Skip the size limits (see below). |
 | `--list-styles`, `--list-palettes` | — | Print the style or palette names, one per line, and exit. |
 | `-h`, `--help` | — | Print usage and available choices, then exit. |
@@ -73,7 +73,7 @@ Names are case-sensitive. Options can appear in any order.
 
 The CLI refuses renders over 100 million pixels per frame, and animations whose frames would need more than 1 GiB of memory in total (`width × height × 3 × frames` bytes). Pass `--no-limits` to override. The limits live in `MAX_FRAME_PIXELS`, `MAX_ANIMATION_BYTES` and `check_limits()`; the Python API does not enforce them.
 
-The filename extension does not choose the format: `--frames` determines whether the output is static PNG or APNG. Use `.png` or `.apng` for clarity. Supplying a `.jpg` filename still writes PNG data.
+A `--out` ending in `.gif` (any case) writes a looping GIF, still or animated. Any other name writes PNG data: `--frames` decides between a static PNG and an APNG, so use `.png` or `.apng` for clarity, and a `.jpg` filename still gets PNG data. A GIF holds 256 colors, so all frames share one table of 240 colors sampled evenly along the palette plus 16 greys for glows; gradients can show slight banding, and the APNG is the higher-quality choice. The Python API is `write_gif(path, frames, width, height, fps=12, stops=None)`.
 
 A successful run prints the destination, style, seed, and palette. Successful writes replace an existing destination file.
 
@@ -304,7 +304,7 @@ Without the Rust core, rendering runs on the CPU in Python loops: the original 3
 - The CLI limits are fixed constants (changing them means editing `MAX_FRAME_PIXELS` and `MAX_ANIMATION_BYTES`), and they only estimate the packed frame size. The Python API validates positive dimensions only and has no size cap or memory estimate, so check sizes yourself before calling `render()` on large canvases.
 - Features still based on fixed pixel sizes, such as star dots and some brush widths, become relatively small at large resolutions. Very small images can lose detail through sampling and color quantization.
 
-Output is PNG/APNG only. There is no JPEG, SVG, GIF, or video export, and no built-in viewer.
+Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no built-in viewer.
 
 ## Optional Rust core
 
@@ -394,7 +394,7 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | A render takes a long time without printing anything | Rendering has no progress display. Reduce dimensions or frame count for a preview. |
 | An animation appears static | Check APNG support in the viewer, confirm `--frames` is greater than 1, and avoid `mandelbrot`, which has no motion and ignores the seed. |
 | Frames jump between unrelated scenes | The style has no motion yet, so the CLI made a slideshow (it prints a note). Use one of the styles with motion listed under [Animation](#animation). |
-| Output is not the format suggested by its filename | The script always writes PNG data; `--frames` controls whether it includes animation. |
+| Output is not the format suggested by its filename | Only a `.gif` name changes the format. Any other name gets PNG data, and `--frames` controls whether it includes animation. |
 
 ## Project files
 
