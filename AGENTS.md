@@ -42,8 +42,10 @@ cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/
 python3 bench_abstract_art.py --width 640 --height 480 --compare <saved.json>
 python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
 python3 abstract_art.py --help             # lists styles (from STYLES) and palettes
-# coverage as CI runs it (pure Python first, then with the core built, appended):
-python -m coverage run -m unittest -q && python -m coverage run --append -m unittest -q && python -m coverage report
+# coverage as CI runs it: in a venv without the core, run the suite, then build the core, run it again, append:
+python -m coverage run -m unittest -q
+maturin develop -m core/Cargo.toml                 # builds the core into the active venv
+python -m coverage run --append -m unittest -q && python -m coverage report
 ```
 
 Do not commit generated images.
