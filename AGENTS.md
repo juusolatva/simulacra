@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-`abstract_art.py` is a generative art tool: 36 styles, 9 palettes, PNG/APNG writers and a CLI. `test_abstract_art.py` holds the `unittest` suite and `bench_abstract_art.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders 18 of the styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
+`abstract_art.py` is a generative art tool: 36 styles, 9 palettes, PNG/APNG writers and a CLI. `test_abstract_art.py` holds the `unittest` suite and `bench_abstract_art.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders 29 of the styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
 
 ## Progress
 
@@ -16,11 +16,11 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Python algorithmic fixes: exact culling, segment-based torus and lissajous | Done | PR #2 |
 | Rust core (PyO3 + rayon) with packed `render_rgb()` | Done | PR #2 |
 | Native styles, batch 1 (18): blobs, bloom, circuit, cosmic, drift, galaxy, geo, interference, kaleidoscope, mandala, nebula, orbits, pinwheel, plasma, prism, quasar, shard, waves | Done | PR #2 |
-| Native styles, batch 2 (11 per-pixel): crystal, voronoi, cosmos, mandelbrot, aurora, spiral, petals, starburst, rings, gems, horizon | **Next** | — |
-| Native styles, batch 3 (7 brush and trail): torus, lissajous, constellations, ink, flowfield, comet, ember | To do; needs ordered stamping, see Performance below | — |
+| Native styles, batch 2 (11 per-pixel): crystal, voronoi, cosmos, mandelbrot, aurora, spiral, petals, starburst, rings, gems, horizon | Done | this branch |
+| Native styles, batch 3 (7 brush and trail): torus, lissajous, constellations, ink, flowfield, comet, ember | **Next**; needs ordered stamping, see Performance below | — |
 | More functionality and options | Planned after performance | — |
 
-Measured at 640×480: all 36 styles took 178 s in pure Python at the start; with the Rust core they take about 25 s, of which the 18 remaining Python styles are nearly all. Each native style takes 3–77 ms.
+Measured at 640×480: all 36 styles took 178 s in pure Python at the start; with the 18 batch-1 styles native they took about 25 s. After batch 2, 29 styles are native and only the 7 batch-3 styles run in Python (a re-run on a different machine: 2.6 s total, 1 s of it torus; compare against a fresh baseline, not those numbers). Each native style takes 1–77 ms.
 
 ## Commands
 
@@ -72,14 +72,14 @@ Project key: `juusolatva_abstract-art`.
 
 ### Performance
 
-Pure Python takes about 178 s for all 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core covers the 18 per-pixel styles in `NATIVE_STYLES` (blobs, bloom, circuit, cosmic, drift, galaxy, geo, interference, kaleidoscope, mandala, nebula, orbits, pinwheel, plasma, prism, quasar, shard, waves). They are 78–918× faster, and all 36 styles now take about 25 s. Algorithmic fixes are done in Python first because they carry over to Rust. Single-run timings on this machine vary by about ±30%, so use `--repeat` and compare against a fresh baseline.
+Pure Python takes about 178 s for all 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core covers the 29 per-pixel styles in `NATIVE_STYLES` (batch 1 plus aurora, cosmos, crystal, gems, horizon, mandelbrot, petals, rings, spiral, starburst, voronoi). Batch-1 styles are 78–918× faster; after batch 2 only the 7 brush-and-trail styles are left in Python. Algorithmic fixes are done in Python first because they carry over to Rust. Single-run timings on this machine vary by about ±30%, so use `--repeat` and compare against a fresh baseline.
 
 - **Culling has been done** for the cases that keep output byte-identical: row filtering (`_RowFilter`) for stars in `orbits`, `nebula`, `cosmic` and `constellations`, and for glyphs in `mandala`; exact-zero ring bands in `mandala`; column bounds in `ember`; and bounding-box pruning of segments in `circuit` (`_nearest_segment`). A skip is allowed only where a contribution is exactly zero, either from a hard cutoff or because `exp()` underflows past `GAUSSIAN_ZERO` standard deviations.
 - **`render_torus` and `render_lissajous`** now sample their curves at a spacing tied to the glow width and measure distances to line segments (`_sample_by_length`, `_segment_box`), so curve drawing grows with the pixel count. This fixed the torus issue Greptile raised on PR #1. Their remaining cost is per-pixel work (background noise in torus).
-- **Remaining Python styles, now the bulk of the time:**
-  - Per-pixel styles, straightforward to port next: crystal (computes a height field, then gradients), voronoi (sorts site distances per pixel), cosmos, mandelbrot, aurora, spiral, petals, starburst, rings, gems, horizon.
+- **Remaining Python styles, now all of the time:**
   - Brush-and-trail styles that accumulate stamps in a fixed order: torus and lissajous (stamping plus per-pixel shading), constellations (lines plus stars), ink, flowfield, comet, ember. They need either sequential stamping in Rust or a per-pixel gather to stay byte-identical, because floating-point addition order changes results.
 - **Scene builders:** a native style needs a `_x_scene()` returning plain data (numbers, tuples, lists). A scene must reproduce the exact random draws, including any that depend on the palette: `orbits` takes the stop count because `randrange(n_stops)` consumes a number of random bits that depends on `n_stops`.
+- **Python numeric semantics in ports:** `x ** n` with a float base is libm `pow`, so use `powf` (not `powi`, which multiplies repeatedly and can differ in the last bit). `round()` is half-to-even (`round_ties_even`), `int()` truncates (`as i64`, fine for non-negative values), and sorting `(distance, value)` tuples breaks distance ties by value (see `Voronoi`).
 - **Python `sum()` is compensated since 3.12.** Rust must use `geometry::py_sum` wherever Python sums floats with `sum()` (currently `render_geo`), and `geometry::py_mod` for Python's float `%`.
 - **PNG encoding:** `_packed_rgb` has a fast `bytes()` path for in-range integer channels (about 0.03 s at 640×480), and `zlib` level 9 compression dominates the encoding time at 4K.
 - **No resource guard:** there are no limits on `--width`, `--height` or `--frames`, and the CLI holds all animation frames in memory before writing them.

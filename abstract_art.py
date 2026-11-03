@@ -364,57 +364,52 @@ def render_mandelbrot(width, height, seed, palette_name):
     stops = PALETTES[palette_name]
     scale = 3.2 / min(width, height)
     max_iter = 100
-    pixels = []
-    for y in range(height):
-        row = []
+
+    def value(x, y):
         cy = ((height - 1) / 2.0 - y) * scale
-        for x in range(width):
-            cx = (x - (width - 1) / 2.0) * scale - 0.6
-            zx = zy = 0.0
-            n = 0
-            while zx * zx + zy * zy <= 4.0 and n < max_iter:
-                zx, zy = zx * zx - zy * zy + cx, 2.0 * zx * zy + cy
-                n += 1
-            t = 1.0 if n == max_iter else math.sqrt(n / max_iter)
-            row.append(palette_color(stops, t))
-        pixels.append(row)
-    return pixels
+        cx = (x - (width - 1) / 2.0) * scale - 0.6
+        zx = zy = 0.0
+        n = 0
+        while zx * zx + zy * zy <= 4.0 and n < max_iter:
+            zx, zy = zx * zx - zy * zy + cx, 2.0 * zx * zy + cy
+            n += 1
+        return 1.0 if n == max_iter else math.sqrt(n / max_iter)
+
+    return _shade(width, height, stops, value)
+
+def _spiral_scene(width, height, seed):
+    rng = random.Random(seed)
+    arms = []
+    for _ in range(rng.randint(2, 5)):
+        arms.append((rng.uniform(1.0, 4.0), rng.uniform(0.0, 6.28),
+                     rng.uniform(0.4, 1.0), rng.uniform(0.08, 0.35)))
+    return {"arms": arms}
 
 
 def render_spiral(width, height, seed, palette_name):
     """Polar spiral arms: smooth Gaussians placed where winding phases align."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    arms = []
-    n_arms = rng.randint(2, 5)
-    for _ in range(n_arms):
-        arms.append({
-            "turns": rng.uniform(1.0, 4.0),
-            "phase": rng.uniform(0.0, 6.28),
-            "amp": rng.uniform(0.4, 1.0),
-            "width": rng.uniform(0.08, 0.35),
-        })
-    pixels = []
+    arms = _spiral_scene(width, height, seed)["arms"]
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
     max_r = max(1.0, math.hypot(cx, cy))
-    for y in range(height):
-        row = []
-        for x in range(width):
-            dx = x - cx
-            dy = y - cy
-            r = math.sqrt(dx * dx + dy * dy) / max_r
-            theta = math.atan2(dy, dx)
-            v = 0.0
-            for arm in arms:
-                # "turns" is the number of windings between the center and corners.
-                d = (r * arm["turns"] * math.tau - theta - arm["phase"]) % math.tau
-                dist = abs(d - math.pi)
-                v += arm["amp"] * math.exp(-((dist / arm["width"]) ** 2) / 2.0)
-            v *= 1.0 - 0.5 * r
-            row.append(palette_color(stops, 1.0 - math.exp(-1.6 * v)))
-        pixels.append(row)
-    return pixels
+
+    def value(x, y):
+        dx = x - cx
+        dy = y - cy
+        r = math.sqrt(dx * dx + dy * dy) / max_r
+        theta = math.atan2(dy, dx)
+        v = 0.0
+        for turns, phase, amp, arm_width in arms:
+            # "turns" is the number of windings between the center and corners.
+            d = (r * turns * math.tau - theta - phase) % math.tau
+            dist = abs(d - math.pi)
+            v += amp * math.exp(-((dist / arm_width) ** 2) / 2.0)
+        v *= 1.0 - 0.5 * r
+        return 1.0 - math.exp(-1.6 * v)
+
+    return _shade(width, height, stops, value)
+
 
 
 def _nebula_scene(width, height, seed):
@@ -487,38 +482,45 @@ def render_kaleidoscope(width, height, seed, palette_name):
     return pixels
 
 
+def _petals_scene(width, height, seed):
+    rng = random.Random(seed)
+    return {"count": rng.randint(5, 8), "length": rng.uniform(0.65, 0.95),
+            "phase": rng.uniform(0.0, math.tau)}
+
+
 def render_petals(width, height, seed, palette_name):
     """Radial flower with tapered petals and a luminous center."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    count = rng.randint(5, 8)
-    length = rng.uniform(0.65, 0.95)
-    phase = rng.uniform(0.0, math.tau)
+    scene = _petals_scene(width, height, seed)
+    count, length, phase = scene["count"], scene["length"], scene["phase"]
     cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
     scale = max(1.0, min(width, height) / 2.0)
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            dx, dy = (x - cx) / scale, (y - cy) / scale
-            r = math.hypot(dx, dy)
-            theta = math.atan2(dy, dx)
-            angular = (0.5 + 0.5 * math.cos(count * theta + phase)) ** 3
-            radial = math.exp(-((r - length * 0.52) / (length * 0.3)) ** 2)
-            center = math.exp(-(r / 0.16) ** 2)
-            row.append(palette_color(stops, min(1.0, angular * radial + center)))
-        pixels.append(row)
-    return pixels
+
+    def value(x, y):
+        dx, dy = (x - cx) / scale, (y - cy) / scale
+        r = math.hypot(dx, dy)
+        theta = math.atan2(dy, dx)
+        angular = (0.5 + 0.5 * math.cos(count * theta + phase)) ** 3
+        radial = math.exp(-((r - length * 0.52) / (length * 0.3)) ** 2)
+        center = math.exp(-(r / 0.16) ** 2)
+        return angular * radial + center
+
+    return _shade(width, height, stops, value)
+
+
+
+def _horizon_scene(width, height, seed):
+    rng = random.Random(seed)
+    # (ridge height fraction, noise offset, palette position) per layer, far to near
+    return {"layers": [(fraction, rng.uniform(0, 100), 0.55 - i * 0.13)
+                       for i, fraction in enumerate((0.35, 0.5, 0.65, 0.8))]}
 
 
 def render_horizon(width, height, seed, palette_name):
     """Layered mountain silhouettes over a vertical gradient sky."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    layers = [(fraction, rng.uniform(0, 100), 0.55 - i * 0.13)
-              for i, fraction in enumerate((0.35, 0.5, 0.65, 0.8))]
     ridges = []
-    for fraction, offset, color in layers:
+    for fraction, offset, color in _horizon_scene(width, height, seed)["layers"]:
         ridge = [height * (fraction + 0.18 * (fbm(
             x / max(1, width - 1) * 40, offset, seed, octaves=3) - 0.5))
                  for x in range(width)]
@@ -536,28 +538,29 @@ def render_horizon(width, height, seed, palette_name):
         pixels.append(row)
     return pixels
 
+def _starburst_scene(width, height, seed):
+    rng = random.Random(seed)
+    return {"rays": rng.randint(8, 14), "phase": rng.uniform(0.0, math.tau)}
+
 
 def render_starburst(width, height, seed, palette_name):
     """Glowing rays radiating from a central focal point."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    rays = rng.randint(8, 14)
-    phase = rng.uniform(0.0, math.tau)
+    scene = _starburst_scene(width, height, seed)
+    rays, phase = scene["rays"], scene["phase"]
     cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
     scale = max(1.0, min(width, height) / 2.0)
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            dx, dy = (x - cx) / scale, (y - cy) / scale
-            r = math.hypot(dx, dy)
-            theta = math.atan2(dy, dx)
-            ray = (0.5 + 0.5 * math.cos(theta * rays + phase)) ** 12
-            glow = math.exp(-(r / 0.18) ** 2)
-            t = glow + ray * math.exp(-r * 1.3) * (1 - math.exp(-r * 12))
-            row.append(palette_color(stops, min(1.0, t)))
-        pixels.append(row)
-    return pixels
+
+    def value(x, y):
+        dx, dy = (x - cx) / scale, (y - cy) / scale
+        r = math.hypot(dx, dy)
+        theta = math.atan2(dy, dx)
+        ray = (0.5 + 0.5 * math.cos(theta * rays + phase)) ** 12
+        glow = math.exp(-(r / 0.18) ** 2)
+        return glow + ray * math.exp(-r * 1.3) * (1 - math.exp(-r * 12))
+
+    return _shade(width, height, stops, value)
+
 
 
 def _interference_scene(width, height, seed):
@@ -649,42 +652,40 @@ def render_constellations(width, height, seed, palette_name):
                   lambda x, y: _constellation_value(x, y, star_rows, line_grid))
 
 
+def _cosmos_scene(width, height, seed):
+    rng = random.Random(seed)
+    centers = []
+    for _ in range(rng.randint(2, 5)):
+        centers.append((
+            rng.uniform(width * 0.2, width * 0.8),                                  # x
+            rng.uniform(height * 0.2, height * 0.8),                                # y
+            rng.uniform(0.25, 0.6) * math.sqrt(width * width + height * height),    # max_r
+            rng.randint(3, 8),                                                      # rings
+            rng.uniform(0.0, 6.28),                                                 # phase
+            rng.uniform(0.6, 1.4),                                                  # amp
+        ))
+    return {"centers": centers}
+
+
 def render_cosmos(width, height, seed, palette_name):
     """Cosmos: concentric ripples emanating from random luminous centers."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    n_centers = rng.randint(2, 5)
-    centers = []
-    for _ in range(n_centers):
-        centers.append({
-            "x": rng.uniform(width * 0.2, width * 0.8),
-            "y": rng.uniform(height * 0.2, height * 0.8),
-            "max_r": rng.uniform(0.25, 0.6) * math.sqrt(width * width + height * height),
-            "rings": rng.randint(3, 8),
-            "phase": rng.uniform(0.0, 6.28),
-            "amp": rng.uniform(0.6, 1.4),
-        })
+    centers = _cosmos_scene(width, height, seed)["centers"]
 
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            v = 0.0
-            weight = 0.0
-            for c in centers:
-                d = math.sqrt((x - c["x"]) ** 2 + (y - c["y"]) ** 2)
-                if d < c["max_r"]:
-                    k = int((d / c["max_r"]) * (c["rings"] - 1) + 0.5)
-                    w = math.exp(-((d / (c["max_r"] / max(c["rings"] - 1, 1))) ** 2) / 2.0)
-                    s = math.sin(k * 2.0 + c["phase"])
-                    val = w * c["amp"] * (0.5 + 0.5 * s)
-                    v += val
-                    weight += w
-            t = min(1.0, max(0.0, v / (weight + 0.6)))
-            row.append(palette_color(stops, t * 0.95))
-        pixels.append(row)
-    return pixels
+    def value(x, y):
+        v = 0.0
+        weight = 0.0
+        for cx, cy, max_r, rings, phase, amp in centers:
+            d = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+            if d < max_r:
+                k = int((d / max_r) * (rings - 1) + 0.5)
+                w = math.exp(-((d / (max_r / max(rings - 1, 1))) ** 2) / 2.0)
+                s = math.sin(k * 2.0 + phase)
+                v += w * amp * (0.5 + 0.5 * s)
+                weight += w
+        return min(1.0, max(0.0, v / (weight + 0.6))) * 0.95
 
+    return _shade(width, height, stops, value)
 
 def _galaxy_scene(width, height, seed):
     rng = random.Random(seed)
@@ -871,26 +872,27 @@ def render_torus(width, height, seed, palette_name):
     return _shade(width, height, stops, value)
 
 
+def _voronoi_scene(width, height, seed):
+    rng = random.Random(seed)
+    return {"sites": [(rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.1, 0.7))
+                      for _ in range(rng.randint(10, 16))]}
+
+
 def render_voronoi(width, height, seed, palette_name):
     """Voronoi cells shaded by nearest-site distance with glowing boundaries."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    sites = [(rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.1, 0.7))
-             for _ in range(rng.randint(10, 16))]
+    sites = _voronoi_scene(width, height, seed)["sites"]
     scale = max(1.0, min(width, height))
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            distances = sorted((math.hypot(x - sx, y - sy), color)
-                               for sx, sy, color in sites)
-            nearest, color = distances[0]
-            gap = distances[1][0] - nearest
-            edge = math.exp(-gap / max(0.5, scale * 0.012))
-            t = color * math.exp(-nearest / (scale * 0.3)) + edge * 0.5
-            row.append(palette_color(stops, t))
-        pixels.append(row)
-    return pixels
+
+    def value(x, y):
+        distances = sorted((math.hypot(x - sx, y - sy), color)
+                           for sx, sy, color in sites)
+        nearest, color = distances[0]
+        gap = distances[1][0] - nearest
+        edge = math.exp(-gap / max(0.5, scale * 0.012))
+        return color * math.exp(-nearest / (scale * 0.3)) + edge * 0.5
+
+    return _shade(width, height, stops, value)
 
 
 def _pinwheel_scene(width, height, seed):
@@ -1415,6 +1417,16 @@ def render_drift(width, height, seed, palette_name):
     return pixels
 
 
+def _crystal_scene(width, height, seed):
+    """The fixed light and its Blinn-Phong half vector (no random draws)."""
+    light = (0.45, -0.55, 0.70)
+    ln = math.sqrt(sum(c * c for c in light))
+    light = (light[0] / ln, light[1] / ln, light[2] / ln)
+    hx, hy, hz = light[0], light[1], light[2] + 1.0  # half vector, viewer at +z
+    hn = math.sqrt(hx * hx + hy * hy + hz * hz)
+    return {"light": light, "half": (hx / hn, hy / hn, hz / hn)}
+
+
 def render_crystal(width, height, seed, palette_name):
     """Crystal: noise-grown terrain quantized into low-poly faceted gem faces.
 
@@ -1424,12 +1436,8 @@ def render_crystal(width, height, seed, palette_name):
     flat facets that are lit with diffuse and Blinn-Phong specular terms.
     """
     stops = PALETTES[palette_name]
-    light = (0.45, -0.55, 0.70)
-    ln = math.sqrt(sum(c * c for c in light))
-    light = (light[0] / ln, light[1] / ln, light[2] / ln)
-    hx, hy, hz = light[0], light[1], light[2] + 1.0  # half vector, viewer at +z
-    hn = math.sqrt(hx * hx + hy * hy + hz * hz)
-    half = (hx / hn, hy / hn, hz / hn)
+    scene = _crystal_scene(width, height, seed)
+    light, half = scene["light"], scene["half"]
     k = 28.0 / max(width, height)  # about 3.5 base noise cells across the canvas
     # Per-pixel slopes scale with k (median ~0.064 per noise unit); this maps the
     # typical slope to a ~45 degree facet tilt at any canvas size.
@@ -1575,8 +1583,7 @@ def render_ink(width, height, seed, palette_name):
     return _glow_pixels(glow, width, height, stops)
 
 
-def render_gemstones(width, height, seed, palette_name):
-    stops = PALETTES[palette_name]
+def _gems_scene(width, height, seed):
     rng = random.Random(seed)
     small = max(1.0, min(width, height))
     gems = []
@@ -1585,78 +1592,84 @@ def render_gemstones(width, height, seed, palette_name):
         cy = rng.uniform(0, height - 1)
         cr = small * rng.uniform(0.1, 0.25)
         gems.append((cx, cy, cr, rng.uniform(0, 6.28)))
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            c = stops[0]
-            for (cx, cy, cr, rot) in gems:
-                dx = x - cx
-                dy = y - cy
-                d2 = dx * dx + dy * dy
-                if d2 < cr * cr:
-                    t = math.sqrt(d2) / cr
-                    v = 1.0 - t
-                    local = (math.cos(rot + t * 3.0) + 1.0) / 2.0
-                    c = palette_color(stops, min(1.0, max(0.0, v * local)))
-            row.append(c)
-        pixels.append(row)
-    return pixels
+    return {"gems": gems}
+
+
+def render_gemstones(width, height, seed, palette_name):
+    stops = PALETTES[palette_name]
+    gems = _gems_scene(width, height, seed)["gems"]
+
+    def pixel(x, y):
+        c = stops[0]
+        for (cx, cy, cr, rot) in gems:
+            dx = x - cx
+            dy = y - cy
+            d2 = dx * dx + dy * dy
+            if d2 < cr * cr:
+                t = math.sqrt(d2) / cr
+                v = 1.0 - t
+                local = (math.cos(rot + t * 3.0) + 1.0) / 2.0
+                c = palette_color(stops, min(1.0, max(0.0, v * local)))
+        return c
+
+    return [[pixel(x, y) for x in range(width)] for y in range(height)]
+
+def _rings_scene(width, height, seed):
+    rng = random.Random(seed)
+    scale = max(1.0, min(width, height) / 2.0)
+    return {"rings": [(scale * rng.uniform(0.15, 0.95), rng.uniform(0.0, math.tau))
+                      for _ in range(rng.randint(4, 9))]}
 
 
 def render_rings(width, height, seed, palette_name):
     """Concentric rings, each shaded by a smooth sweep of hue around its circle."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    scale = max(1.0, min(width, height) / 2.0)
-    rings_cfg = []
-    for _ in range(rng.randint(4, 9)):
-        rings_cfg.append((scale * rng.uniform(0.15, 0.95), rng.uniform(0.0, math.tau)))
-    pixels = []
+    rings_cfg = _rings_scene(width, height, seed)["rings"]
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
-    for y in range(height):
-        row = []
-        for x in range(width):
-            c = stops[0]
-            r = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-            for (radius, phase) in rings_cfg:
-                if radius * 0.9 < r < radius * 1.1:
-                    angle = math.atan2(y - cy, x - cx)
-                    c = palette_color(stops, 0.3 + 0.35 * (1.0 + math.cos(angle + phase)))
-            row.append(c)
-        pixels.append(row)
-    return pixels
+
+    def pixel(x, y):
+        c = stops[0]
+        r = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+        for (radius, phase) in rings_cfg:
+            if radius * 0.9 < r < radius * 1.1:
+                angle = math.atan2(y - cy, x - cx)
+                c = palette_color(stops, 0.3 + 0.35 * (1.0 + math.cos(angle + phase)))
+        return c
+
+    return [[pixel(x, y) for x in range(width)] for y in range(height)]
+
+
+def _aurora_scene(width, height, seed):
+    rng = random.Random(seed)
+    ribbons = []
+    for _ in range(rng.randint(3, 7)):
+        ribbons.append((
+            rng.uniform(0, height - 1),                       # y0
+            max(1.0, height * rng.uniform(0.06, 0.27)),       # amp
+            rng.uniform(1.0, 5.0) / max(1, width),            # freq
+            rng.uniform(0.0, 6.28),                           # phase
+            rng.uniform(0.6, 1.4),                            # bw
+        ))
+    return {"ribbons": ribbons}
 
 
 def render_aurora(width, height, seed, palette_name):
     """Flowing ribbons: wavy curves sampled across the canvas, blurred by gaussian weighting."""
     stops = PALETTES[palette_name]
-    rng = random.Random(seed)
-    ribbons = []
-    for _ in range(rng.randint(3, 7)):
-        ribbons.append({
-            "y0": rng.uniform(0, height - 1),
-            "amp": max(1.0, height * rng.uniform(0.06, 0.27)),
-            "freq": rng.uniform(1.0, 5.0) / max(1, width),
-            "phase": rng.uniform(0.0, 6.28),
-            "bw": rng.uniform(0.6, 1.4),
-        })
-    pixels = []
-    for y in range(height):
-        row = []
-        for x in range(width):
-            v = 0.0
-            for rib in ribbons:
-                yy = rib["y0"] + rib["amp"] * math.sin(x * rib["freq"] + rib["phase"])
-                d = (y - yy) / rib["amp"]
-                w = math.exp(-d * d)
-                s = math.sin(x * rib["freq"] * 2.0 + rib["phase"])
-                v += w * (0.5 + 0.5 * s) * rib["bw"]
-            row.append(palette_color(stops, 0.05 + 0.95 * (1.0 - math.exp(-1.5 * v))))
-        pixels.append(row)
-    return pixels
+    ribbons = _aurora_scene(width, height, seed)["ribbons"]
 
+    def value(x, y):
+        v = 0.0
+        for y0, amp, freq, phase, bw in ribbons:
+            yy = y0 + amp * math.sin(x * freq + phase)
+            d = (y - yy) / amp
+            w = math.exp(-d * d)
+            s = math.sin(x * freq * 2.0 + phase)
+            v += w * (0.5 + 0.5 * s) * bw
+        return 0.05 + 0.95 * (1.0 - math.exp(-1.5 * v))
+
+    return _shade(width, height, stops, value)
 
 def _plasma_scene(width, height, seed):
     rng = random.Random(seed)
@@ -1753,23 +1766,34 @@ def _no_scene(width, height, seed, stops):
 # data (numbers, tuples, lists) the core receives. Python still makes every
 # random draw, and native output is tested to be byte-identical to Python.
 NATIVE_STYLES = {
+    "aurora": _scene_without_stops(_aurora_scene),
     "blobs": _no_scene,
     "bloom": _scene_without_stops(_bloom_scene),
     "circuit": _scene_without_stops(_circuit_scene),
     "cosmic": _scene_without_stops(_cosmic_scene),
+    "cosmos": _scene_without_stops(_cosmos_scene),
+    "crystal": _scene_without_stops(_crystal_scene),
     "drift": _no_scene,
     "galaxy": _scene_without_stops(_galaxy_scene),
+    "gems": _scene_without_stops(_gems_scene),
     "geo": _scene_without_stops(_geo_scene),
+    "horizon": _scene_without_stops(_horizon_scene),
     "interference": _scene_without_stops(_interference_scene),
     "kaleidoscope": _scene_without_stops(_kaleidoscope_scene),
     "mandala": _scene_without_stops(_mandala_scene),
+    "mandelbrot": _no_scene,
     "nebula": _scene_without_stops(_nebula_scene),
     "orbits": lambda width, height, seed, stops: _orbits_scene(width, height, seed, len(stops)),
+    "petals": _scene_without_stops(_petals_scene),
     "pinwheel": _scene_without_stops(_pinwheel_scene),
     "plasma": _scene_without_stops(_plasma_scene),
     "prism": _scene_without_stops(_prism_scene),
     "quasar": _scene_without_stops(_quasar_native_scene),
+    "rings": _scene_without_stops(_rings_scene),
     "shard": _scene_without_stops(_shard_scene),
+    "spiral": _scene_without_stops(_spiral_scene),
+    "starburst": _scene_without_stops(_starburst_scene),
+    "voronoi": _scene_without_stops(_voronoi_scene),
     "waves": _scene_without_stops(_waves_scene),
 }
 
