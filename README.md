@@ -4,6 +4,8 @@ Generate abstract images from mathematical patterns, noise fields, and seeded ra
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
+See the [glossary](GLOSSARY.md) for the project's visual concepts and terminology.
+
 ## Contents
 
 - [Quick start](#quick-start)
@@ -68,7 +70,7 @@ A successful run prints the destination, style, seed, and palette. Successful wr
 
 ## Examples
 
-### A flower composition
+### A flower scene
 
 ```bash
 python3 abstract_art.py --style petals --palette sunset --seed 7 --width 512 --height 512 --out flower.png
@@ -101,7 +103,7 @@ python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
 python3 abstract_art.py --style comet --palette neon --seed 1 --width 256 --height 256 --frames 12 --out comets.png
 ```
 
-This creates a one-second sequence that loops indefinitely. It shows independently generated compositions; it does not animate a comet continuously through a shared scene.
+This creates a one-second sequence that loops indefinitely. Each frame shows an independently generated scene, with no continuous motion between frames.
 
 ## Styles
 
@@ -146,7 +148,7 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `comet` | Fading streaks painted with soft brushes; trails wrap across image edges. |
 | `ink` | Quadratic Bézier strokes painted with tapered soft brushes. |
 
-Changing dimensions can change the composition, not just the number of pixels. Most shapes, ring radii, and wave frequencies are relative to the canvas, and `blobs`, `nebula`, `drift`, and `crystal` also scale their noise to it. Other noise textures, star sizes, and brush widths are still measured in pixels, so their detail changes with resolution.
+Changing dimensions can change the scene's arrangement as well as the number of pixels. Most shapes, ring radii, and wave frequencies are relative to the canvas, and `blobs`, `nebula`, `drift`, and `crystal` also scale their noise to it. Other noise textures, star sizes, and brush widths are still measured in pixels, so their detail changes with resolution.
 
 ## Palettes
 
@@ -282,7 +284,7 @@ Output is PNG/APNG only. There is no JPEG, SVG, GIF, or video export, and no bui
 
 The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: `blobs`, `bloom`, `circuit`, `cosmic`, `drift`, `galaxy`, `geo`, `interference`, `kaleidoscope`, `mandala`, `nebula`, `orbits`, `pinwheel`, `plasma`, `prism`, `quasar`, `shard`, and `waves`. All other styles, and every style when the module is missing, use the pure-Python renderers.
 
-Python still generates each scene with `random.Random`, so a seed produces the same composition either way. The native output is tested to be byte-identical to the Python output.
+Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 
 Build it into a virtual environment (requires a Rust toolchain from [rustup.rs](https://rustup.rs)):
 
@@ -365,7 +367,7 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | Output path raises `PermissionError` | Choose a writable location. APNG also needs permission to create a temporary file and replace the destination. |
 | A render takes a long time without printing anything | Rendering has no progress display. Reduce dimensions or frame count for a preview. |
 | An animation appears static | Check APNG support in the viewer, confirm `--frames` is greater than 1, and avoid a seed-independent style such as `mandelbrot` if you want changing frames. |
-| Frames jump between unrelated compositions | This is the current seeded-sequence behavior. Continuous motion requires supplying related frames through the Python API or extending a renderer. |
+| Frames jump between unrelated scenes | This is the current seeded-sequence behavior. Continuous motion requires supplying related frames through the Python API or extending a renderer. |
 | Output is not the format suggested by its filename | The script always writes PNG data; `--frames` controls whether it includes animation. |
 
 ## Project files
