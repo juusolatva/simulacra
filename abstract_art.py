@@ -2309,10 +2309,6 @@ def _animated_scene(builder):
     return lambda width, height, seed, stops, phase=0.0: builder(width, height, seed, phase)
 
 
-def _no_scene(width, height, seed, stops, phase=0.0):
-    return {}
-
-
 # Styles with a Rust implementation, mapped to the scene builder whose plain
 # data (numbers, tuples, lists) the core receives. Python still makes every
 # random draw, and native output is tested to be byte-identical to Python.
