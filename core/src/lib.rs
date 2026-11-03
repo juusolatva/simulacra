@@ -84,7 +84,7 @@ mod abstract_art_core {
             "interference" => Box::new(scene.extract::<fields::Interference>()?),
             "kaleidoscope" => Box::new(scene.extract::<fields::Kaleidoscope>()?),
             "mandala" => Box::new(scene.extract::<shapes::Mandala>()?),
-            "mandelbrot" => Box::new(fields::Mandelbrot),
+            "mandelbrot" => Box::new(scene.extract::<fields::Mandelbrot>()?),
             "nebula" => Box::new(scene.extract::<fields::Nebula>()?),
             "orbits" => Box::new(scene.extract::<fields::Orbits>()?),
             "petals" => Box::new(scene.extract::<fields::Petals>()?),

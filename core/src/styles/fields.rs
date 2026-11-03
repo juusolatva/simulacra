@@ -495,27 +495,34 @@ impl Style for Cosmos {
     }
 }
 
-/// `render_mandelbrot` (no random scene).
-pub struct Mandelbrot;
+/// `render_mandelbrot`: Python gives the view (scale, centre) and iteration limit.
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Mandelbrot {
+    scale: f64,
+    center: (f64, f64),
+    iterations: u32,
+}
 
 impl Style for Mandelbrot {
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
-        const MAX_ITER: u32 = 100;
-        let scale = 3.2 / width.min(height) as f64;
+        let scale = self.scale;
+        let (center_x, center_y) = self.center;
+        let max_iter = self.iterations;
         let (mid_x, mid_y) = center(width, height);
         shade(width, height, palette, |x, y| {
-            let cy = (mid_y - y as f64) * scale;
-            let cx = (x as f64 - mid_x) * scale - 0.6;
+            let cy = (mid_y - y as f64) * scale + center_y;
+            let cx = (x as f64 - mid_x) * scale + center_x;
             let (mut zx, mut zy) = (0.0_f64, 0.0_f64);
             let mut n = 0;
-            while zx * zx + zy * zy <= 4.0 && n < MAX_ITER {
+            while zx * zx + zy * zy <= 4.0 && n < max_iter {
                 (zx, zy) = (zx * zx - zy * zy + cx, 2.0 * zx * zy + cy);
                 n += 1;
             }
-            if n == MAX_ITER {
+            if n == max_iter {
                 1.0
             } else {
-                (n as f64 / MAX_ITER as f64).sqrt()
+                (n as f64 / max_iter as f64).sqrt()
             }
         })
     }
