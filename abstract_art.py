@@ -795,7 +795,7 @@ def _cosmos_scene(width, height, seed, phase=0.0):
             rng.uniform(height * 0.2, height * 0.8),                                # y
             rng.uniform(0.25, 0.6) * math.sqrt(width * width + height * height),    # max_r
             rng.randint(3, 8),                                                      # rings
-            rng.uniform(0.0, 6.28) + _loop(phase, 1),                               # phase
+            rng.uniform(0.0, 6.28) - _loop(phase, 1),                               # phase (minus: bands move outward)
             rng.uniform(0.6, 1.4),                                                  # amp
         ))
     return {"centers": centers}

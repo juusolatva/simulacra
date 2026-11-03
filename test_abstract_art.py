@@ -550,6 +550,15 @@ class RenderingTests(unittest.TestCase):
                     looped = art.render_rgb(40, 30, 5, style, 'rainbow', whole)
                     self.assertLessEqual(max(abs(a - b) for a, b in zip(start, looped)), 3)
 
+    def test_cosmos_bands_move_outward_as_the_phase_grows(self):
+        # A ring's brightness is sin(2 * ring + phase), and ring index grows with distance.
+        # A peak stays where 2 * ring + phase is constant, so the phase must fall for
+        # the bands to move outward.
+        still = art._cosmos_scene(120, 90, 4)['centers']
+        moved = art._cosmos_scene(120, 90, 4, 0.1)['centers']
+        for before, after in zip(still, moved):
+            self.assertAlmostEqual(before[4] - after[4], art._loop(0.1, 1), places=12)
+
     def test_styles_without_motion_ignore_the_phase(self):
         for style in sorted(set(art.STYLES) - art.ANIMATED_STYLES):
             with self.subTest(style=style):
