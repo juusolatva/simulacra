@@ -49,7 +49,7 @@ Do not commit generated images.
 ## CI
 
 - **SonarQube Cloud (`.github/workflows/sonarqube.yml`, `sonar-project.properties`, `.coveragerc`):** runs the suite twice under `coverage` (once without the Rust core, once with it built via `maturin develop`, appended into one report) and scans with `coverage.xml`. Only Python coverage is collected; Rust is exercised through the same tests. The scan needs `SONAR_TOKEN` and skips pull requests from forks, which cannot read secrets. SonarQube's Automatic Analysis must be off, because it conflicts with CI analysis.
-- **OSV-Scanner (`.github/workflows/osv-scanner.yml`):** scans `-r ./`, which finds `core/Cargo.lock` (the Python module has no dependencies). Pull requests and merge groups use the PR workflow, and pushes to main, a weekly schedule and manual runs use the full scan. Actions are pinned by commit SHA with the version in a comment.
+- **OSV-Scanner (`.github/workflows/osv-scanner.yml`):** scans `-r ./`, which finds `core/Cargo.lock` (the Python module has no dependencies). Pull requests and merge groups use the PR workflow, and pushes to main, a weekly schedule and manual runs use the full scan. SARIF upload is off (`upload-sarif: false`) while the repository is private, since code scanning needs GitHub Code Security there; turn it back on when the repository is public. Actions are pinned by commit SHA with the version in a comment.
 
 ## Architecture
 
