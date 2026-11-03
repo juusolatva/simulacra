@@ -65,7 +65,8 @@ def lzw_decode(data):
 def read_gif(path):
     """Parse a GIF written by write_gif: (width, height, table, frames, delays, loops)."""
     data = pathlib.Path(path).read_bytes()
-    assert data[:6] == b'GIF89a' and data[-1:] == b'\x3b'
+    assert data[:6] == b'GIF89a'
+    assert data[-1:] == b'\x3b'
     width, height = struct.unpack('<HH', data[6:10])
     table = [tuple(data[13 + 3 * i:16 + 3 * i]) for i in range(256)]
     position, frames, delays, loops = 13 + 768, [], [], False
@@ -81,7 +82,8 @@ def read_gif(path):
                 position += 1 + data[position]
             position += 1
             continue
-        assert introducer == 0x2C and data[position + 10] == 8
+        assert introducer == 0x2C
+        assert data[position + 10] == 8
         position += 11
         packed = b''
         while data[position]:
