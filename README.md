@@ -55,14 +55,20 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 | --- | --- | --- |
 | `--style` | `waves` | One of the 36 style names listed below. |
 | `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
+| `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
 | `--palette` | `deep` | One of the 9 palette names listed below. |
 | `--width` | `256` | Output width in pixels; must be a positive integer. |
 | `--height` | `256` | Output height in pixels; must be a positive integer. |
 | `--out` | `art.png` | Destination path. Its parent directory must already exist. |
 | `--frames` | `1` | Positive frame count. `1` writes a static PNG; larger values write APNG. |
+| `--fps` | `12` | Animation frame rate, an integer from 1 to 65,535. Only used with `--frames` greater than 1. |
+| `--no-limits` | off | Skip the size limits (see below). |
+| `--list-styles`, `--list-palettes` | — | Print the style or palette names, one per line, and exit. |
 | `-h`, `--help` | — | Print usage and available choices, then exit. |
 
-Names are case-sensitive. Options can appear in any order. There is no CLI option for frame rate; CLI animations use 12 frames per second.
+Names are case-sensitive. Options can appear in any order.
+
+The CLI refuses renders over 100 million pixels per frame, and animations whose frames would need more than 1 GiB of memory in total (`width × height × 3 × frames` bytes). Pass `--no-limits` to override. The limits live in `MAX_FRAME_PIXELS`, `MAX_ANIMATION_BYTES` and `check_limits()`; the Python API does not enforce them.
 
 The filename extension does not choose the format: `--frames` determines whether the output is static PNG or APNG. Use `.png` or `.apng` for clarity. Supplying a `.jpg` filename still writes PNG data.
 
@@ -170,7 +176,7 @@ The `ember` style and the `ember` palette are independent choices. You can use, 
 
 ## Animation
 
-With `--frames N`, the CLI renders seeds `seed`, `seed + 1`, …, `seed + N - 1`, then writes them as full-canvas frames in a looping APNG. Frame rate is fixed at 12 FPS, so one loop lasts `N / 12` seconds.
+With `--frames N`, the CLI renders seeds `seed`, `seed + 1`, …, `seed + N - 1`, then writes them as full-canvas frames in a looping APNG. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
 
 Animation currently means a sequence of seeded images:
 
@@ -274,7 +280,7 @@ Without the Rust core, rendering runs on the CPU in Python loops: all 36 styles 
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
 - Styles such as `quasar`, `circuit`, and `drift` perform many noise or geometry calculations per pixel. Actual speed depends on style, size, seed, and hardware.
 - `render()` returns Python lists and tuples, which use far more memory than the packed RGB size of `width * height * 3` bytes. The CLI and `render_rgb()` use packed bytes.
-- The CLI holds all uncompressed animation frames in memory before writing them. Memory use grows with frame count and pixel count; keep both modest.
+- The CLI holds all uncompressed animation frames in memory before writing them, so memory use grows with frame count and pixel count. It refuses renders past the limits above unless you pass `--no-limits`.
 - There is no configurable resource cap or maximum-resolution guard. Positive dimensions are validated, but the script does not estimate whether a render will fit in memory.
 - Features still based on fixed pixel sizes, such as star dots and some brush widths, become relatively small at large resolutions. Very small images can lose detail through sampling and color quantization.
 

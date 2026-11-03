@@ -18,7 +18,8 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Native styles, batch 1 (18): blobs, bloom, circuit, cosmic, drift, galaxy, geo, interference, kaleidoscope, mandala, nebula, orbits, pinwheel, plasma, prism, quasar, shard, waves | Done | PR #2 |
 | Native styles, batch 2 (11 per-pixel): crystal, voronoi, cosmos, mandelbrot, aurora, spiral, petals, starburst, rings, gems, horizon | Done | PR #3 |
 | Native styles, batch 3 (7 brush and trail): torus, lissajous, constellations, ink, flowfield, comet, ember | Done: sequential stamping in Python's order, parallel shading (`core/src/styles/brush.rs`) | this branch |
-| More functionality and options | **Next** (performance is complete) | — |
+| CLI safety and polish: size limits, `--fps`, `--random-seed`, `--list-styles`, `--list-palettes` | Done | this branch |
+| More functionality: real animation (shared time parameter), custom palettes, output options | Planned | — |
 
 Measured at 640×480: all 36 styles took 178 s in pure Python at the start. With all 36 styles native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
 
@@ -81,7 +82,7 @@ Pure Python takes about 178 s for all 36 styles at 640×480 (see `bench_abstract
 - **Python numeric semantics in ports:** `x ** n` with a float base is libm `pow`, so use `powf` (not `powi`, which multiplies repeatedly and can differ in the last bit). `round()` is half-to-even (`round_ties_even`), `int()` truncates (`as i64`, fine for non-negative values), and sorting `(distance, value)` tuples breaks distance ties by value (see `Voronoi`).
 - **Python `sum()` is compensated since 3.12.** Rust must use `geometry::py_sum` wherever Python sums floats with `sum()` (currently `render_geo`), and `geometry::py_mod` for Python's float `%`.
 - **PNG encoding:** `_packed_rgb` has a fast `bytes()` path for in-range integer channels (about 0.03 s at 640×480), and `zlib` level 9 compression dominates the encoding time at 4K.
-- **No resource guard:** there are no limits on `--width`, `--height` or `--frames`, and the CLI holds all animation frames in memory before writing them.
+- **Resource guards:** the CLI enforces `MAX_FRAME_PIXELS` (100 M) and `MAX_ANIMATION_BYTES` (1 GiB of packed frames) through `check_limits()`; `--no-limits` skips them and the Python API does not enforce them. The CLI still holds all animation frames in memory; streaming them to the writer would need `write_animated_png` to accept an iterator with a known count.
 
 ### Rendering quirks (not bugs, but worth knowing)
 

@@ -53,6 +53,7 @@ import itertools
 import math
 import os
 import random
+import secrets
 import struct
 import zlib
 
@@ -2005,33 +2006,86 @@ def write_png(path, pixels, width, height):
 
 # ---------------------------------------------------------------- cli
 
-def main():
+# Limits the CLI enforces unless --no-limits is given. A frame is held as packed
+# RGB (3 bytes per pixel), and an animation keeps every frame in memory.
+MAX_FRAME_PIXELS = 100_000_000
+MAX_ANIMATION_BYTES = 1 << 30
+
+
+def check_limits(width, height, frames):
+    """Raise ValueError if the render would be unreasonably large."""
+    if width * height > MAX_FRAME_PIXELS:
+        raise ValueError("%d x %d is %d pixels; the limit is %d (use --no-limits to override)"
+                         % (width, height, width * height, MAX_FRAME_PIXELS))
+    total = width * height * 3 * frames
+    if frames > 1 and total > MAX_ANIMATION_BYTES:
+        raise ValueError("%d frames of %d x %d need %d bytes in memory; the limit is %d "
+                         "(use --no-limits to override)"
+                         % (frames, width, height, total, MAX_ANIMATION_BYTES))
+
+
+def _fps(text):
+    value = int(text)
+    if not 1 <= value <= 65535:
+        raise argparse.ArgumentTypeError("fps must be between 1 and 65535")
+    return value
+
+
+def _build_parser():
     parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
     parser.add_argument("--style", default="waves", choices=list(STYLES))
-    parser.add_argument("--seed", type=int, default=1)
+    seeds = parser.add_mutually_exclusive_group()
+    seeds.add_argument("--seed", type=int, default=1)
+    seeds.add_argument("--random-seed", action="store_true",
+                       help="pick a random seed and print it so the image can be reproduced")
     parser.add_argument("--palette", default="deep", choices=sorted(PALETTES))
     parser.add_argument("--width", type=int, default=256)
     parser.add_argument("--height", type=int, default=256)
     parser.add_argument("--out", default="art.png")
     parser.add_argument("--frames", type=int, default=1,
                         help="number of frames using consecutive seeds (default 1)")
+    parser.add_argument("--fps", type=_fps, default=12,
+                        help="animation frame rate with --frames > 1 (default 12)")
+    parser.add_argument("--no-limits", action="store_true",
+                        help="skip the size limits on pixels and animation memory")
+    parser.add_argument("--list-styles", action="store_true",
+                        help="print the style names, one per line, and exit")
+    parser.add_argument("--list-palettes", action="store_true",
+                        help="print the palette names, one per line, and exit")
+    return parser
+
+
+def main():
+    parser = _build_parser()
     args = parser.parse_args()
 
+    if args.list_styles or args.list_palettes:
+        names = (list(STYLES) if args.list_styles else []) + (
+            sorted(PALETTES) if args.list_palettes else [])
+        print("\n".join(names))
+        return
     if args.width <= 0 or args.height <= 0:
         parser.error("width and height must be positive")
     if args.frames <= 0:
         parser.error("frames must be positive")
+    if not args.no_limits:
+        try:
+            check_limits(args.width, args.height, args.frames)
+        except ValueError as error:
+            parser.error(str(error))
+    seed = secrets.randbelow(2 ** 31) if args.random_seed else args.seed
     if args.frames > 1:
         frames = [
-            render_rgb(args.width, args.height, args.seed + i, args.style, args.palette)
+            render_rgb(args.width, args.height, seed + i, args.style, args.palette)
             for i in range(args.frames)
         ]
-        write_animated_png(args.out, frames, args.width, args.height, fps=12)
-        print("wrote %d animation frames to %s (%s, seed=%d, palette=%s)" % (args.frames, args.out, args.style, args.seed, args.palette))
+        write_animated_png(args.out, frames, args.width, args.height, fps=args.fps)
+        print("wrote %d animation frames to %s (%s, seed=%d, palette=%s, %d fps)"
+              % (args.frames, args.out, args.style, seed, args.palette, args.fps))
     else:
-        pixels = render_rgb(args.width, args.height, args.seed, args.style, args.palette)
+        pixels = render_rgb(args.width, args.height, seed, args.style, args.palette)
         write_png(args.out, pixels, args.width, args.height)
-        print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, args.seed, args.palette))
+        print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, seed, args.palette))
 
 
 if __name__ == "__main__":
