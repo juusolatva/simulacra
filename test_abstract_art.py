@@ -32,6 +32,66 @@ def chunks(path):
     return result
 
 
+def lzw_decode(data):
+    """Reference GIF LZW decoder (minimum code size 8) for checking the writer."""
+    clear, end = 256, 257
+    table = {i: bytes([i]) for i in range(clear)}
+    out = bytearray()
+    width, bits, buffer, position, previous, next_code = 9, 0, 0, 0, None, 258
+    while True:
+        while bits < width:
+            buffer |= data[position] << bits
+            position += 1
+            bits += 8
+        code = buffer & ((1 << width) - 1)
+        buffer >>= width
+        bits -= width
+        if code == clear:
+            table = {i: bytes([i]) for i in range(clear)}
+            width, previous, next_code = 9, None, 258
+            continue
+        if code == end:
+            return bytes(out)
+        entry = table[code] if code in table else previous + previous[:1]
+        if previous is not None:
+            table[next_code] = previous + entry[:1]
+            next_code += 1
+            if next_code == 1 << width and width < 12:
+                width += 1
+        out += entry
+        previous = entry
+
+
+def read_gif(path):
+    """Parse a GIF written by write_gif: (width, height, table, frames, delays, loops)."""
+    data = pathlib.Path(path).read_bytes()
+    assert data[:6] == b'GIF89a' and data[-1:] == b'\x3b'
+    width, height = struct.unpack('<HH', data[6:10])
+    table = [tuple(data[13 + 3 * i:16 + 3 * i]) for i in range(256)]
+    position, frames, delays, loops = 13 + 768, [], [], False
+    while data[position] != 0x3B:
+        introducer = data[position]
+        if introducer == 0x21:
+            label = data[position + 1]
+            if label == 0xF9:
+                delays.append(struct.unpack('<H', data[position + 4:position + 6])[0])
+            loops = loops or label == 0xFF
+            position += 2
+            while data[position]:
+                position += 1 + data[position]
+            position += 1
+            continue
+        assert introducer == 0x2C and data[position + 10] == 8
+        position += 11
+        packed = b''
+        while data[position]:
+            packed += data[position + 1:position + 1 + data[position]]
+            position += 1 + data[position]
+        position += 1
+        frames.append(lzw_decode(packed))
+    return width, height, table, frames, delays, loops
+
+
 class RenderingTests(unittest.TestCase):
     def test_failed_animation_preserves_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -473,6 +533,50 @@ class RenderingTests(unittest.TestCase):
                                           '--no-limits')
                 self.assertIsNone(code)
                 self.assertTrue(pathlib.Path(out).exists())
+
+    def test_gif_lzw_round_trips_across_table_resets(self):
+        import random
+        rng = random.Random(3)
+        for size, spread in ((1, 256), (2, 3), (100, 256), (5000, 256), (70000, 5), (70000, 256)):
+            data = bytes(rng.randrange(spread) for _ in range(size))
+            self.assertEqual(lzw_decode(art._gif_lzw(data)), data)
+        flat = bytes(70000)
+        self.assertEqual(lzw_decode(art._gif_lzw(flat)), flat)
+
+    def test_gif_frames_use_one_table_and_the_palette_colors(self):
+        stops = art.PALETTES['sunset']
+        frames = [art.render_rgb(48, 32, 4, 'plasma', 'sunset', i / 3) for i in range(3)]
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / 'a.gif'
+            art.write_gif(path, frames, 48, 32, fps=10, stops=stops)
+            width, height, table, decoded, delays, loops = read_gif(path)
+        self.assertEqual((width, height, len(decoded), delays, loops), (48, 32, 3, [10] * 3, True))
+        for frame, indices in zip(frames, decoded):
+            worst = max(
+                max(abs(a - b) for a, b in zip(frame[3 * i:3 * i + 3], table[index]))
+                for i, index in enumerate(indices))
+            self.assertLessEqual(worst, 24)
+
+    def test_gif_single_frame_has_no_loop_block_and_validates_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / 'one.gif'
+            art.write_gif(path, [[[(255, 0, 0)]]], 1, 1)
+            self.assertFalse(read_gif(path)[5])
+            for args in (([], 1, 1), ([[[(0, 0, 0)]]], 1, 1, 0), ([[[(0, 0, 0)]]], 0, 1)):
+                with self.assertRaises(ValueError):
+                    art.write_gif(pathlib.Path(directory) / 'bad.gif', *args)
+            self.assertFalse((pathlib.Path(directory) / 'bad.gif').exists())
+        self.assertEqual([art._gif_delay(f) for f in (1, 12, 25, 50, 100)], [100, 8, 4, 2, 2])
+
+    def test_cli_writes_gif_when_out_ends_in_gif(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for frames, expected in (('1', 1), ('3', 3)):
+                out = pathlib.Path(directory) / ('x%s.GIF' % frames)
+                code, _, _ = self.run_cli('--width', '16', '--height', '12', '--frames', frames,
+                                          '--out', str(out))
+                self.assertIsNone(code)
+                width, height, _, decoded, _, _ = read_gif(out)
+                self.assertEqual((width, height, len(decoded)), (16, 12, expected))
 
     def test_cli_fps_sets_the_animation_delay(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -2401,6 +2401,148 @@ def write_animated_png(path, frames, width, height, fps=12):
     _atomic_write(path, chunks())
 
 
+# ---------------------------------------------------------------- gif
+
+
+def _gif_table(stops):
+    """The shared 256-entry colour table: palette samples plus a grey ramp.
+
+    Most pixels are palette colours, so 240 entries are taken evenly along the
+    palette; 16 greys cover the glows and highlights that lie off that curve.
+    Without ``stops`` the table is a 6x7x6 colour cube plus four greys.
+    """
+    if stops:
+        table = [palette_color(stops, i / 239) for i in range(240)]
+        table += [(v, v, v) for v in (round(i * 255 / 15) for i in range(16))]
+    else:
+        table = [(r * 51, g * 255 // 6, b * 51) for r in range(6) for g in range(7)
+                 for b in range(6)]
+        table += [(v, v, v) for v in (round(i * 255 / 3) for i in range(4))]
+    return [tuple(int(c) for c in color) for color in table]
+
+
+def _nearest_entry(table, color):
+    red, green, blue = color
+    return min(range(len(table)), key=lambda i: (table[i][0] - red) ** 2
+               + (table[i][1] - green) ** 2 + (table[i][2] - blue) ** 2)
+
+
+def _gif_indices(data, table, lookup):
+    """Map packed RGB bytes to table indices; ``lookup`` caches colours across frames.
+
+    Exact colours that are in the table keep their entry. Others use the nearest
+    entry, found once per 5-bit colour cell, so the search cost does not grow with
+    the number of distinct colours.
+    """
+    colors = list(zip(data[0::3], data[1::3], data[2::3]))
+    for color in set(colors).difference(lookup):
+        cell = (color[0] >> 3, color[1] >> 3, color[2] >> 3, 0)
+        if cell not in lookup:
+            lookup[cell] = _nearest_entry(table, tuple((c << 3) | 4 for c in cell[:3]))
+        lookup[color] = lookup[cell]
+    return bytes(map(lookup.__getitem__, colors))
+
+
+def _lzw_width(next_code, width):
+    """Code width after the table reaches ``next_code`` entries (at most 12 bits)."""
+    return width + 1 if next_code == (1 << width) and width < 12 else width
+
+
+def _lzw_codes(indices):
+    """GIF LZW (minimum code size 8): yield ``(code, width)`` pairs ending with end-of-data."""
+    clear, end = 256, 257
+    codes = {}
+    next_code, width = 258, 9
+    yield clear, width
+    prefix = None
+    for value in indices:
+        if prefix is None:
+            prefix = value
+            continue
+        key = (prefix << 8) | value
+        found = codes.get(key)
+        if found is not None:
+            prefix = found
+            continue
+        yield prefix, width
+        codes[key] = next_code
+        # The decoder adds its entry one code after the encoder, so the code
+        # width grows once next_code passes 2**width.
+        width = _lzw_width(next_code, width)
+        next_code += 1
+        if next_code == 4097:
+            yield clear, width
+            codes.clear()
+            next_code, width = 258, 9
+        prefix = value
+    if prefix is not None:
+        yield prefix, width
+        # The decoder adds one more entry here, which can widen the end code.
+        width = _lzw_width(next_code, width)
+    yield end, width
+
+
+def _gif_lzw(indices):
+    """Pack LZW codes into bytes, least significant bit first."""
+    out = bytearray()
+    buffer = bits = 0
+    for code, width in _lzw_codes(indices):
+        buffer |= code << bits
+        bits += width
+        while bits >= 8:
+            out.append(buffer & 255)
+            buffer >>= 8
+            bits -= 8
+    if bits:
+        out.append(buffer & 255)
+    return bytes(out)
+
+
+def _gif_blocks(data):
+    for start in range(0, len(data), 255):
+        block = data[start:start + 255]
+        yield bytes((len(block),)) + block
+    yield b"\x00"
+
+
+def _gif_delay(fps):
+    """Frame delay in hundredths of a second; viewers treat 0 and 1 as 10."""
+    return max(2, round(100 / fps))
+
+
+def write_gif(path, frames, width, height, fps=12, stops=None):
+    """Write a looping GIF with one 256-colour table shared by every frame.
+
+    The table is sampled from the palette ``stops`` (a generic table if None).
+    GIF delays are whole hundredths of a second, so ``fps`` is rounded to the
+    nearest delay and is capped at 50 frames per second.
+    """
+    if not frames:
+        raise ValueError("no frames to write")
+    if not isinstance(fps, int) or not 1 <= fps <= 65535:
+        raise ValueError("fps must be an integer between 1 and 65535")
+    _validate_dimensions(width, height)
+    if width > 65535 or height > 65535:
+        raise ValueError("GIF dimensions cannot exceed 65535 pixels")
+    table = _gif_table(stops)
+    lookup = {color: index for index, color in reversed(list(enumerate(table)))}
+    delay = _gif_delay(fps)
+
+    def chunks():
+        yield b"GIF89a" + struct.pack("<HHBBB", width, height, 0xF7, 0, 0)
+        yield b"".join(bytes(color) for color in table)
+        if len(frames) > 1:
+            yield b"\x21\xFF\x0BNETSCAPE2.0\x03\x01\x00\x00\x00"
+        for pixels in frames:
+            indices = _gif_indices(_packed_rgb(pixels, width, height), table, lookup)
+            yield b"\x21\xF9\x04" + struct.pack("<BHB", 4, delay, 0) + b"\x00"
+            yield b"\x2C" + struct.pack("<HHHHB", 0, 0, width, height, 0) + b"\x08"
+            yield from _gif_blocks(_gif_lzw(indices))
+        yield b"\x3B"
+
+    _atomic_write(path, chunks())
+
+
 def write_png(path, pixels, width, height):
     """Write a static PNG, replacing ``path`` only after a successful write."""
     data = _png_pixels(pixels, width, height)
@@ -2550,16 +2692,26 @@ def _frame_plan(args, seed):
     return [(seed + i, args.phase) for i in range(args.frames)]
 
 
-def _render_and_write(args, seed, palette):
-    if args.frames > 1:
-        frames = [render_rgb(args.width, args.height, frame_seed, args.style, palette, phase)
-                  for frame_seed, phase in _frame_plan(args, seed)]
+def _write_frames(args, frames, palette):
+    """Write ``frames`` as GIF when ``--out`` ends in .gif, otherwise APNG or PNG."""
+    if args.out.lower().endswith(".gif"):
+        write_gif(args.out, frames, args.width, args.height, fps=args.fps,
+                  stops=PALETTES[palette])
+    elif len(frames) > 1:
         write_animated_png(args.out, frames, args.width, args.height, fps=args.fps)
+    else:
+        write_png(args.out, frames[0], args.width, args.height)
+
+
+def _render_and_write(args, seed, palette):
+    plan = _frame_plan(args, seed) if args.frames > 1 else [(seed, args.phase)]
+    frames = [render_rgb(args.width, args.height, frame_seed, args.style, palette, phase)
+              for frame_seed, phase in plan]
+    _write_frames(args, frames, palette)
+    if args.frames > 1:
         print("wrote %d animation frames to %s (%s, seed=%d, palette=%s, %d fps)"
               % (args.frames, args.out, args.style, seed, palette, args.fps))
     else:
-        pixels = render_rgb(args.width, args.height, seed, args.style, palette, args.phase)
-        write_png(args.out, pixels, args.width, args.height)
         print("wrote %s (%s, seed=%d, palette=%s)" % (args.out, args.style, seed, palette))
 
 
