@@ -2,7 +2,9 @@
 
 """Procedurally generated abstract art.
 
-Pure Python (stdlib only) generative art engine.
+Pure Python (stdlib only) generative art engine. An optional Rust core (core/)
+renders every style natively with identical output; every style moves with a
+loop ``phase`` and can be written as PNG, APNG or GIF.
 
 Styles:
     waves    - layered sine waves over a palette gradient
@@ -46,7 +48,8 @@ Styles:
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
 
-Palette stops are sRGB colors and are written to PNG unchanged.
+Palette stops are sRGB colors and are written unchanged (a GIF quantizes them to a
+shared 256-color table).
 """
 
 import argparse
