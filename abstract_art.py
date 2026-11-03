@@ -499,15 +499,40 @@ def render_orbits(width, height, seed, palette_name, phase=0.0):
             for y in range(height)]
 
 
-def render_mandelbrot(width, height, seed, palette_name):
+_MANDELBROT_HOME = (-0.6, 0.0)
+# A spiral in the seahorse valley, where the zoom finds fine structure at any depth.
+_MANDELBROT_TARGET = (-0.743643887037151, 0.131825904205330)
+_MANDELBROT_DEPTH = 7.0     # natural-log zoom at the deepest point of the loop (about 1100x)
+
+
+def _mandelbrot_scene(width, height, seed, phase=0.0):
+    """The view as ``scale`` (complex units per pixel), ``center`` and ``iterations``.
+
+    Over a loop the view zooms toward ``_MANDELBROT_TARGET`` and back out, eased so
+    it slows at both ends. At phase 0 it is the whole set: ``closing`` is exactly 1.0
+    and the centre does not move, so the still image is unchanged. The centre moves
+    with the zoom so the target stays put on screen, and the iteration limit grows
+    with the depth so the detail does not wash out.
+    """
+    ease = 0.5 - 0.5 * math.cos(_loop(phase, 1))
+    closing = math.exp(-_MANDELBROT_DEPTH * ease)
+    home_x, home_y = _MANDELBROT_HOME
+    target_x, target_y = _MANDELBROT_TARGET
+    return {"scale": 3.2 / min(width, height) * closing,
+            "center": (home_x + (target_x - home_x) * (1.0 - closing),
+                       home_y + (target_y - home_y) * (1.0 - closing)),
+            "iterations": 100 + int(150 * ease)}
+
+
+def render_mandelbrot(width, height, seed, palette_name, phase=0.0):
     """Mandelbrot escape times with an aspect-correct complex-plane viewport."""
     stops = PALETTES[palette_name]
-    scale = 3.2 / min(width, height)
-    max_iter = 100
+    scene = _mandelbrot_scene(width, height, seed, phase)
+    scale, (center_x, center_y), max_iter = scene["scale"], scene["center"], scene["iterations"]
 
     def value(x, y):
-        cy = ((height - 1) / 2.0 - y) * scale
-        cx = (x - (width - 1) / 2.0) * scale - 0.6
+        cy = ((height - 1) / 2.0 - y) * scale + center_y
+        cx = (x - (width - 1) / 2.0) * scale + center_x
         zx = zy = 0.0
         n = 0
         while zx * zx + zy * zy <= 4.0 and n < max_iter:
@@ -1232,8 +1257,12 @@ def render_geo(width, height, seed, palette_name, phase=0.0):
     return pixels
 
 
-def _prism_layers(rng, g, small):
-    """Nested polygons for one gem; layer 0 spans the full gem radius."""
+def _prism_layers(rng, g, small, turn=0.0):
+    """Nested polygons for one gem; layer 0 spans the full gem radius.
+
+    Over a loop (``turn`` is the animation phase) alternate layers turn in
+    opposite directions.
+    """
     layers = []
     n_layers = rng.randint(2, 4)
     shrink = rng.uniform(0.55, 0.8)
@@ -1241,7 +1270,7 @@ def _prism_layers(rng, g, small):
         # The innermost layer keeps (1 - shrink) of the gem radius.
         radius = g["r"] * (1.0 - shrink * k / max(1, n_layers - 1))
         sides = rng.randint(3, 6)
-        phase = rng.uniform(0.0, 6.28)
+        phase = rng.uniform(0.0, 6.28) + _loop(turn, 1 if k % 2 == 0 else -1)
         gain = rng.uniform(0.35, 0.9)
         if radius < 1.0:
             continue
@@ -1264,7 +1293,7 @@ def _prism_value(x, y, scenes):
     return 1.0 - math.exp(-1.1 * v)
 
 
-def _prism_scene(width, height, seed):
+def _prism_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
     n_gems = rng.randint(2, 5)
     small = min(width, height)
@@ -1276,15 +1305,15 @@ def _prism_scene(width, height, seed):
             "r": rng.uniform(small * 0.08, small * 0.28),
             "glow": rng.uniform(0.5, 1.0),
         })
-    return {"gems": [(g["cx"], g["cy"], g["r"], g["glow"], _prism_layers(rng, g, small))
+    return {"gems": [(g["cx"], g["cy"], g["r"], g["glow"], _prism_layers(rng, g, small, phase))
                      for g in gems]}
 
 
-def render_prism(width, height, seed, palette_name):
+def render_prism(width, height, seed, palette_name, phase=0.0):
     """Prism: stacked faceted gem facets with ridge shading and soft glow."""
     stops = PALETTES[palette_name]
     scenes = [({"cx": cx, "cy": cy, "r": r, "glow": glow}, layers)
-              for cx, cy, r, glow, layers in _prism_scene(width, height, seed)["gems"]]
+              for cx, cy, r, glow, layers in _prism_scene(width, height, seed, phase)["gems"]]
     return _shade(width, height, stops, lambda x, y: _prism_value(x, y, scenes))
 
 
@@ -1319,7 +1348,18 @@ def _make_shard(rng, width, height):
         # A non-adjacent vertex, so every crack actually crosses the shard.
         j = (i + rng.randint(2, m - 2)) % m
         cracks.append((poly[i], poly[j]))
-    return {"r": r, "poly": poly, "cracks": cracks}
+    return {"r": r, "poly": poly, "cracks": cracks, "center": (cx, cy)}
+
+
+def _turned_about(point, center, cosine, sine):
+    """Rotate ``point`` about ``center``; angle 0 returns the point exactly.
+
+    The offset is added to the point instead of rebuilding it from the centre,
+    because ``center + (point - center)`` can differ from ``point`` in the last bit.
+    """
+    dx, dy = point[0] - center[0], point[1] - center[1]
+    return (point[0] + (dx * (cosine - 1.0) - dy * sine),
+            point[1] + (dx * sine + dy * (cosine - 1.0)))
 
 
 def _shard_value(x, y, shards):
@@ -1337,27 +1377,45 @@ def _shard_value(x, y, shards):
     return min(1.0, max(0.0, v / (len(shards) * 2.2)))
 
 
-def _shard_scene(width, height, seed):
+def _shard_scene(width, height, seed, phase=0.0):
+    """Shards as ``(radius, polygon, cracks)``; over a loop each turns about its centre,
+    neighbours in opposite directions, and the cracks turn with it."""
     rng = random.Random(seed)
     shards = [_make_shard(rng, width, height) for _ in range(rng.randint(2, 4))]
-    return {"shards": [(s["r"], s["poly"], s["cracks"]) for s in shards]}
+    result = []
+    for index, shard in enumerate(shards):
+        angle = _loop(phase, 1 if index % 2 == 0 else -1)
+        cosine, sine = math.cos(angle), math.sin(angle)
+        center = shard["center"]
+        poly = [_turned_about(p, center, cosine, sine) for p in shard["poly"]]
+        cracks = [(_turned_about(a, center, cosine, sine), _turned_about(b, center, cosine, sine))
+                  for a, b in shard["cracks"]]
+        result.append((shard["r"], poly, cracks))
+    return {"shards": result}
 
 
-def render_shard(width, height, seed, palette_name):
+def render_shard(width, height, seed, palette_name, phase=0.0):
     """Shard: fractured irregular gem shards with glow halos and crack lines."""
     stops = PALETTES[palette_name]
     shards = [{"r": r, "poly": poly, "cracks": cracks}
-              for r, poly, cracks in _shard_scene(width, height, seed)["shards"]]
+              for r, poly, cracks in _shard_scene(width, height, seed, phase)["shards"]]
     return _shade(width, height, stops, lambda x, y: _shard_value(x, y, shards))
 
 
-def _make_trace(rng, width, height):
-    """Random node pads joined by PCB-style right-angled legs."""
+def _make_trace(rng, width, height, phase=0.0, first_pad=0):
+    """Random node pads joined by PCB-style right-angled legs.
+
+    Over a loop each pad circles a small orbit (``first_pad`` numbers the pads so
+    they do not move in step); the legs stay right-angled and follow.
+    """
     nodes = [(rng.uniform(width * 0.08, width * 0.92),
               rng.uniform(height * 0.08, height * 0.92))]
     for _ in range(rng.randint(2, 5)):
         nodes.append((rng.uniform(width * 0.04, width * 0.96),
                       rng.uniform(height * 0.04, height * 0.96)))
+    reach = 0.03 * min(width, height)
+    offsets = [_circle_offset(first_pad + i, reach, phase) for i in range(len(nodes))]
+    nodes = [(x + dx, y + dy) for (x, y), (dx, dy) in zip(nodes, offsets)]
     segments = []
     for (x0, y0), (x1, y1) in zip(nodes, nodes[1:]):
         # One horizontal and one vertical leg per hop.
@@ -1398,12 +1456,13 @@ def _circuit_value(x, y, traces, core, halo, pad):
     return 1.0 - math.exp(-1.2 * v)
 
 
-def _circuit_scene(width, height, seed):
+def _circuit_scene(width, height, seed, phase=0.0):
     rng = random.Random(seed)
-    return {"traces": [_make_trace(rng, width, height) for _ in range(rng.randint(3, 6))]}
+    return {"traces": [_make_trace(rng, width, height, phase, index * 8)
+                       for index in range(rng.randint(3, 6))]}
 
 
-def render_circuit(width, height, seed, palette_name):
+def render_circuit(width, height, seed, palette_name, phase=0.0):
     """Circuit: glowing right-angled traces routed between node pads."""
     stops = PALETTES[palette_name]
     small = max(1.0, min(width, height))
@@ -1411,7 +1470,7 @@ def render_circuit(width, height, seed, palette_name):
     halo = max(2.0, small * 0.04)
     pad = max(1.5, small * 0.018)
     traces = []
-    for nodes, segments in _circuit_scene(width, height, seed)["traces"]:
+    for nodes, segments in _circuit_scene(width, height, seed, phase)["traces"]:
         boxes = [(p1, p2, min(p1[0], p2[0]), max(p1[0], p2[0]),
                   min(p1[1], p2[1]), max(p1[1], p2[1])) for p1, p2 in segments]
         traces.append((_RowFilter(nodes, lambda n: n[1], lambda n: pad * 2.5 + 1.0), boxes))
@@ -2241,17 +2300,9 @@ def _quasar_native_scene(width, height, seed, phase=0.0):
     return dict(q, orbits=[(ro, _seed32(orbit_seed)) for ro, orbit_seed in q["orbits"]])
 
 
-def _scene_without_stops(builder):
-    return lambda width, height, seed, stops, phase=0.0: builder(width, height, seed)
-
-
 def _animated_scene(builder):
-    """Like ``_scene_without_stops`` for styles whose scene moves with ``phase``."""
+    """Adapt a scene builder ``(width, height, seed, phase)`` to the native signature."""
     return lambda width, height, seed, stops, phase=0.0: builder(width, height, seed, phase)
-
-
-def _no_scene(width, height, seed, stops, phase=0.0):
-    return {}
 
 
 # Styles with a Rust implementation, mapped to the scene builder whose plain
@@ -2261,7 +2312,7 @@ NATIVE_STYLES = {
     "aurora": _animated_scene(_aurora_scene),
     "blobs": _animated_scene(_blobs_scene),
     "bloom": _animated_scene(_bloom_scene),
-    "circuit": _scene_without_stops(_circuit_scene),
+    "circuit": _animated_scene(_circuit_scene),
     "cosmic": _animated_scene(_cosmic_scene),
     "cosmos": _animated_scene(_cosmos_scene),
     "crystal": _animated_scene(_crystal_scene),
@@ -2273,17 +2324,17 @@ NATIVE_STYLES = {
     "interference": _animated_scene(_interference_scene),
     "kaleidoscope": _animated_scene(_kaleidoscope_scene),
     "mandala": _animated_scene(_mandala_scene),
-    "mandelbrot": _no_scene,
+    "mandelbrot": _animated_scene(_mandelbrot_scene),
     "nebula": _animated_scene(_nebula_scene),
     "orbits": lambda width, height, seed, stops, phase=0.0: _orbits_scene(
         width, height, seed, len(stops), phase),
     "petals": _animated_scene(_petals_scene),
     "pinwheel": _animated_scene(_pinwheel_scene),
     "plasma": _animated_scene(_plasma_scene),
-    "prism": _scene_without_stops(_prism_scene),
+    "prism": _animated_scene(_prism_scene),
     "quasar": _animated_scene(_quasar_native_scene),
     "rings": _animated_scene(_rings_scene),
-    "shard": _scene_without_stops(_shard_scene),
+    "shard": _animated_scene(_shard_scene),
     "spiral": _animated_scene(_spiral_scene),
     "starburst": _animated_scene(_starburst_scene),
     "voronoi": _animated_scene(_voronoi_scene),
@@ -2308,6 +2359,7 @@ ANIMATED_STYLES = frozenset({
     "mosaic", "rings", "spiral", "starburst", "voronoi", "waves",
     "comet", "constellations", "ember", "flowfield", "ink", "lissajous",
     "cosmic", "mandala", "orbits", "quasar", "torus",
+    "circuit", "mandelbrot", "prism", "shard",
 })
 
 

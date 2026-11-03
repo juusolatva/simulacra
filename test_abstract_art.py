@@ -786,7 +786,9 @@ class RenderingTests(unittest.TestCase):
         self.assertEqual(note, '')
         frames, _ = plan('--style', 'rings', '--seed', '7', '--frames', '2', '--phase', '0.5')
         self.assertEqual(frames, [(7, 0.5), (7, 1.0)])
-        frames, note = plan('--style', 'prism', '--seed', '7', '--frames', '3')
+        # Every built-in style moves now, so pretend one does not.
+        with mock.patch.object(art, 'ANIMATED_STYLES', frozenset()):
+            frames, note = plan('--style', 'prism', '--seed', '7', '--frames', '3')
         self.assertEqual(frames, [(7, 0.0), (8, 0.0), (9, 0.0)])
         self.assertIn('slideshow', note)
         frames, note = plan('--style', 'rings', '--seed', '7', '--frames', '2', '--slideshow')
