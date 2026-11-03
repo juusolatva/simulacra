@@ -41,6 +41,7 @@ Styles:
     ember      - rising glowing embers with flicker and soft falloff
     comet      - fast glowing streaks with fading motion trails
     ink        - flowing liquid ink strokes with tapered tails and soft edges
+    mosaic     - glass-tile patchwork of checkers, chevrons, diamonds and rosettes
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -1876,6 +1877,228 @@ def render_plasma(width, height, seed, palette_name, phase=0.0):
     return pixels
 
 
+# A mosaic is computed per tile on a grid about _MOSAIC_TILES tiles across the
+# short side, so its cost does not grow with the canvas. Each region of the grid
+# repeats one pattern on whole tiles; the renderer only expands tiles to pixels.
+_MOSAIC_TILES = 64
+_MOSAIC_PATTERNS = ("checker", "stripes", "chevron", "diamonds", "squares",
+                    "rainbow", "lattice", "rosette", "smear", "maze")
+
+
+def _mosaic_shift(phase, period):
+    """Whole tiles a pattern has moved; ``period`` tiles is one full loop."""
+    return int((phase % 1.0) * period)
+
+
+def _mosaic_checker(r, i, j, di, dj, phase):
+    q = r["q"]
+    return (i + _mosaic_shift(phase, 2 * q)) // q + j // q
+
+
+def _mosaic_stripes(r, i, j, di, dj, phase):
+    q = r["q"]
+    return (i + r["flip"] * j + _mosaic_shift(phase, q * len(r["levels"]))) // q
+
+
+def _mosaic_chevron(r, i, j, di, dj, phase):
+    q, a = r["q"], r["amp"]
+    if r["flip"] < 0:
+        i, j = j, i
+    return (j + abs(i % (2 * a) - a) + _mosaic_shift(phase, q * len(r["levels"]))) // q
+
+
+def _mosaic_diamonds(r, i, j, di, dj, phase):
+    q = r["q"]
+    return (abs(di) + abs(dj) - _mosaic_shift(phase, q * len(r["levels"]))) // q
+
+
+def _mosaic_squares(r, i, j, di, dj, phase):
+    q = r["q"]
+    return (max(abs(di), abs(dj)) - _mosaic_shift(phase, q * len(r["levels"]))) // q
+
+
+def _mosaic_rainbow(r, i, j, di, dj, phase):
+    q = r["q"]
+    along = i if r["flip"] > 0 else j
+    return (along + _mosaic_shift(phase, q * len(r["levels"]))) // q
+
+
+def _mosaic_lattice(r, i, j, di, dj, phase):
+    p = r["q"] + 3
+    s = _mosaic_shift(phase, p)
+    a = (i + j + s) % p
+    b = (i - j) % p
+    if a == 0 or b == 0:
+        return 1
+    if a == p // 2 and b == p // 2:
+        return 2
+    return 0
+
+
+def _mosaic_rosette(r, i, j, di, dj, phase):
+    p = 2 * r["q"] + 7
+    half = p // 2
+    u = (di + half) % p - half
+    v = (dj + half) % p - half
+    if u == 0 and v == 0:
+        return 2
+    if u == 0 or v == 0 or abs(u) == abs(v):
+        return 1
+    return 0
+
+
+def _mosaic_smear(r, i, j, di, dj, phase):
+    n = fbm(i * 1.1, j * 3.2, r["seed"], octaves=3, phase=phase)
+    return int(max(0.0, min(0.999, _contrast(n, 2.5))) * len(r["levels"]))
+
+
+def _mosaic_maze(r, i, j, di, dj, phase):
+    lx = i % 2
+    ly = j % 2
+    if lx == 1 and ly == 1:
+        return 0
+    if lx == 0 and ly == 0:
+        return 1
+    across = _hash(i // 2, j // 2, r["seed"]) < 0.5
+    return 1 if across == (ly == 0) else 0
+
+
+_MOSAIC_BANDS = {
+    "checker": _mosaic_checker, "stripes": _mosaic_stripes, "chevron": _mosaic_chevron,
+    "diamonds": _mosaic_diamonds, "squares": _mosaic_squares, "rainbow": _mosaic_rainbow,
+    "lattice": _mosaic_lattice, "rosette": _mosaic_rosette, "smear": _mosaic_smear,
+    "maze": _mosaic_maze,
+}
+
+
+_MOSAIC_LEVEL_COUNTS = {"checker": 2, "maze": 2, "lattice": 3, "rosette": 3}
+
+
+def _mosaic_levels(rng, kind):
+    """Palette positions a region's pattern cycles through."""
+    if kind == "rainbow":
+        n = rng.randint(5, 8)
+        start = rng.uniform(0.15, 0.35)
+        return [start + (1.0 - start) * k / (n - 1) for k in range(n)]
+    n = _MOSAIC_LEVEL_COUNTS.get(kind) or rng.randint(2, 4)
+    levels = [rng.uniform(0.3, 1.0) for _ in range(n)]
+    if kind in ("checker", "lattice", "rosette", "maze") or rng.random() < 0.4:
+        levels[0] = rng.uniform(0.0, 0.08)  # the black tiles the patterns are set in
+    return levels
+
+
+def _mosaic_region(rng, index, seed, cols, rows):
+    kind = rng.choice(_MOSAIC_PATTERNS)
+    return {
+        "kind": kind,
+        "ci": rng.randrange(cols), "cj": rng.randrange(rows),
+        "q": rng.randint(1, 3), "amp": rng.randint(2, 5),
+        "flip": rng.choice((-1, 1)),
+        "levels": _mosaic_levels(rng, kind),
+        "seed": seed + 101 * (index + 1),
+    }
+
+
+def _mosaic_region_at(regions, wi, wj):
+    """Nearest region centre under an octagonal distance, which gives angular patches."""
+    best = None
+    best_d = 0.0
+    for r in regions:
+        dx = abs(wi - r["ci"])
+        dy = abs(wj - r["cj"])
+        d = max(dx, dy) + 0.4 * min(dx, dy)
+        if best is None or d < best_d:
+            best, best_d = r, d
+    return best
+
+
+def _mosaic_inside(scene, i, j):
+    """Whether tile (i, j) (in folded coordinates) belongs to the ragged silhouette."""
+    if not scene["silhouette"]:
+        return True
+    n = fbm(i * 0.6, j * 0.6, scene["seed"] + 5, octaves=4)
+    du = (i - scene["cx"]) / scene["rx"]
+    dv = (j - scene["cy"]) / scene["ry"]
+    return _contrast(n, 2.2) - 0.75 * math.sqrt(du * du + dv * dv) > -0.05
+
+
+def _mosaic_tile(scene, i, j, phase):
+    """Palette position of the tile at column ``i``, row ``j``."""
+    cols, rows = scene["cols"], scene["rows"]
+    fi = min(i, cols - 1 - i) if scene["mirror_x"] else i
+    fj = min(j, rows - 1 - j) if scene["mirror_y"] else j
+    if not _mosaic_inside(scene, fi, fj):
+        twinkle = scene["seed"] + 977 * _mosaic_shift(phase, 6)
+        return scene["sparkle"] if _hash(i, j, twinkle) < 0.012 else 0.0
+    warp = scene["warp"]
+    wi = fi + (fbm(fi * 0.8, fj * 0.8, scene["seed"] + 11, octaves=2) - 0.5) * warp
+    wj = fj + (fbm(fi * 0.8, fj * 0.8, scene["seed"] + 23, octaves=2) - 0.5) * warp
+    r = _mosaic_region_at(scene["regions"], wi, wj)
+    band = _MOSAIC_BANDS[r["kind"]](r, fi, fj, fi - r["ci"], fj - r["cj"], phase)
+    levels = r["levels"]
+    return levels[band % len(levels)]
+
+
+def _mosaic_scene(width, height, seed, phase=0.0):
+    rng = random.Random(seed)
+    tiles = min(_MOSAIC_TILES, width, height)
+    tile = min(width, height) / tiles
+    cols = max(1, math.ceil(width / tile))
+    rows = max(1, math.ceil(height / tile))
+    symmetry = rng.choice(("none", "x", "x", "xy"))
+    mirror_x = symmetry != "none"
+    mirror_y = symmetry == "xy"
+    span_i = (cols + 1) // 2 if mirror_x else cols
+    span_j = (rows + 1) // 2 if mirror_y else rows
+    scene = {
+        "seed": seed, "cols": cols, "rows": rows,
+        "mirror_x": mirror_x, "mirror_y": mirror_y,
+        "silhouette": rng.random() < 0.55,
+        "cx": (cols - 1) / 2.0 if mirror_x else rng.uniform(0.35, 0.65) * cols,
+        "cy": (rows - 1) / 2.0 if mirror_y else rng.uniform(0.4, 0.6) * rows,
+        "rx": cols * 0.5, "ry": rows * 0.5,
+        "warp": rng.uniform(4.0, 9.0) * tiles / _MOSAIC_TILES,
+        "sparkle": rng.uniform(0.75, 1.0),
+        "regions": [_mosaic_region(rng, k, seed, span_i, span_j)
+                    for k in range(rng.randint(14, 22))],
+    }
+    values = [_mosaic_tile(scene, i, j, phase) for j in range(rows) for i in range(cols)]
+    grout = max(1.0, 0.12 * tile) if tile >= 4.0 else 0.0
+    return {"cols": cols, "rows": rows, "tile": tile, "grout": grout, "values": values}
+
+
+def _mosaic_axis(length, tile, count, grout):
+    """Tile index of each pixel along an axis, or -1 for the grout between tiles.
+
+    ``grout`` is a width in pixels; when it is at least 1, the first pixel of every
+    tile is grout, so the grid stays even when tiles are a fractional size.
+    """
+    cells = []
+    for p in range(length):
+        k = min(count - 1, int(p / tile))
+        cells.append(-1 if p - k * tile < grout else k)
+    return cells
+
+
+def render_mosaic(width, height, seed, palette_name, phase=0.0):
+    """Glass-tile mosaic: a patchwork of tiled patterns, often mirrored, on a dark ground."""
+    stops = PALETTES[palette_name]
+    s = _mosaic_scene(width, height, seed, phase)
+    cols = s["cols"]
+    colors = [palette_color(stops, t) for t in s["values"]]
+    grout = palette_color(stops, 0.0)
+    xs = _mosaic_axis(width, s["tile"], cols, s["grout"])
+    ys = _mosaic_axis(height, s["tile"], s["rows"], s["grout"])
+    pixels = []
+    for row in ys:
+        if row < 0:
+            pixels.append([grout] * width)
+            continue
+        base = row * cols
+        pixels.append([grout if col < 0 else colors[base + col] for col in xs])
+    return pixels
+
+
 # ---------------------------------------------------------------- render dispatch
 
 # Single source of truth for style names: used by render(), the CLI and tests.
@@ -1916,6 +2139,7 @@ STYLES = {
     "ember": render_ember,
     "comet": render_comet,
     "ink": render_ink,
+    "mosaic": render_mosaic,
 }
 
 
@@ -1983,6 +2207,7 @@ NATIVE_STYLES = {
     "flowfield": _scene_without_stops(_flowfield_scene),
     "comet": _scene_without_stops(_comet_scene),
     "ember": _scene_without_stops(_ember_scene),
+    "mosaic": _animated_scene(_mosaic_scene),
 }
 
 
@@ -1992,7 +2217,7 @@ NATIVE_STYLES = {
 ANIMATED_STYLES = frozenset({
     "aurora", "blobs", "bloom", "cosmos", "crystal", "drift", "galaxy", "gems", "geo",
     "horizon", "interference", "kaleidoscope", "nebula", "petals", "pinwheel", "plasma",
-    "rings", "spiral", "starburst", "voronoi", "waves",
+    "mosaic", "rings", "spiral", "starburst", "voronoi", "waves",
 })
 
 

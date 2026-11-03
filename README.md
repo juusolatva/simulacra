@@ -1,6 +1,6 @@
 # Abstract Art
 
-Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **36 styles**, **15 palettes**, static PNG output, and looping animated PNG (APNG) output.
+Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **37 styles**, **15 palettes**, static PNG output, and looping animated PNG (APNG) output.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -53,7 +53,7 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--style` | `waves` | One of the 36 style names listed below. |
+| `--style` | `waves` | One of the 37 style names listed below. |
 | `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
 | `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
 | `--palette` | `deep` | One of the 15 palette names listed below. |
@@ -156,6 +156,7 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `ember` | Narrow vertical ember glows with varying brightness and falloff. |
 | `comet` | Fading streaks painted with soft brushes; trails wrap across image edges. |
 | `ink` | Quadratic Bézier strokes painted with tapered soft brushes. |
+| `mosaic` | Glass tiles set in dark grout: a patchwork of checkers, stripes, chevrons, diamond and square rings, lattices, rosettes, mazes and noise smears, often mirrored, sometimes in a ragged shape on a dark ground with scattered sparkles. Inspired by Jan Anderzen's glass mosaic *Palaisinpa kukkana* (*Come Back as a Flower*), 2020, at the Turtola tram stop in Tampere, Finland. |
 
 Changing dimensions can change the scene's arrangement as well as the number of pixels. Most shapes, ring radii, and wave frequencies are relative to the canvas, and `blobs`, `nebula`, `drift`, and `crystal` also scale their noise to it. Other noise textures, star sizes, and brush widths are still measured in pixels, so their detail changes with resolution.
 
@@ -187,7 +188,7 @@ The `ember` style and the `ember` palette are independent choices. You can use, 
 
 Some styles move. They take a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
 
-Styles with motion: `aurora`, `blobs`, `bloom`, `cosmos`, `crystal`, `drift`, `galaxy`, `gems`, `geo`, `horizon`, `interference`, `kaleidoscope`, `nebula`, `petals`, `pinwheel`, `plasma`, `rings`, `spiral`, `starburst`, `voronoi` and `waves`. The motion is a rotation, a drift of waves, a circling of clouds or cells, or noise that keeps changing shape, depending on the style. The list is `ANIMATED_STYLES` in the module; more styles will be added.
+Styles with motion: `aurora`, `blobs`, `bloom`, `cosmos`, `crystal`, `drift`, `galaxy`, `gems`, `geo`, `horizon`, `interference`, `kaleidoscope`, `mosaic`, `nebula`, `petals`, `pinwheel`, `plasma`, `rings`, `spiral`, `starburst`, `voronoi` and `waves`. The motion is a rotation, a drift of waves, a circling of clouds or cells, or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. The list is `ANIMATED_STYLES` in the module; more styles will be added.
 
 The other styles do not move yet. With `--frames`, the CLI renders seeds `seed`, `seed + 1`, …, `seed + N - 1` instead, a slideshow of unrelated scenes, and prints a note. Pass `--slideshow` to get that for a style with motion too.
 
@@ -293,7 +294,7 @@ For a fixed script version and Python environment, the same inputs produce repea
 
 ## Performance and limitations
 
-Without the Rust core, rendering runs on the CPU in Python loops: all 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 36 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
+Without the Rust core, rendering runs on the CPU in Python loops: the original 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 37 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
 
 - Start with 128 × 128 or 256 × 256 previews before increasing resolution.
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
@@ -307,7 +308,7 @@ Output is PNG/APNG only. There is no JPEG, SVG, GIF, or video export, and no bui
 
 ## Optional Rust core
 
-The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 36). When the module is missing, the pure-Python renderers produce the same images.
+The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 37). When the module is missing, the pure-Python renderers produce the same images.
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 
