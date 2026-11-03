@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+import io
 import math
 import os
 import pathlib
+import re
 import stat
 import struct
 import tempfile
@@ -357,6 +359,68 @@ class RenderingTests(unittest.TestCase):
         with mock.patch('sys.argv', ['abstract_art.py', '--style', 'nope']), \
                 mock.patch('sys.stderr'), self.assertRaises(SystemExit):
             art.main()
+
+    def run_cli(self, *args):
+        """Run the CLI with ``args``; return (exit code or None, stdout, stderr)."""
+        out, err = io.StringIO(), io.StringIO()
+        code = None
+        with mock.patch('sys.argv', ['abstract_art.py', *args]), \
+                mock.patch('sys.stdout', out), mock.patch('sys.stderr', err):
+            try:
+                art.main()
+            except SystemExit as exit_:
+                code = exit_.code
+        return code, out.getvalue(), err.getvalue()
+
+    def test_cli_lists_styles_and_palettes(self):
+        code, out, _ = self.run_cli('--list-styles')
+        self.assertIsNone(code)
+        self.assertEqual(out.split(), list(art.STYLES))
+        _, out, _ = self.run_cli('--list-palettes')
+        self.assertEqual(out.split(), sorted(art.PALETTES))
+
+    def test_cli_rejects_oversized_renders_unless_limits_are_off(self):
+        code, _, err = self.run_cli('--width', '20000', '--height', '20000')
+        self.assertEqual(code, 2)
+        self.assertIn('--no-limits', err)
+        code, _, err = self.run_cli('--width', '5000', '--height', '5000', '--frames', '20')
+        self.assertEqual(code, 2)
+        self.assertIn('frames', err)
+        with mock.patch.object(art, 'MAX_FRAME_PIXELS', 4):
+            with tempfile.TemporaryDirectory() as directory:
+                out = str(pathlib.Path(directory) / 'big.png')
+                code, _, _ = self.run_cli('--width', '3', '--height', '3', '--out', out)
+                self.assertEqual(code, 2)
+                code, _, _ = self.run_cli('--width', '3', '--height', '3', '--out', out,
+                                          '--no-limits')
+                self.assertIsNone(code)
+                self.assertTrue(pathlib.Path(out).exists())
+
+    def test_cli_fps_sets_the_animation_delay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = pathlib.Path(directory) / 'anim.png'
+            code, _, _ = self.run_cli('--width', '4', '--height', '4', '--frames', '2',
+                                      '--fps', '5', '--out', str(out))
+            self.assertIsNone(code)
+            control = next(data for tag, data in chunks(out) if tag == b'fcTL')
+            self.assertEqual(struct.unpack('>HH', control[20:24]), (1, 5))
+        for bad in ('0', '65536', 'x'):
+            code, _, _ = self.run_cli('--fps', bad)
+            self.assertEqual(code, 2)
+
+    def test_cli_random_seed_is_reported_and_reproducible(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = str(pathlib.Path(directory) / 'a.png')
+            second = str(pathlib.Path(directory) / 'b.png')
+            code, out, _ = self.run_cli('--random-seed', '--style', 'plasma', '--width', '8',
+                                        '--height', '8', '--out', first)
+            self.assertIsNone(code)
+            seed = re.search(r'seed=(\d+)', out).group(1)
+            self.run_cli('--seed', seed, '--style', 'plasma', '--width', '8', '--height', '8',
+                         '--out', second)
+            self.assertEqual(pathlib.Path(first).read_bytes(), pathlib.Path(second).read_bytes())
+        code, _, _ = self.run_cli('--random-seed', '--seed', '3')
+        self.assertEqual(code, 2)
 
 
 if __name__ == '__main__':
