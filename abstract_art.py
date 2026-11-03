@@ -464,25 +464,33 @@ def _orbits_color(x, y, seed, stops, center, rings, stars):
     return c
 
 
-def _orbits_scene(width, height, seed, n_stops):
+def _orbits_scene(width, height, seed, n_stops, phase=0.0):
     """Stars and ring bands; rings store palette stop indices.
 
     The ring draw depends on the palette size (randrange(n_stops)), so the
-    scene needs it to reproduce the same random sequence.
+    scene needs it to reproduce the same random sequence. Over a loop each star
+    circles a small orbit and each ring breathes in and out once.
     """
     rng = random.Random(seed)
-    stars = [
-        (rng.uniform(0, width - 1), rng.uniform(0, height - 1), rng.uniform(0.5, 3.0))
-        for _ in range(60)
-    ]
+    reach = 0.03 * min(width, height)
+    stars = []
+    for index in range(60):
+        x, y = rng.uniform(0, width - 1), rng.uniform(0, height - 1)
+        dx, dy = _circle_offset(index, reach, phase)
+        stars.append((x + dx, y + dy, rng.uniform(0.5, 3.0)))
     max_r = math.sqrt((width / 2.0) ** 2 + (height / 2.0) ** 2)
-    rings = [(max_r * rng.uniform(0.15, 0.9), rng.randrange(n_stops)) for _ in range(6)]
+    rings = []
+    for index in range(6):
+        radius = max_r * rng.uniform(0.15, 0.9)
+        start = index * 2.399963229728653
+        breath = 1.0 + 0.05 * (math.sin(start + _loop(phase, 1)) - math.sin(start))
+        rings.append((radius * breath, rng.randrange(n_stops)))
     return {"stars": stars, "rings": rings}
 
 
-def render_orbits(width, height, seed, palette_name):
+def render_orbits(width, height, seed, palette_name, phase=0.0):
     stops = PALETTES[palette_name]
-    scene = _orbits_scene(width, height, seed, len(stops))
+    scene = _orbits_scene(width, height, seed, len(stops), phase)
     cx = width / 2.0
     cy = height / 2.0
     rings = [(radius, stops[index]) for radius, index in scene["rings"]]
@@ -1002,22 +1010,36 @@ def _torus_knot_point(tube, a, b, u):
             tube * math.sin(b * t))
 
 
-def _torus_scene(width, height, seed):
-    """The knot's screen-space polyline as ``(x, y, depth)`` points."""
+def _turned(point, cosine, sine):
+    """Rotate a model-space point about the vertical axis; a zero angle changes nothing."""
+    x, y, z = point
+    return (x * cosine + z * sine, y, z * cosine - x * sine)
+
+
+def _torus_scene(width, height, seed, phase=0.0):
+    """The knot's screen-space polyline as ``(x, y, depth)`` points.
+
+    Over a loop the knot turns once about the vertical axis. The centre and scale
+    come from the unturned knot, so it keeps its size, and the depth shading spans
+    the range of the knot as it is now turned.
+    """
     rng = random.Random(seed)
     tube = rng.uniform(0.6, 1.2)
     a, b = rng.choice(((2, 3), (3, 2), (3, 5), (5, 2)))
+    angle = _loop(phase, 1)
+    cosine, sine = math.cos(angle), math.sin(angle)
     model = [_torus_knot_point(tube, a, b, i / 2200) for i in range(2200)]
     xs, ys, zs = zip(*model)
     cx = (min(xs) + max(xs)) / 2.0
     cy = (min(ys) + max(ys)) / 2.0
+    zs = [_turned(point, cosine, sine)[2] for point in model]
     z_lo, z_hi = min(zs), max(zs)
     span = max(max(xs) - min(xs), max(ys) - min(ys), 1e-9)
     s = min(width, height) * 0.85 / span
     r_glow = max(2.0, min(width, height) * 0.016)
 
     def screen(u):
-        x, y, z = _torus_knot_point(tube, a, b, u)
+        x, y, z = _turned(_torus_knot_point(tube, a, b, u), cosine, sine)
         return ((x - cx) * s + (width - 1) / 2.0, (cy - y) * s + (height - 1) / 2.0,
                 0.45 + 0.55 * (z - z_lo) / max(1e-9, z_hi - z_lo))
 
@@ -1025,10 +1047,10 @@ def _torus_scene(width, height, seed):
     return {"points": points, "r_glow": r_glow}
 
 
-def render_torus(width, height, seed, palette_name):
+def render_torus(width, height, seed, palette_name, phase=0.0):
     """Torus knot: glowing parametric knot curve with depth shading."""
     stops = PALETTES[palette_name]
-    scene = _torus_scene(width, height, seed)
+    scene = _torus_scene(width, height, seed, phase)
     points, r_glow = scene["points"], scene["r_glow"]
 
     # Glow falls off with the distance to the curve, scaled by the depth at the
@@ -1397,7 +1419,8 @@ def render_circuit(width, height, seed, palette_name):
                   lambda x, y: _circuit_value(x, y, traces, core, halo, pad))
 
 
-def _cosmic_scene(width, height, seed):
+def _cosmic_scene(width, height, seed, phase=0.0):
+    """Stars and the bright arm; over a loop the stars drift and twinkle and the arm turns once."""
     rng = random.Random(seed)
     stars = []
     for _ in range(rng.randint(40, 90)):
@@ -1406,13 +1429,14 @@ def _cosmic_scene(width, height, seed):
     small = max(1.0, min(width, height))
     arm_r = rng.uniform(small * 0.5, small * 0.8)
     arm_ang = rng.uniform(0, 2 * math.pi)
-    return {"stars": stars, "arm_r": arm_r, "arm_ang": arm_ang, "arm_w": rng.uniform(0.4, 1.0)}
+    return {"stars": _drift_stars(stars, 0.02 * small, phase), "arm_r": arm_r,
+            "arm_ang": arm_ang + _loop(phase, 1), "arm_w": rng.uniform(0.4, 1.0)}
 
 
-def render_cosmic(width, height, seed, palette_name):
+def render_cosmic(width, height, seed, palette_name, phase=0.0):
     """Cosmic: layered starfield with nebula glow and a bright arm."""
     stops = PALETTES[palette_name]
-    scene = _cosmic_scene(width, height, seed)
+    scene = _cosmic_scene(width, height, seed, phase)
     arm_r, arm_ang, arm_w = scene["arm_r"], scene["arm_ang"], scene["arm_w"]
     small = max(1.0, min(width, height))
     ox, oy = width / 2, height / 2
@@ -1454,11 +1478,15 @@ def _quasar_jet_glow(along, perpendicular, length, opening, shadow, beta):
     return 3.0 * cross_section * launch * math.exp(-2 * distance / length) * beaming
 
 
-def _quasar_scene(width, height, seed):
-    """Random layout for a quasar; shared by the Python and Rust renderers."""
+def _quasar_scene(width, height, seed, phase=0.0):
+    """Random layout for a quasar; shared by the Python and Rust renderers.
+
+    Over a loop the jets sweep once around the hole and their Doppler beaming
+    swings between the two sides.
+    """
     rng = random.Random(seed)
-    beta = rng.uniform(0.55, 0.9)
-    spin = rng.uniform(0.0, 2 * math.pi)
+    beta = rng.uniform(0.55, 0.9) + 0.08 * math.sin(_loop(phase, 1))
+    spin = rng.uniform(0.0, 2 * math.pi) + _loop(phase, 1)
     r_shadow = max(1.5, min(width, height) * rng.uniform(0.05, 0.11))
     r_outer = min(width, height) * rng.uniform(1.4, 3.2)
     jet_half_angle = rng.uniform(0.15, 0.3)
@@ -1517,10 +1545,10 @@ def _quasar_value(x, y, seed, q):
     return 1.0 - math.exp(-0.75 * v)
 
 
-def render_quasar(width, height, seed, palette_name):
+def render_quasar(width, height, seed, palette_name, phase=0.0):
     """Quasar: glowing relativistic accretion disk with Doppler-beamed jets and lensing glow."""
     stops = PALETTES[palette_name]
-    q = _quasar_scene(width, height, seed)
+    q = _quasar_scene(width, height, seed, phase)
     return _shade(width, height, stops, lambda x, y: _quasar_value(x, y, seed, q))
 
 
@@ -1550,7 +1578,8 @@ def _mandala_value(x, y, scene):
     return 1.0 - math.exp(-0.7 * v)
 
 
-def _mandala_scene(width, height, seed):
+def _mandala_scene(width, height, seed, phase=0.0):
+    """Rings of glyphs and spokes; over a loop neighbouring rings turn in opposite directions."""
     rng = random.Random(seed)
     cx = (width - 1) / 2.0
     cy = (height - 1) / 2.0
@@ -1566,8 +1595,11 @@ def _mandala_scene(width, height, seed):
         })
     # Spokes join neighbouring rings, which requires radial order.
     rings.sort(key=lambda rib: rib["radius"])
-    spokes = [(inner["radius"], outer["radius"], rng.uniform(0.0, 6.28))
-              for inner, outer in zip(rings, rings[1:])]
+    spokes = [(inner["radius"], outer["radius"], rng.uniform(0.0, 6.28)
+               + _loop(phase, 1 if index % 2 else -1))
+              for index, (inner, outer) in enumerate(zip(rings, rings[1:]))]
+    for index, rib in enumerate(rings):
+        rib["phase"] += _loop(phase, -1 if index % 2 else 1)
     glyphs = [(cx + math.cos(ga) * rib["radius"], cy + math.sin(ga) * rib["radius"], rib["size"])
               for rib in rings
               for ga in (rib["phase"] + (gi / rib["glyphs"]) * 2.0 * math.pi
@@ -1577,10 +1609,10 @@ def _mandala_scene(width, height, seed):
             "spokes": spokes, "glyphs": glyphs}
 
 
-def render_mandala(width, height, seed, palette_name):
+def render_mandala(width, height, seed, palette_name, phase=0.0):
     """Concentric mandala: noise-wobbled rings of glowing glyphs with radial spokes and a center medallion."""
     stops = PALETTES[palette_name]
-    scene = _mandala_scene(width, height, seed)
+    scene = _mandala_scene(width, height, seed, phase)
     rings = []
     for radius, size, wob in scene["rings"]:
         # Wobble moves a ring by at most radius * wob / 2; beyond that plus the
@@ -2204,8 +2236,8 @@ def _seed32(seed):
     return seed & 0xFFFFFFFF
 
 
-def _quasar_native_scene(width, height, seed):
-    q = _quasar_scene(width, height, seed)
+def _quasar_native_scene(width, height, seed, phase=0.0):
+    q = _quasar_scene(width, height, seed, phase)
     return dict(q, orbits=[(ro, _seed32(orbit_seed)) for ro, orbit_seed in q["orbits"]])
 
 
@@ -2230,7 +2262,7 @@ NATIVE_STYLES = {
     "blobs": _animated_scene(_blobs_scene),
     "bloom": _animated_scene(_bloom_scene),
     "circuit": _scene_without_stops(_circuit_scene),
-    "cosmic": _scene_without_stops(_cosmic_scene),
+    "cosmic": _animated_scene(_cosmic_scene),
     "cosmos": _animated_scene(_cosmos_scene),
     "crystal": _animated_scene(_crystal_scene),
     "drift": _animated_scene(_drift_scene),
@@ -2240,23 +2272,23 @@ NATIVE_STYLES = {
     "horizon": _animated_scene(_horizon_scene),
     "interference": _animated_scene(_interference_scene),
     "kaleidoscope": _animated_scene(_kaleidoscope_scene),
-    "mandala": _scene_without_stops(_mandala_scene),
+    "mandala": _animated_scene(_mandala_scene),
     "mandelbrot": _no_scene,
     "nebula": _animated_scene(_nebula_scene),
     "orbits": lambda width, height, seed, stops, phase=0.0: _orbits_scene(
-        width, height, seed, len(stops)),
+        width, height, seed, len(stops), phase),
     "petals": _animated_scene(_petals_scene),
     "pinwheel": _animated_scene(_pinwheel_scene),
     "plasma": _animated_scene(_plasma_scene),
     "prism": _scene_without_stops(_prism_scene),
-    "quasar": _scene_without_stops(_quasar_native_scene),
+    "quasar": _animated_scene(_quasar_native_scene),
     "rings": _animated_scene(_rings_scene),
     "shard": _scene_without_stops(_shard_scene),
     "spiral": _animated_scene(_spiral_scene),
     "starburst": _animated_scene(_starburst_scene),
     "voronoi": _animated_scene(_voronoi_scene),
     "waves": _animated_scene(_waves_scene),
-    "torus": _scene_without_stops(_torus_scene),
+    "torus": _animated_scene(_torus_scene),
     "lissajous": _animated_scene(_lissajous_scene),
     "constellations": _animated_scene(_constellation_scene),
     "ink": _animated_scene(_ink_scene),
@@ -2275,6 +2307,7 @@ ANIMATED_STYLES = frozenset({
     "horizon", "interference", "kaleidoscope", "nebula", "petals", "pinwheel", "plasma",
     "mosaic", "rings", "spiral", "starburst", "voronoi", "waves",
     "comet", "constellations", "ember", "flowfield", "ink", "lissajous",
+    "cosmic", "mandala", "orbits", "quasar", "torus",
 })
 
 
