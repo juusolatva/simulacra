@@ -329,6 +329,24 @@ class RenderingTests(unittest.TestCase):
         with mock.patch.object(art, '_core', None):  # grout matches in both renderers
             self.assertEqual(art.render(size, size, 4, 'mosaic', 'rainbow'), pixels)
 
+    def test_mosaic_grout_stays_even_with_fractional_tiles(self):
+        width, height = 333, 517  # 5.203... pixels per tile
+        scene = art._mosaic_scene(width, height, 7)
+        self.assertNotEqual(scene['tile'], int(scene['tile']))
+        for length, count in ((width, scene['cols']), (height, scene['rows'])):
+            cells = art._mosaic_axis(length, scene['tile'], count, scene['grout'])
+            # every tile appears (a last sliver thinner than the grout may not),
+            # and each one starts after a grout pixel
+            shown = sorted(set(cells) - {-1})
+            self.assertLessEqual(set(range(count)) - set(shown), {count - 1})
+            self.assertEqual(shown, list(range(len(shown))))
+            for k in shown:
+                first = cells.index(k)
+                self.assertEqual(cells[first - 1], -1, (length, k))
+        native = art.render_rgb(width, height, 7, 'mosaic', 'jewel', 0.37)
+        with mock.patch.object(art, '_core', None):
+            self.assertEqual(art.render_rgb(width, height, 7, 'mosaic', 'jewel', 0.37), native)
+
     def test_every_palette_is_valid_and_starts_dark(self):
         for name, stops in art.PALETTES.items():
             with self.subTest(palette=name):
