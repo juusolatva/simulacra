@@ -2300,12 +2300,8 @@ def _quasar_native_scene(width, height, seed, phase=0.0):
     return dict(q, orbits=[(ro, _seed32(orbit_seed)) for ro, orbit_seed in q["orbits"]])
 
 
-def _scene_without_stops(builder):
-    return lambda width, height, seed, stops, phase=0.0: builder(width, height, seed)
-
-
 def _animated_scene(builder):
-    """Like ``_scene_without_stops`` for styles whose scene moves with ``phase``."""
+    """Adapt a scene builder ``(width, height, seed, phase)`` to the native signature."""
     return lambda width, height, seed, stops, phase=0.0: builder(width, height, seed, phase)
 
 
