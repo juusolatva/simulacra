@@ -17,20 +17,20 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Rust core (PyO3 + rayon) with packed `render_rgb()` | Done | PR #2 |
 | Native styles, batch 1 (18): blobs, bloom, circuit, cosmic, drift, galaxy, geo, interference, kaleidoscope, mandala, nebula, orbits, pinwheel, plasma, prism, quasar, shard, waves | Done | PR #2 |
 | Native styles, batch 2 (11 per-pixel): crystal, voronoi, cosmos, mandelbrot, aurora, spiral, petals, starburst, rings, gems, horizon | Done | PR #3 |
-| Native styles, batch 3 (7 brush and trail): torus, lissajous, constellations, ink, flowfield, comet, ember | Done: sequential stamping in Python's order, parallel shading (`core/src/styles/brush.rs`) | this branch |
-| CLI safety and polish: size limits, `--fps`, `--random-seed`, `--list-styles`, `--list-palettes` | Done | this branch |
-| More built-in palettes: rainbow, candy, tropical, jewel, vaporwave, sherbet | Done | this branch |
-| Real animation, batch 1 (13 styles): `phase` parameter, `ANIMATED_STYLES`, `--phase`, `--slideshow`; aurora, galaxy, gems, geo, interference, kaleidoscope, petals, plasma, rings, spiral, starburst, voronoi, waves | Done | this branch |
-| Real animation, batch 2 (8 styles): looping noise (`fbm(..., phase=)` / `fbm_loop`), `_circle_offset()`; blobs, bloom, cosmos, crystal, drift, horizon, nebula, pinwheel | Done | this branch |
-| New style `mosaic` (inspired by Jan Anderzen's *Palaisinpa kukkana* / *Come Back as a Flower*, Turtola tram stop, Tampere, 2020): per-tile patterns, animated, native | Done | this branch |
-| Real animation, batch 3 (6 brush and trail styles): comet, constellations, ember, flowfield, ink, lissajous move by circling positions or turning phases in their scene builders, so Rust is unchanged | Done | this branch |
-| Real animation, batch 4 (5 styles): torus turns about the vertical axis, quasar's jets sweep around and flare, mandala's rings counter-rotate, orbits' stars circle and rings breathe, cosmic's arm turns | Done | this branch |
-| Real animation, batch 5 (the last 4): circuit pads orbit, prism layers and shards turn, mandelbrot zooms into the seahorse valley and back. Every style now moves. Mandelbrot is the only Rust change (it takes scale, centre and iteration count from its scene) | Done | this branch |
-| GIF output (`write_gif`: own LZW encoder, one shared 256-color table sampled from the palette, chosen by a `.gif` `--out`) | Done | this branch |
-| Further output options | Planned | — |
-| Palettes from the command line: `--palette-stops` and `parse_hex_palette()` | Done | this branch |
+| Native styles, batch 3 (7 brush and trail): torus, lissajous, constellations, ink, flowfield, comet, ember | Done: sequential stamping in Python's order, parallel shading (`core/src/styles/brush.rs`) | PR #4 |
+| CLI safety and polish: size limits, `--fps`, `--random-seed`, `--list-styles`, `--list-palettes` | Done | PR #5 |
+| More built-in palettes: rainbow, candy, tropical, jewel, vaporwave, sherbet; custom palettes from the command line (`--palette-stops`, `parse_hex_palette()`) | Done | PR #6 |
+| Real animation, batch 1 (13 styles): `phase` parameter, `ANIMATED_STYLES`, `--phase`, `--slideshow`; aurora, galaxy, gems, geo, interference, kaleidoscope, petals, plasma, rings, spiral, starburst, voronoi, waves | Done | PR #7 |
+| Real animation, batch 2 (8 styles): looping noise (`fbm(..., phase=)` / `fbm_loop`), `_circle_offset()`; blobs, bloom, cosmos, crystal, drift, horizon, nebula, pinwheel | Done | PR #8 |
+| New style `mosaic` (inspired by Jan Anderzen's *Palaisinpa kukkana* / *Come Back as a Flower*, Turtola tram stop, Tampere, 2020): per-tile patterns, animated, native | Done | PR #9 |
+| Real animation, batch 3 (6 brush and trail styles): comet, constellations, ember, flowfield, ink, lissajous move by circling positions or turning phases in their scene builders, so Rust is unchanged | Done | PR #11 |
+| Real animation, batch 4 (5 styles): torus turns about the vertical axis, quasar's jets sweep around and flare, mandala's rings counter-rotate, orbits' stars circle and rings breathe, cosmic's arm turns | Done | PR #12 |
+| Real animation, batch 5 (the last 4): circuit pads orbit, prism layers and shards turn, mandelbrot zooms into the seahorse valley and back. Every style now moves. Mandelbrot is the only Rust change (it takes scale, centre and iteration count from its scene) | Done | PR #13 |
+| GIF output (`write_gif`: own LZW encoder, one shared 256-color table sampled from the palette, chosen by a `.gif` `--out`) | Done | PR #10 |
+| CI: SonarQube Cloud with coverage (about 96%), OSV-Scanner | Done | PR #14 |
+| Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
-Measured at 640×480: all 36 styles took 178 s in pure Python at the start. With every style native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
+Measured at 640×480: the original 36 styles took 178 s in pure Python at the start (`mosaic` came later). With every style native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
 
 ## Commands
 
@@ -42,6 +42,10 @@ cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/
 python3 bench_abstract_art.py --width 640 --height 480 --compare <saved.json>
 python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
 python3 abstract_art.py --help             # lists styles (from STYLES) and palettes
+# coverage as CI runs it: in a venv without the core, run the suite, then build the core, run it again, append:
+python -m coverage run -m unittest -q
+maturin develop -m core/Cargo.toml                 # builds the core into the active venv
+python -m coverage run --append -m unittest -q && python -m coverage report
 ```
 
 Do not commit generated images.
@@ -54,14 +58,15 @@ Do not commit generated images.
 ## Architecture
 
 - **Registry:** `STYLES` maps each style name to its `render_*` function. It drives `render()`, the CLI `--style` choices and the tests, and is the only place a style is registered.
-- **Renderer contract:** `render_x(width, height, seed, palette_name)` returns `height` rows of `width` `(r, g, b)` integer tuples. Map intensities through `palette_color(stops, t)` with `t` in `[0, 1]`.
+- **Renderer contract:** `render_x(width, height, seed, palette_name, phase=0.0)` returns `height` rows of `width` `(r, g, b)` integer tuples (every built-in style takes `phase`; see Animation below). Map intensities through `palette_color(stops, t)` with `t` in `[0, 1]`.
 - **Randomness:** use a local `random.Random(seed)`. Never touch the global `random` state; a test enforces this. Output must be deterministic for a given seed, size and palette.
 - **Noise:** `fbm()` returns values in `[0, 1]` centered near 0.5. Do **not** treat it as `[-1, 1]` (`n * 0.5 + 0.5` was a past bug in 8 styles). Use `_contrast(n, gain)` to stretch it, and `polar_noise()` for anything indexed by an angle, because raw `theta` creates a seam at ±π.
 - **Colors:** palette stops are sRGB, and the writers store samples unchanged. Do not reintroduce a linear-to-sRGB conversion.
 - **Writers:** `_atomic_write()` writes to a temporary file created with `os.open(..., 0o666)` and then calls `os.replace()`. Never call `os.umask()`, since it is process-wide and unsafe with threads.
 - **Rust core (`core/`, module `abstract_art_core`):** optional; imported as `_core` (None when missing). Python generates the scene (all `random.Random` use) with a `_x_scene()` builder that returns plain data. `NATIVE_STYLES` maps each native style to its builder, and `_core.render(style, width, height, seed, stops, scene)` reads the scene into a per-style Rust struct (`#[derive(FromPyObject)]`, `from_item_all`), shades rows in parallel (rayon) and returns packed RGB bytes. `render()` and `render_rgb()` use it automatically. Pass seeds through `_seed32()`. `_core.STYLES` must match `NATIVE_STYLES` (tested).
 - **Native output must be byte-identical to Python.** Port expressions operation-for-operation in the same order (no algebraic rewrites, no `mul_add`, no `clamp` where Python's `max/min` NaN behavior differs), and keep the Python renderer as the reference. `test_native_styles_match_python_exactly` enforces this; extend its cases when porting a style. Move the style's random layout into `_x_scene()` first and have the Python renderer use it, verifying unchanged output with a fingerprint. Rust helpers that replicate Python semantics live in `core/src/geometry.rs` (`py_mod`, `py_sum`, polygon and segment distances) and `core/src/styles/mod.rs` (`gaussian`, `unit`, `center`, `small_side`).
-- **Animation (`phase`):** a style moves by adding `_loop(phase, k)` (`tau * k * phase`, `k` a whole number, negative to reverse) to phases and angles in its `_x_scene()`, so the Rust shader needs no change and native stays byte-identical. Keep it free of new random draws (derive per-item values from the index) so scenes at phase 0 match the still image, and give each style an entry in `ANIMATED_STYLES` and `_animated_scene()` in `NATIVE_STYLES`. Offsets that are not whole turns, such as the drift in `voronoi`, are measured from their starting value so phase 0 adds exactly 0.0. - **Looping noise:** `fbm(..., phase=)` (Rust `fbm_loop`) blends a stack of ordinary 2D noise layers, each the same noise under the seed plus `7919 * layer`. Layer 0 is the real seed, so phase 0 is exactly the still noise, and the layer index wraps, so phase 1 repeats phase 0. Octave `i` steps through `_NOISE_LAYERS + i` layers per loop so the octaves do not all stall or pulse together. The blend is linear on purpose; with an eased blend the speed varied about 3x and hitched at the loop point. A style animates its noise by passing `phase` to `fbm` and putting `"phase"` in its scene for the shader. Circling objects use `_circle_offset()`, whose offset is exactly zero at phase 0.
+- **Animation (`phase`):** a style moves by adding `_loop(phase, k)` (`tau * k * phase`, `k` a whole number, negative to reverse) to phases and angles in its `_x_scene()`, so the Rust shader needs no change and native stays byte-identical. Keep it free of new random draws (derive per-item values from the index) so scenes at phase 0 match the still image, and give each style an entry in `ANIMATED_STYLES` and `_animated_scene()` in `NATIVE_STYLES`. Offsets that are not whole turns, such as the drift in `voronoi`, are measured from their starting value so phase 0 adds exactly 0.0.
+- **Looping noise:** `fbm(..., phase=)` (Rust `fbm_loop`) blends a stack of ordinary 2D noise layers, each the same noise under the seed plus `7919 * layer`. Layer 0 is the real seed, so phase 0 is exactly the still noise, and the layer index wraps, so phase 1 repeats phase 0. Octave `i` steps through `_NOISE_LAYERS + i` layers per loop so the octaves do not all stall or pulse together. The blend is linear on purpose; with an eased blend the speed varied about 3x and hitched at the loop point. A style animates its noise by passing `phase` to `fbm` and putting `"phase"` in its scene for the shader. Circling objects use `_circle_offset()`, whose offset is exactly zero at phase 0.
 - **Brush and trail styles** animate by moving their scene data: positions circle with `_circle_offset()` (comet, ember, flowfield starts, ink control points, constellation stars via `_drift_stars()`), and lissajous turns its curve phases. Constellation pairs are chosen from the starting positions so the line set stays constant.
 - **Rotation and sweeps:** `torus` rotates its model points with `_turned()` (an exact identity at angle 0) and takes the depth range from the turned knot but the centre and scale from the unturned one; `quasar` adds `_loop()` to the jet's spin angle; `mandala` adds alternating loops to ring and spoke phases; `orbits` and `cosmic` use `_circle_offset()` / `_drift_stars()`. Noise seeded per ring (quasar, mandala) stays fixed because the Rust core owns that noise.
 - **Mandelbrot zoom:** `_mandelbrot_scene()` gives the Rust shader `scale`, `center` and `iterations`. The zoom factor is `exp(-depth * ease)` with a cosine ease, so it dives and returns; the centre moves with `1 - closing` so the target stays on screen, and phase 0 is exactly the old view (`closing` is exactly 1.0). Shards use `_turned_about()`, which adds the rotation offset to the point (rebuilding it from the centre would not be exact at angle 0).
@@ -88,13 +93,17 @@ Project key: `juusolatva_abstract-art`.
 - **S5863 in the determinism test:** false positive. The two sides are separate renders that must be equal.
 - **pythonsecurity:S8707 (path traversal on `--out`, or on the benchmark's `--save` and `--compare`):** accepted. A local tool reads and writes where its user asks.
 - **Re-raised findings:** moving code (for example into a new `_x_scene()` or helper) makes SonarQube report the same S2245 or S8707 again at the new location. Triage them the same way, noting in the comment that the code moved.
-- **S1172 (`seed` unused in `render_mandelbrot`):** accepted, because the shared renderer signature requires it.
+- **S1172 (`seed` unused in `render_mandelbrot`):** accepted, because the shared renderer signature requires it. Other S1172 findings are real: a helper that nothing calls any more (for example `_no_scene` after mandelbrot got a scene) should be deleted.
+- **S9073 (composite assertion):** split `assert a and b` into two asserts, including in test helpers.
+- **Workflow with PRs:** SonarQube Cloud (CI analysis), Semgrep and Greptile run on every PR; Greptile reviews only when the PR is opened, not on later pushes, so answer its findings with a reply on the thread (the user resolves threads).
 
 ## Known issues and follow-ups
 
+Open ideas, none started: turn OSV-Scanner's SARIF upload back on once the repository is public (`upload-sarif` in `osv-scanner.yml`); stream animation frames to the writers instead of holding them all in memory; collect Rust coverage; animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
+
 ### Performance
 
-Pure Python takes about 178 s for all 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core now covers every style in `NATIVE_STYLES`. Algorithmic fixes were done in Python first because they carry over to Rust. Single-run timings on this machine vary by about ±30%, so use `--repeat` and compare against a fresh baseline.
+Pure Python took about 178 s for the original 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core now covers every style in `NATIVE_STYLES`. Algorithmic fixes were done in Python first because they carry over to Rust. Single-run timings on this machine vary by about ±30%, so use `--repeat` and compare against a fresh baseline.
 
 - **Culling has been done** for the cases that keep output byte-identical: row filtering (`_RowFilter`) for stars in `orbits`, `nebula`, `cosmic` and `constellations`, and for glyphs in `mandala`; exact-zero ring bands in `mandala`; column bounds in `ember`; and bounding-box pruning of segments in `circuit` (`_nearest_segment`). A skip is allowed only where a contribution is exactly zero, either from a hard cutoff or because `exp()` underflows past `GAUSSIAN_ZERO` standard deviations.
 - **`render_torus` and `render_lissajous`** now sample their curves at a spacing tied to the glow width and measure distances to line segments (`_sample_by_length`, `_segment_box`), so curve drawing grows with the pixel count. This fixed the torus issue Greptile raised on PR #1. Their remaining cost is per-pixel work (background noise in torus).

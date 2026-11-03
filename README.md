@@ -61,7 +61,7 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 | `--width` | `256` | Output width in pixels; must be a positive integer. |
 | `--height` | `256` | Output height in pixels; must be a positive integer. |
 | `--out` | `art.png` | Destination path. Its parent directory must already exist. |
-| `--frames` | `1` | Positive frame count. `1` writes a still image; larger values write an animation (APNG, or GIF if `--out` ends in `.gif`). Styles with motion (see [Animation](#animation)) animate one scene in a seamless loop; the others use consecutive seeds. |
+| `--frames` | `1` | Positive frame count. `1` writes a still image; larger values write an animation (APNG, or GIF if `--out` ends in `.gif`). Every style animates one scene in a seamless loop (see [Animation](#animation)). |
 | `--phase` | `0` | Loop position for styles with motion; `1.0` repeats `0.0`. For a still image it picks the moment; with `--frames` it is the first frame's position. |
 | `--slideshow` | off | Make every frame an unrelated scene with consecutive seeds, even for styles with motion. |
 | `--fps` | `12` | Animation frame rate, an integer from 1 to 65,535. Only used with `--frames` greater than 1. GIF delays are whole hundredths of a second, so GIF rates are rounded and capped at 50. |
@@ -91,7 +91,7 @@ python3 abstract_art.py --style petals --palette sunset --seed 7 --width 512 --h
 python3 abstract_art.py --style mandelbrot --palette ultraviolet --width 512 --height 512 --out mandelbrot.png
 ```
 
-The Mandelbrot viewport is fixed and preserves the complex plane's aspect ratio. Its renderer does not use the seed, so changing `--seed` will not change this style.
+A still Mandelbrot image uses a fixed viewport that preserves the complex plane's aspect ratio. The renderer does not use the seed, so changing `--seed` will not change this style. With `--frames` it zooms into the seahorse valley and back out.
 
 ### A wide landscape
 
@@ -186,7 +186,7 @@ The `ember` style and the `ember` palette are independent choices. You can use, 
 
 ## Animation
 
-Some styles move. They take a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
+Every style moves. Each takes a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
 
 Every style moves. The motion is a rotation, a drift of waves, a circling of clouds, cells, stars or brush strokes, a sweep of jets, a slow zoom (`mandelbrot` dives toward a spiral in the seahorse valley, then back out), or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. The list is `ANIMATED_STYLES` in the module.
 
@@ -197,7 +197,7 @@ Pass `--slideshow` to render seeds `seed`, `seed + 1`, …, `seed + N - 1` inste
 - Use the Python API to choose a different integer frame rate or to supply your own frames. `render(width, height, seed, style, palette_name, phase=0.0)` and `render_rgb(...)` accept `phase`; a style without motion would ignore it.
 - The viewer must support APNG to show the animation. A viewer without animation support may display only the first frame.
 
-Both writers use a temporary file in the destination directory and replace the destination only after everything has been written. Encoding or replacement failures preserve an existing output and clean up the temporary file during normal exception handling. The finished file gets the usual permissions for a new file under the current umask (typically `0644`). The destination directory must allow creating temporary files and replacing the output.
+All writers (PNG, APNG and GIF) use a temporary file in the destination directory and replace the destination only after everything has been written. Encoding or replacement failures preserve an existing output and clean up the temporary file during normal exception handling. The finished file gets the usual permissions for a new file under the current umask (typically `0644`). The destination directory must allow creating temporary files and replacing the output.
 
 ## Python API
 
@@ -223,7 +223,7 @@ pixels = art.render(
 art.write_png(output / "cells.png", pixels, width, height)
 ```
 
-`render(width, height, seed, style, palette_name)` returns a row-major nested list:
+`render(width, height, seed, style, palette_name, phase=0.0)` returns a row-major nested list:
 
 ```text
 pixels[y][x] == (red, green, blue)
@@ -340,7 +340,7 @@ To run one regression test:
 python3 -m unittest -v test_abstract_art.RenderingTests.test_large_flowfield_trails_are_connected
 ```
 
-The suite currently contains 32 tests covering:
+The suite currently contains 67 tests covering:
 
 - Valid dimensions and RGB channels across all registered styles.
 - Every style using a wide part of its palette, unaliased wave styles, and shapes that scale with the canvas.
@@ -355,6 +355,9 @@ The suite currently contains 32 tests covering:
 - Flow-field continuity at larger resolutions and comet continuity on wide canvases.
 - Visible quasar-jet contributions.
 - APNG chunk order, sequence numbers, timing, CRCs, and decompressed pixel data.
+- GIF output: LZW round-trips across table resets, the shared colour table, frame delays, looping and the size limit, all checked with a reference decoder.
+- Animation: every style moves with `phase`, loops after one turn, matches its still image at phase 0 and renders identically in Rust and Python at any phase.
+- The `mosaic` style: flat tiles, even grout at fractional tile sizes, and native-equals-Python.
 - Preservation of existing animation output and temporary-file cleanup on failures.
 
 These checks catch structural and selected visual regressions; they do not establish that every style looks good for every seed, palette, and size. Inspect rendered images when changing drawing algorithms.
@@ -372,13 +375,14 @@ FFmpeg is optional and is not required by the script or its unit tests.
 
 To add a style:
 
-1. Implement `render_your_style(width, height, seed, palette_name)` in `abstract_art.py`.
+1. Implement `render_your_style(width, height, seed, palette_name, phase=0.0)` in `abstract_art.py`. A style that does not move can ignore `phase`, but then it is a slideshow under `--frames` until it is added to `ANIMATED_STYLES`.
 2. Return exactly `height` rows containing exactly `width` RGB tuples each. Keep channel values between 0 and 255.
 3. Use `PALETTES[palette_name]` and `palette_color()` for palette mapping. If randomness is needed, create a local `random.Random(seed)`.
 4. Register it in the `STYLES` dictionary. `render()`, the CLI's `--style` choices, and the tests all read from it.
 5. Add a description to this README and the module's style list.
 6. Run the tests, add a regression check for the new style's intended behavior, and inspect square, wide, and tall renders.
 7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/src/styles/` that reads it, add it to `extract_style()` and `STYLES` in `core/src/lib.rs`, and register the scene builder in `NATIVE_STYLES`. `test_native_styles_match_python_exactly` then checks it against the Python renderer.
+8. To make it move, add `_loop(phase, k)` or `_circle_offset()` terms in the scene builder (see `AGENTS.md`), give it an entry in `ANIMATED_STYLES`, and wrap the builder with `_animated_scene()` in `NATIVE_STYLES`. Phase 0 must give the same image as before.
 
 Pay particular attention to coordinate units: normalize positions when a shape should scale with the canvas, distinguish angles from pixel distances, and sample continuous paths densely enough to connect adjacent pixels. Test the saved image as well as the in-memory buffer.
 
@@ -390,7 +394,7 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | `invalid choice` | Style and palette names are lowercase and case-sensitive; use `--help` to list valid values. |
 | Width, height, or frame-count validation error | Supply positive integers. |
 | Output path raises `FileNotFoundError` | Create the parent directory before rendering. The script does not create it. |
-| Output path raises `PermissionError` | Choose a writable location. APNG also needs permission to create a temporary file and replace the destination. |
+| Output path raises `PermissionError` | Choose a writable location. All writers also need permission to create a temporary file and replace the destination. |
 | A render takes a long time without printing anything | Rendering has no progress display. Reduce dimensions or frame count for a preview. |
 | An animation appears static | Check APNG support in the viewer, confirm `--frames` is greater than 1, and check `--slideshow` was not set. |
 | Frames jump between unrelated scenes | You passed `--slideshow`, or the style has no motion (the CLI prints a note). Drop `--slideshow` to animate one scene; see [Animation](#animation). |
@@ -400,11 +404,14 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 
 | File | Purpose |
 | --- | --- |
-| [`abstract_art.py`](abstract_art.py) | Palettes, noise and geometry helpers, all renderers, PNG/APNG writers, and CLI. |
+| [`abstract_art.py`](abstract_art.py) | Palettes, noise and geometry helpers, all renderers, PNG/APNG/GIF writers, and CLI. |
 | [`test_abstract_art.py`](test_abstract_art.py) | Regression tests (standard library only). |
 | [`bench_abstract_art.py`](bench_abstract_art.py) | Per-style render benchmark with save/compare. |
 | [`core/`](core) | Optional Rust extension module `abstract_art_core` (PyO3, rayon). |
-| [`.gitignore`](.gitignore) | Excludes Python bytecode, the virtual environment, and Rust build output. Generated artwork is not currently ignored. |
+| [`GLOSSARY.md`](GLOSSARY.md) | The project's visual vocabulary: style, palette, seed, scene, frame, phase, animation. |
+| [`.github/workflows/`](.github/workflows) | CI: SonarQube Cloud analysis with test coverage, and OSV-Scanner. |
+| `sonar-project.properties`, `.coveragerc` | SonarQube Cloud project settings and the coverage configuration the CI uses. |
+| [`.gitignore`](.gitignore) | Excludes Python bytecode, the virtual environment, Rust build output and coverage reports. Generated artwork is not currently ignored. |
 | [`README.md`](README.md) | Usage, API, implementation notes, and development guidance. |
 | [`AGENTS.md`](AGENTS.md) | Conventions, triage notes, and known issues for coding agents and contributors. |
 | [`CLAUDE.md`](CLAUDE.md) | Points Claude Code at `AGENTS.md`. |

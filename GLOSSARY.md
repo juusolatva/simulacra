@@ -32,9 +32,20 @@ One complete rendered image covering the canvas, whether presented as a still im
 _Avoid_: scene (when referring to the rendered image)
 
 **Phase**:
-The position in a loop, from 0 up to 1, that styles with motion use to move their scene. Phase 1.0 looks the same as phase 0.0, and phase 0 gives the style's still image.
+The position in a loop, from 0 up to 1, that every style uses to move its scene. Phase 1.0 looks the same as phase 0.0, and phase 0 gives the style's still image.
 _Avoid_: time, frame number
 
 **Animation**:
-A looping sequence of complete frames with the same canvas dimensions and a shared playback rate. For styles with motion, the frames show one scene at successive phases; for the others they may be independently generated scenes with no continuous motion between them.
+A looping sequence of complete frames with the same canvas dimensions and a shared playback rate. Every style has motion, so the frames show one scene at successive phases. Written as APNG or, when the output name ends in `.gif`, as a GIF.
 _Avoid_: simulation
+
+**Slideshow**:
+An animation whose frames are unrelated scenes with consecutive seeds, requested with `--slideshow`. It is what a style without motion would produce under `--frames`.
+_Avoid_: animation (when the frames are independent scenes)
+
+**Still image**:
+A single frame, written as PNG (or GIF when the output name ends in `.gif`). With a `--phase`, it shows that moment of the style's loop.
+
+**Color table**:
+The at most 256 colors a GIF can use. All frames of one GIF share a table sampled along the palette, plus greys for glows, so gradients can band slightly. PNG and APNG have no such limit.
+_Avoid_: palette (a palette is the named color progression a style draws from)
