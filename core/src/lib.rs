@@ -69,13 +69,13 @@ mod abstract_art_core {
     fn extract_style(style: &str, scene: &Bound<'_, PyAny>) -> PyResult<Box<dyn Style>> {
         Ok(match style {
             "aurora" => Box::new(scene.extract::<fields::Aurora>()?),
-            "blobs" => Box::new(fields::Blobs),
+            "blobs" => Box::new(scene.extract::<fields::Blobs>()?),
             "bloom" => Box::new(scene.extract::<fields::Bloom>()?),
             "circuit" => Box::new(scene.extract::<shapes::Circuit>()?),
             "cosmic" => Box::new(scene.extract::<fields::Cosmic>()?),
             "cosmos" => Box::new(scene.extract::<fields::Cosmos>()?),
             "crystal" => Box::new(scene.extract::<fields::Crystal>()?),
-            "drift" => Box::new(drift::Drift),
+            "drift" => Box::new(scene.extract::<drift::Drift>()?),
             "galaxy" => Box::new(scene.extract::<fields::Galaxy>()?),
             "gems" => Box::new(scene.extract::<fields::Gems>()?),
             "geo" => Box::new(scene.extract::<shapes::Geo>()?),
@@ -130,10 +130,12 @@ mod abstract_art_core {
         Ok(PyBytes::new(py, &rgb))
     }
 
-    /// fBm noise in [0, 1]; same results as `abstract_art.fbm`.
+    /// fBm noise in [0, 1]; same results as `abstract_art.fbm`. A `phase`
+    /// (1.0 repeats 0.0) makes it evolve over a loop.
     #[pyfunction]
-    fn fbm(x: f64, y: f64, seed: u32, octaves: u32) -> f64 {
-        crate::noise::fbm(x, y, seed, octaves)
+    #[pyo3(signature = (x, y, seed, octaves, phase=0.0))]
+    fn fbm(x: f64, y: f64, seed: u32, octaves: u32, phase: f64) -> f64 {
+        crate::noise::fbm_loop(x, y, seed, octaves, phase)
     }
 
     /// Palette lookup; same results as `abstract_art.palette_color` (clamped to 0..=255).

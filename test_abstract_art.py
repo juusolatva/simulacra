@@ -339,6 +339,23 @@ class RenderingTests(unittest.TestCase):
                         python = art.render_rgb(31, 23, 6, style, palette)
                     self.assertEqual(native, python)
 
+    def test_looping_noise_matches_still_noise_at_phase_zero_and_loops(self):
+        for x, y, seed, octaves in ((-3.7, 12.25, 77, 4), (1e3, -2e3, 0, 3), (0.5, 0.5, -9, 5)):
+            still = art.fbm(x, y, seed, octaves)
+            for whole in (0.0, 1.0, -2.0, 1e12):
+                self.assertEqual(art.fbm(x, y, seed, octaves, phase=whole), still)
+            moving = [art.fbm(x, y, seed, octaves, phase=i / 17) for i in range(1, 17)]
+            self.assertGreater(len(set(moving)), 12)
+            self.assertTrue(all(0.0 <= value <= 1.0 for value in moving))
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_looping_noise_matches_python(self):
+        for x, y, seed, octaves in ((-3.7, 12.25, 77, 4), (1e3, -2e3, 0, 3), (0.5, 0.5, 2 ** 32 - 1, 6)):
+            for phase in (0.0, 0.1, 0.25, 0.5, 0.99, 1.7, -0.3):
+                with self.subTest(seed=seed, phase=phase):
+                    self.assertEqual(art._core.fbm(x, y, seed, octaves, phase),
+                                     art.fbm(x, y, seed, octaves, phase=phase))
+
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_style_lists_agree(self):
         self.assertEqual(sorted(art.NATIVE_STYLES), sorted(art._core.STYLES))

@@ -187,7 +187,7 @@ The `ember` style and the `ember` palette are independent choices. You can use, 
 
 Some styles move. They take a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
 
-Styles with motion: `aurora`, `galaxy`, `gems`, `geo`, `interference`, `kaleidoscope`, `petals`, `plasma`, `rings`, `spiral`, `starburst`, `voronoi` and `waves`. The motion is a rotation, a drift of waves, or a circling of the cells, depending on the style. The list is `ANIMATED_STYLES` in the module; more styles will be added.
+Styles with motion: `aurora`, `blobs`, `bloom`, `cosmos`, `crystal`, `drift`, `galaxy`, `gems`, `geo`, `horizon`, `interference`, `kaleidoscope`, `nebula`, `petals`, `pinwheel`, `plasma`, `rings`, `spiral`, `starburst`, `voronoi` and `waves`. The motion is a rotation, a drift of waves, a circling of clouds or cells, or noise that keeps changing shape, depending on the style. The list is `ANIMATED_STYLES` in the module; more styles will be added.
 
 The other styles do not move yet. With `--frames`, the CLI renders seeds `seed`, `seed + 1`, …, `seed + N - 1` instead, a slideshow of unrelated scenes, and prints a note. Pass `--slideshow` to get that for a style with motion too.
 
