@@ -281,7 +281,7 @@ Without the Rust core, rendering runs on the CPU in Python loops: all 36 styles 
 - Styles such as `quasar`, `circuit`, and `drift` perform many noise or geometry calculations per pixel. Actual speed depends on style, size, seed, and hardware.
 - `render()` returns Python lists and tuples, which use far more memory than the packed RGB size of `width * height * 3` bytes. The CLI and `render_rgb()` use packed bytes.
 - The CLI holds all uncompressed animation frames in memory before writing them, so memory use grows with frame count and pixel count. It refuses renders past the limits above unless you pass `--no-limits`.
-- There is no configurable resource cap or maximum-resolution guard. Positive dimensions are validated, but the script does not estimate whether a render will fit in memory.
+- The CLI limits are fixed constants (changing them means editing `MAX_FRAME_PIXELS` and `MAX_ANIMATION_BYTES`), and they only estimate the packed frame size. The Python API validates positive dimensions only and has no size cap or memory estimate, so check sizes yourself before calling `render()` on large canvases.
 - Features still based on fixed pixel sizes, such as star dots and some brush widths, become relatively small at large resolutions. Very small images can lose detail through sampling and color quantization.
 
 Output is PNG/APNG only. There is no JPEG, SVG, GIF, or video export, and no built-in viewer.
