@@ -112,7 +112,7 @@ python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
 python3 abstract_art.py --style rings --palette rainbow --seed 3 --width 256 --height 256 --frames 24 --fps 12 --out rings.png
 ```
 
-This creates a two-second sequence that loops seamlessly. `rings` is one of the styles with motion, so the frames are one scene seen at 24 positions along a loop. Styles without motion yet (for example `prism`) write a slideshow instead, with a different scene in each frame, and the CLI prints a note saying so.
+This creates a two-second sequence that loops seamlessly. `rings` is one of the styles with motion, so the frames are one scene seen at 24 positions along a loop. Every built-in style has motion. With `--slideshow`, each frame is instead an unrelated scene with the next seed.
 
 ## Styles
 
@@ -123,7 +123,7 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `waves` | Layered sine-wave bands with a noise-modulated background. |
 | `blobs` | Smooth fractal value noise mapped through a palette. |
 | `orbits` | Concentric ring bands and white stars over a noise background. |
-| `mandelbrot` | Escape-time rendering of the Mandelbrot set with a fixed viewport. |
+| `mandelbrot` | Escape-time rendering of the Mandelbrot set; the animation zooms into the seahorse valley and back. |
 | `gems` | Circular gemstone-inspired forms with banded radial shading. |
 | `rings` | Concentric ring bands across the canvas, shaded by a smooth sweep around each circle. |
 | `aurora` | Soft, wavy ribbons with Gaussian falloff. |
@@ -188,13 +188,13 @@ The `ember` style and the `ember` palette are independent choices. You can use, 
 
 Some styles move. They take a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
 
-Styles with motion: `aurora`, `blobs`, `bloom`, `comet`, `constellations`, `cosmic`, `cosmos`, `crystal`, `drift`, `ember`, `flowfield`, `galaxy`, `gems`, `geo`, `horizon`, `ink`, `interference`, `kaleidoscope`, `lissajous`, `mandala`, `mosaic`, `nebula`, `orbits`, `petals`, `pinwheel`, `plasma`, `quasar`, `rings`, `spiral`, `starburst`, `torus`, `voronoi` and `waves`. The motion is a rotation, a drift of waves, a circling of clouds, cells, stars or brush strokes, or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. The list is `ANIMATED_STYLES` in the module; more styles will be added.
+Every style moves. The motion is a rotation, a drift of waves, a circling of clouds, cells, stars or brush strokes, a sweep of jets, a slow zoom (`mandelbrot` dives toward a spiral in the seahorse valley, then back out), or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. The list is `ANIMATED_STYLES` in the module.
 
-The other styles do not move yet. With `--frames`, the CLI renders seeds `seed`, `seed + 1`, …, `seed + N - 1` instead, a slideshow of unrelated scenes, and prints a note. Pass `--slideshow` to get that for a style with motion too.
+Pass `--slideshow` to render seeds `seed`, `seed + 1`, …, `seed + N - 1` instead, a slideshow of unrelated scenes. (A style added to the registry without motion gets this automatically, and the CLI prints a note.)
 
 - `phase` does not change the scene: the same seed always gives the same objects, and phase 0 gives the same still image as before motion existed.
-- A style such as `mandelbrot` that ignores the seed produces repeated identical frames in a slideshow.
-- Use the Python API to choose a different integer frame rate or to supply your own frames. `render(width, height, seed, style, palette_name, phase=0.0)` and `render_rgb(...)` accept `phase`; styles without motion ignore it.
+- `mandelbrot` ignores the seed, so its slideshow frames are identical; its normal animation (the zoom) does not depend on the seed either.
+- Use the Python API to choose a different integer frame rate or to supply your own frames. `render(width, height, seed, style, palette_name, phase=0.0)` and `render_rgb(...)` accept `phase`; a style without motion would ignore it.
 - The viewer must support APNG to show the animation. A viewer without animation support may display only the first frame.
 
 Both writers use a temporary file in the destination directory and replace the destination only after everything has been written. Encoding or replacement failures preserve an existing output and clean up the temporary file during normal exception handling. The finished file gets the usual permissions for a new file under the current umask (typically `0644`). The destination directory must allow creating temporary files and replacing the output.
@@ -392,8 +392,8 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | Output path raises `FileNotFoundError` | Create the parent directory before rendering. The script does not create it. |
 | Output path raises `PermissionError` | Choose a writable location. APNG also needs permission to create a temporary file and replace the destination. |
 | A render takes a long time without printing anything | Rendering has no progress display. Reduce dimensions or frame count for a preview. |
-| An animation appears static | Check APNG support in the viewer, confirm `--frames` is greater than 1, and avoid `mandelbrot`, which has no motion and ignores the seed. |
-| Frames jump between unrelated scenes | The style has no motion yet, so the CLI made a slideshow (it prints a note). Use one of the styles with motion listed under [Animation](#animation). |
+| An animation appears static | Check APNG support in the viewer, confirm `--frames` is greater than 1, and check `--slideshow` was not set. |
+| Frames jump between unrelated scenes | You passed `--slideshow`, or the style has no motion (the CLI prints a note). Drop `--slideshow` to animate one scene; see [Animation](#animation). |
 | Output is not the format suggested by its filename | Only a `.gif` name changes the format. Any other name gets PNG data, and `--frames` controls whether it includes animation. |
 
 ## Project files
