@@ -243,7 +243,7 @@ def _value_noise_at(x, y, seed, z, period):
     layer = math.floor(z)
     blend = z - layer
     a = value_noise(x, y, seed + (layer % period) * 7919)
-    if blend == 0.0:
+    if blend <= 0.0:  # exactly on a layer; blend is never negative
         return a
     b = value_noise(x, y, seed + ((layer + 1) % period) * 7919)
     return a * (1 - blend) + b * blend
@@ -257,7 +257,7 @@ def fbm(x, y, seed, octaves=4, persistence=0.5, lacunarity=2.0, phase=0.0):
     amp = 1.0
     phase %= 1.0
     for octave in range(octaves):
-        if phase == 0.0:
+        if phase <= 0.0:  # reduced to [0, 1), so this is exactly phase 0
             n = value_noise(x * freq, y * freq, seed)
         else:
             period = _NOISE_LAYERS + octave
