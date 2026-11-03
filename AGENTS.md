@@ -22,7 +22,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | More built-in palettes: rainbow, candy, tropical, jewel, vaporwave, sherbet | Done | this branch |
 | Real animation, batch 1 (13 styles): `phase` parameter, `ANIMATED_STYLES`, `--phase`, `--slideshow`; aurora, galaxy, gems, geo, interference, kaleidoscope, petals, plasma, rings, spiral, starburst, voronoi, waves | Done | this branch |
 | Real animation, batch 2 (8 styles): looping noise (`fbm(..., phase=)` / `fbm_loop`), `_circle_offset()`; blobs, bloom, cosmos, crystal, drift, horizon, nebula, pinwheel | Done | this branch |
-| New style `mosaic` (inspired by Jan Anderzen's tram-stop mosaics): per-tile patterns, animated, native | Done | this branch |
+| New style `mosaic` (inspired by Jan Anderzen's *Palaisinpa kukkana* / *Come Back as a Flower*, Turtola tram stop, Tampere, 2020): per-tile patterns, animated, native | Done | this branch |
 | Real animation, later batches: the 15 remaining styles (brush and trail, torus, quasar, mandala, orbits, and others) | **Next** | — |
 | GIF output (own LZW writer, one shared 256-color table sampled from the palette), then output options | Planned | — |
 | Palettes from the command line: `--palette-stops` and `parse_hex_palette()` | Done | this branch |
