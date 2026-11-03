@@ -1,0 +1,9 @@
+[run]
+branch = True
+relative_files = True
+source = .
+omit =
+    test_abstract_art.py
+    bench_abstract_art.py
+    .venv/*
+    core/*

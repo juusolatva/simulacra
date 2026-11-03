@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 core/target/
 *.so
+.coverage
+coverage.xml
