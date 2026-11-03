@@ -2404,6 +2404,9 @@ def write_animated_png(path, frames, width, height, fps=12):
 # ---------------------------------------------------------------- gif
 
 
+GIF_MAX_SIDE = 65535  # the format stores each dimension in 16 bits
+
+
 def _gif_table(stops):
     """The shared 256-entry colour table: palette samples plus a grey ramp.
 
@@ -2427,20 +2430,43 @@ def _nearest_entry(table, color):
                + (table[i][1] - green) ** 2 + (table[i][2] - blue) ** 2)
 
 
-def _gif_indices(data, table, lookup):
-    """Map packed RGB bytes to table indices; ``lookup`` caches colours across frames.
+class _GifColors:
+    """Maps packed RGB bytes to indices in the shared colour table.
 
     Exact colours that are in the table keep their entry. Others use the nearest
     entry, found once per 5-bit colour cell, so the search cost does not grow with
-    the number of distinct colours.
+    the number of distinct colours. Memory stays bounded: pixels are converted in
+    chunks, and the exact-colour cache is dropped when it grows past a limit.
     """
-    colors = list(zip(data[0::3], data[1::3], data[2::3]))
-    for color in set(colors).difference(lookup):
-        cell = (color[0] >> 3, color[1] >> 3, color[2] >> 3, 0)
-        if cell not in lookup:
-            lookup[cell] = _nearest_entry(table, tuple((c << 3) | 4 for c in cell[:3]))
-        lookup[color] = lookup[cell]
-    return bytes(map(lookup.__getitem__, colors))
+
+    CHUNK = 1 << 16      # pixels converted at a time
+    EXACT_LIMIT = 1 << 16
+
+    def __init__(self, table):
+        self.table = table
+        self.base = {color: index for index, color in reversed(list(enumerate(table)))}
+        self.exact = dict(self.base)
+        self.cells = {}
+
+    def _lookup(self, color):
+        cell = (color[0] >> 3, color[1] >> 3, color[2] >> 3)
+        if cell not in self.cells:
+            self.cells[cell] = _nearest_entry(self.table, tuple((c << 3) | 4 for c in cell))
+        self.exact[color] = self.cells[cell]
+        return self.cells[cell]
+
+    def indices(self, data):
+        out = bytearray()
+        step = self.CHUNK * 3
+        for start in range(0, len(data), step):
+            part = data[start:start + step]
+            colors = list(zip(part[0::3], part[1::3], part[2::3]))
+            for color in set(colors).difference(self.exact):
+                self._lookup(color)
+            out += bytes(map(self.exact.__getitem__, colors))
+            if len(self.exact) > self.EXACT_LIMIT:
+                self.exact = dict(self.base)
+        return bytes(out)
 
 
 def _lzw_width(next_code, width):
@@ -2522,10 +2548,10 @@ def write_gif(path, frames, width, height, fps=12, stops=None):
     if not isinstance(fps, int) or not 1 <= fps <= 65535:
         raise ValueError("fps must be an integer between 1 and 65535")
     _validate_dimensions(width, height)
-    if width > 65535 or height > 65535:
-        raise ValueError("GIF dimensions cannot exceed 65535 pixels")
+    if max(width, height) > GIF_MAX_SIDE:
+        raise ValueError("GIF dimensions cannot exceed %d pixels" % GIF_MAX_SIDE)
     table = _gif_table(stops)
-    lookup = {color: index for index, color in reversed(list(enumerate(table)))}
+    colors = _GifColors(table)
     delay = _gif_delay(fps)
 
     def chunks():
@@ -2534,7 +2560,7 @@ def write_gif(path, frames, width, height, fps=12, stops=None):
         if len(frames) > 1:
             yield b"\x21\xFF\x0BNETSCAPE2.0\x03\x01\x00\x00\x00"
         for pixels in frames:
-            indices = _gif_indices(_packed_rgb(pixels, width, height), table, lookup)
+            indices = colors.indices(_packed_rgb(pixels, width, height))
             yield b"\x21\xF9\x04" + struct.pack("<BHB", 4, delay, 0) + b"\x00"
             yield b"\x2C" + struct.pack("<HHHHB", 0, 0, width, height, 0) + b"\x08"
             yield from _gif_blocks(_gif_lzw(indices))
@@ -2641,6 +2667,8 @@ def _check_args(parser, args):
         parser.error("width and height must be positive")
     if args.frames <= 0:
         parser.error("frames must be positive")
+    if _wants_gif(args) and max(args.width, args.height) > GIF_MAX_SIDE:
+        parser.error("GIF width and height cannot exceed %d pixels" % GIF_MAX_SIDE)
     if not args.no_limits:
         try:
             check_limits(args.width, args.height, args.frames)
@@ -2692,9 +2720,13 @@ def _frame_plan(args, seed):
     return [(seed + i, args.phase) for i in range(args.frames)]
 
 
+def _wants_gif(args):
+    return args.out.lower().endswith(".gif")
+
+
 def _write_frames(args, frames, palette):
     """Write ``frames`` as GIF when ``--out`` ends in .gif, otherwise APNG or PNG."""
-    if args.out.lower().endswith(".gif"):
+    if _wants_gif(args):
         write_gif(args.out, frames, args.width, args.height, fps=args.fps,
                   stops=PALETTES[palette])
     elif len(frames) > 1:

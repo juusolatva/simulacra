@@ -578,6 +578,23 @@ class RenderingTests(unittest.TestCase):
                 width, height, _, decoded, _, _ = read_gif(out)
                 self.assertEqual((width, height, len(decoded)), (16, 12, expected))
 
+    def test_gif_dimension_limit_is_checked_before_rendering(self):
+        for extra in ((), ('--no-limits',)):
+            with mock.patch.object(art, 'render_rgb') as render:
+                code, _, _ = self.run_cli('--width', '65536', '--height', '1',
+                                          '--out', 'wide.GIF', *extra)
+            self.assertEqual(code, 2)
+            render.assert_not_called()
+
+    def test_gif_color_cache_stays_bounded_and_correct(self):
+        colors = art._GifColors(art._gif_table(art.PALETTES['sunset']))
+        colors.EXACT_LIMIT = 50
+        colors.CHUNK = 100
+        data = bytes((i * 7) % 256 for i in range(3 * 1000))
+        small = art._GifColors(art._gif_table(art.PALETTES['sunset'])).indices(data)
+        self.assertEqual(colors.indices(data), small)
+        self.assertLessEqual(len(colors.exact), 50 + 100 + 256)
+
     def test_cli_fps_sets_the_animation_delay(self):
         with tempfile.TemporaryDirectory() as directory:
             out = pathlib.Path(directory) / 'anim.png'

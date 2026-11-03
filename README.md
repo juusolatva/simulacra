@@ -304,7 +304,7 @@ Without the Rust core, rendering runs on the CPU in Python loops: the original 3
 - The CLI limits are fixed constants (changing them means editing `MAX_FRAME_PIXELS` and `MAX_ANIMATION_BYTES`), and they only estimate the packed frame size. The Python API validates positive dimensions only and has no size cap or memory estimate, so check sizes yourself before calling `render()` on large canvases.
 - Features still based on fixed pixel sizes, such as star dots and some brush widths, become relatively small at large resolutions. Very small images can lose detail through sampling and color quantization.
 
-Output is PNG/APNG only. There is no JPEG, SVG, GIF, or video export, and no built-in viewer.
+Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no built-in viewer.
 
 ## Optional Rust core
 
@@ -394,7 +394,7 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | A render takes a long time without printing anything | Rendering has no progress display. Reduce dimensions or frame count for a preview. |
 | An animation appears static | Check APNG support in the viewer, confirm `--frames` is greater than 1, and avoid `mandelbrot`, which has no motion and ignores the seed. |
 | Frames jump between unrelated scenes | The style has no motion yet, so the CLI made a slideshow (it prints a note). Use one of the styles with motion listed under [Animation](#animation). |
-| Output is not the format suggested by its filename | The script always writes PNG data; `--frames` controls whether it includes animation. |
+| Output is not the format suggested by its filename | Only a `.gif` name changes the format. Any other name gets PNG data, and `--frames` controls whether it includes animation. |
 
 ## Project files
 
