@@ -8,6 +8,7 @@ pub mod fields;
 pub mod mosaic;
 pub mod quasar;
 pub mod shapes;
+pub mod space;
 pub mod woodblock;
 
 use crate::palette::Palette;
