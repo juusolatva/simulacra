@@ -61,6 +61,7 @@ shared 256-color table).
 
 import argparse
 import contextlib
+import functools
 import itertools
 import math
 import os
@@ -2712,18 +2713,37 @@ def _clifford_is_lively(params):
     return len(cells) >= 150
 
 
-def _attractor_scene(width, height, seed, phase=0.0):
+_ATTRACTOR_REACH = 0.06
+_ATTRACTOR_CHECK_PHASES = 12
+
+
+def _attractor_params(base, phase):
+    """Base parameters moved by their small circles; phase 0 returns ``base`` exactly."""
+    a_off = _circle_offset(0, _ATTRACTOR_REACH, phase)
+    c_off = _circle_offset(1, _ATTRACTOR_REACH, phase)
+    return (base[0] + a_off[0], base[1] + a_off[1], base[2] + c_off[0], base[3] + c_off[1])
+
+
+def _attractor_random_params(rng):
+    return (rng.uniform(-2.0, 2.0), rng.uniform(-2.0, 2.0),
+            rng.uniform(-1.6, 1.6), rng.uniform(-1.6, 1.6))
+
+
+@functools.lru_cache(maxsize=64)
+def _attractor_base(seed):
+    """Parameters whose orbit stays lively at every sampled phase of the loop."""
     rng = random.Random(seed)
-    params = (rng.uniform(-2.0, 2.0), rng.uniform(-2.0, 2.0),
-              rng.uniform(-1.6, 1.6), rng.uniform(-1.6, 1.6))
-    for _ in range(200):
-        if _clifford_is_lively(params):
+    base = _attractor_random_params(rng)
+    for _ in range(300):
+        if all(_clifford_is_lively(_attractor_params(base, i / _ATTRACTOR_CHECK_PHASES))
+               for i in range(_ATTRACTOR_CHECK_PHASES)):
             break
-        params = (rng.uniform(-2.0, 2.0), rng.uniform(-2.0, 2.0),
-                  rng.uniform(-1.6, 1.6), rng.uniform(-1.6, 1.6))
-    a_off = _circle_offset(0, 0.06, phase)
-    c_off = _circle_offset(1, 0.06, phase)
-    params = (params[0] + a_off[0], params[1] + a_off[1], params[2] + c_off[0], params[3] + c_off[1])
+        base = _attractor_random_params(rng)
+    return base
+
+
+def _attractor_scene(width, height, seed, phase=0.0):
+    params = _attractor_params(_attractor_base(seed), phase)
     min_x, max_x, min_y, max_y = _clifford_bounds(params)
     span = max(max_x - min_x, max_y - min_y, 1e-6)
     return {
