@@ -159,7 +159,7 @@ class RenderingTests(unittest.TestCase):
         self.assertGreater(changed, 64)
 
     def test_all_styles_have_valid_dimensions_and_channels(self):
-        self.assertEqual(len(art.STYLES), 38)
+        self.assertEqual(len(art.STYLES), 40)
         for style in art.STYLES:
             with self.subTest(style=style):
                 pixels = art.render(40, 28, 1, style, 'deep')
@@ -281,7 +281,7 @@ class RenderingTests(unittest.TestCase):
                         for a, b in zip(left, right))
                     / (len(pixels) * (len(pixels[0]) - 1)))
 
-        for style in ('plasma', 'spiral', 'interference'):
+        for style in ('plasma', 'spiral', 'interference', 'cymatics', 'optics'):
             with self.subTest(style=style):
                 coarse = roughness(art.render(32, 32, 1, style, 'deep'))
                 fine = roughness(art.render(128, 128, 1, style, 'deep'))
@@ -448,6 +448,27 @@ class RenderingTests(unittest.TestCase):
         native = art.render_rgb(width, height, 7, 'mosaic', 'jewel', 0.37)
         with mock.patch.object(art, '_core', None):
             self.assertEqual(art.render_rgb(width, height, 7, 'mosaic', 'jewel', 0.37), native)
+
+    def test_cymatics_covers_circular_and_square_modes(self):
+        geometries = set()
+        for seed in range(12):
+            scene = art._cymatics_scene(64, 48, seed)
+            geometries.add(scene['circular'])
+            if not scene['circular']:
+                for n, m, _, _, _ in scene['modes']:
+                    self.assertNotEqual(n, m)
+        self.assertEqual(geometries, {False, True})
+
+    def test_optics_combines_caustics_film_and_diffraction(self):
+        blades = set()
+        for seed in range(12):
+            scene = art._optics_scene(64, 48, seed)
+            self.assertEqual(len(scene['waves']), 4)
+            self.assertEqual(len(scene['film']), 4)
+            self.assertEqual(len(scene['flares']), 3)
+            blades.add(scene['blades'])
+        self.assertTrue(blades.issubset({4.0, 6.0, 8.0}))
+        self.assertGreaterEqual(len(blades), 2)
 
     def test_every_palette_is_valid_and_starts_dark(self):
         for name, stops in art.PALETTES.items():
