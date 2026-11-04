@@ -51,6 +51,10 @@ Styles:
     marbling   - paper marbling from ink drops and comb strokes
     attractor  - Clifford strange attractor as a log-scaled density image
     opart      - op art stripes, checks and rings bulged by moving lenses
+    lunar      - cratered lunar surface under a low sun with long shadows
+    asteroids  - tumbling asteroid belt over dust and stars
+    blackhole  - lensed starfield, photon ring and a Doppler-beamed accretion disk
+    supernova  - filament shell, gas and a spiked core of an exploding star
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -2778,6 +2782,335 @@ def render_attractor(width, height, seed, palette_name, phase=0.0):
 
 # ---------------------------------------------------------------- render dispatch
 
+# ---------------------------------------------------------------- sky helpers
+
+def _sky_stars(rng, count, half_x, half_y):
+    """Stars as ``(x, y, sigma, brightness)`` in canvas units (short side = 2)."""
+    return [(rng.uniform(-half_x, half_x), rng.uniform(-half_y, half_y),
+             rng.uniform(0.004, 0.011), rng.uniform(0.35, 1.0)) for _ in range(count)]
+
+
+def _star_glow(u, v, stars):
+    """Summed gaussian star dots at ``(u, v)``; a star is skipped beyond four sigma."""
+    total = 0.0
+    for sx, sy, sigma, bright in stars:
+        dx = u - sx
+        dy = v - sy
+        reach = 4.0 * sigma
+        if abs(dx) > reach or abs(dy) > reach:
+            continue
+        q = math.sqrt(dx * dx + dy * dy) / sigma
+        total += bright * math.exp(-(q * q) / 2.0)
+    return total
+
+
+def _unit(t):
+    return max(0.0, min(1.0, t))
+
+
+def _smoothstep(t):
+    t = _unit(t)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _view(x, y, width, height):
+    """Canvas units for pixel ``(x, y)``: the short side spans -1 to 1."""
+    scale = max(1.0, min(width, height) / 2.0)
+    return (x - (width - 1) / 2.0) / scale, (y - (height - 1) / 2.0) / scale
+
+
+# ---------------------------------------------------------------- lunar
+
+_LUNAR_CRATERS = 36
+_LUNAR_REACH = 2.2      # crater radii beyond which a crater adds nothing
+_LUNAR_STEPS = 18       # shadow march: steps toward the sun
+_LUNAR_STEP = 0.04      # ... and their length in canvas units
+_LUNAR_EPS = 0.004      # finite-difference step for the surface slope
+
+
+def _lunar_scene(width, height, seed, phase=0.0):
+    """Craters ``(x, y, radius, depth, peak)`` and a sun swinging over the lunar day.
+
+    ``light`` is ``(dx, dy, slope, lx, ly, lz)``: the horizontal direction to the sun,
+    the tangent of its elevation and the unit vector toward it.
+    """
+    rng = random.Random(seed)
+    half_x = width / max(1.0, min(width, height))
+    half_y = height / max(1.0, min(width, height))
+    craters = []
+    for _ in range(_LUNAR_CRATERS):
+        radius = 0.025 + 0.3 * rng.random() ** 3
+        craters.append((rng.uniform(-half_x, half_x), rng.uniform(-half_y, half_y), radius,
+                        rng.uniform(0.1, 0.22), 1.0 if radius > 0.15 else 0.0))
+    azimuth = rng.uniform(0.0, math.tau) + 0.9 * math.sin(_loop(phase, 1))
+    elevation = rng.uniform(0.2, 0.38)
+    flat = math.cos(elevation)
+    return {"craters": craters,
+            "light": (math.cos(azimuth), math.sin(azimuth), math.tan(elevation),
+                      flat * math.cos(azimuth), flat * math.sin(azimuth), math.sin(elevation))}
+
+
+def _lunar_height(u, v, craters):
+    """Surface height: bowls with raised rims, and central peaks in the big craters."""
+    height = 0.0
+    for cx, cy, radius, depth, peak in craters:
+        reach = radius * _LUNAR_REACH
+        dx = u - cx
+        dy = v - cy
+        if abs(dx) >= reach or abs(dy) >= reach:
+            continue
+        d = math.sqrt(dx * dx + dy * dy) / radius
+        if d >= _LUNAR_REACH:
+            continue
+        bowl = d * d - 1.0 if d < 1.0 else 0.0
+        rim = (d - 1.0) / 0.18
+        hump = d / 0.15
+        height += radius * depth * (bowl + 0.35 * math.exp(-(rim * rim))
+                                    + peak * 0.3 * math.exp(-(hump * hump)))
+    return height
+
+
+def _lunar_shadow(u, v, ground, light, craters):
+    """Soft shadow factor: 1 in sunlight, 0 in the umbra of a rim or ridge."""
+    slope = light[2]
+    clear = slope
+    for k in range(1, _LUNAR_STEPS + 1):
+        t = k * _LUNAR_STEP
+        blocked = _lunar_height(u + light[0] * t, v + light[1] * t, craters) - ground
+        clear = min(clear, (slope * t - blocked) / t)
+        if clear < -0.05:
+            return 0.0
+    return _unit(0.5 + clear / 0.1)
+
+
+def _lunar_value(u, v, seed, scene):
+    craters = scene["craters"]
+    light = scene["light"]
+    ground = _lunar_height(u, v, craters)
+    gx = (_lunar_height(u + _LUNAR_EPS, v, craters) - ground) / _LUNAR_EPS
+    gy = (_lunar_height(u, v + _LUNAR_EPS, craters) - ground) / _LUNAR_EPS
+    diffuse = (light[5] - gx * light[3] - gy * light[4]) / math.sqrt(gx * gx + gy * gy + 1.0)
+    lit = max(0.0, diffuse) / light[5]
+    sun = _lunar_shadow(u, v, ground, light, craters) if lit > 0.0 else 0.0
+    albedo = 0.85 + 0.3 * _contrast(fbm(u * 90.0, v * 90.0, seed, octaves=4), 1.5)
+    return _unit(0.04 + 0.6 * min(lit, 1.5) * sun * albedo)
+
+
+def render_lunar(width, height, seed, palette_name, phase=0.0):
+    """Lunar surface: overlapping craters under a low sun that casts long shadows."""
+    scene = _lunar_scene(width, height, seed, phase)
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _lunar_value(*_view(x, y, width, height), seed, scene))
+
+
+# ---------------------------------------------------------------- asteroids
+
+_ASTEROID_COUNT = 80
+
+
+def _asteroids_scene(width, height, seed, phase=0.0):
+    """A tilted belt of tumbling rocks, nearest first, over a dusty starfield.
+
+    A rock is ``(x, y, radius, spin, e2, q2, e3, q3, e4, q4, fade, texture)``: three
+    harmonics ``e * cos(n * angle + q)`` roughen its outline. Rocks drift along the belt
+    a whole number of laps per loop and wrap outside the canvas.
+    """
+    rng = random.Random(seed)
+    half_x = width / max(1.0, min(width, height))
+    half_y = height / max(1.0, min(width, height))
+    tilt = rng.uniform(-0.6, 0.6)
+    cos_t, sin_t = math.cos(tilt), math.sin(tilt)
+    span = 2.0 * (math.sqrt(half_x * half_x + half_y * half_y) + 0.3)
+    sun = rng.uniform(0.0, math.tau)
+    stars = _sky_stars(rng, 90, half_x, half_y)
+    rocks = []
+    for _ in range(_ASTEROID_COUNT):
+        depth = rng.random()
+        lap = rng.random()
+        across = (rng.random() + rng.random() + rng.random() - 1.5) * 0.7
+        radius = 0.03 + 0.15 * depth * depth * (0.4 + 0.6 * rng.random())
+        laps = 2.0 if depth > 0.6 else 1.0
+        along = ((lap + laps * (phase % 1.0)) % 1.0 - 0.5) * span
+        turns = 1.0 if lap > 0.5 else -1.0
+        rocks.append((along * cos_t - across * sin_t, along * sin_t + across * cos_t, radius,
+                      rng.uniform(0.0, math.tau) + _loop(phase, turns),
+                      rng.uniform(0.04, 0.16), rng.uniform(0.0, math.tau),
+                      rng.uniform(0.03, 0.12), rng.uniform(0.0, math.tau),
+                      rng.uniform(0.02, 0.08), rng.uniform(0.0, math.tau),
+                      0.45 + 0.55 * depth, rng.uniform(0.0, math.tau)))
+    rocks.sort(key=lambda rock: -rock[10])
+    return {"rocks": rocks, "stars": stars, "belt": (cos_t, sin_t),
+            "light": (0.8 * math.cos(sun), 0.8 * math.sin(sun), 0.6)}
+
+
+def _asteroid_shade(dx, dy, rock, light):
+    """Brightness of ``rock`` at offset ``(dx, dy)`` from its centre, or None outside it."""
+    radius, spin, e2, q2, e3, q3, e4, q4, fade, tex = rock[2:]
+    theta = math.atan2(dy, dx) - spin
+    edge = radius * (1.0 + e2 * math.cos(2.0 * theta + q2) + e3 * math.cos(3.0 * theta + q3)
+                     + e4 * math.cos(5.0 * theta + q4))
+    if math.sqrt(dx * dx + dy * dy) >= edge:
+        return None
+    nx = dx / edge
+    ny = dy / edge
+    nz = math.sqrt(max(0.0, 1.0 - (nx * nx + ny * ny)))
+    cs, sn = math.cos(spin), math.sin(spin)
+    lu = (dx * cs + dy * sn) / edge
+    lv = (dy * cs - dx * sn) / edge
+    bump = 1.0 + 0.3 * math.sin(6.0 * lu + tex) * math.sin(6.0 * lv + 1.7 * tex)
+    lit = max(0.0, nx * light[0] + ny * light[1] + nz * light[2])
+    return fade * (0.1 + 0.8 * lit * bump)
+
+
+def _asteroids_sky(u, v, seed, scene):
+    cos_t, sin_t = scene["belt"]
+    q = (v * cos_t - u * sin_t) / 0.7
+    haze = math.exp(-(q * q))
+    dust = 0.03 + 0.2 * haze * max(0.0, _contrast(fbm(u * 14.0, v * 14.0, seed, octaves=3), 2.2))
+    return min(1.0, dust + 0.8 * _star_glow(u, v, scene["stars"]))
+
+
+def _asteroids_value(u, v, seed, scene):
+    for rock in scene["rocks"]:
+        dx = u - rock[0]
+        dy = v - rock[1]
+        reach = 1.5 * rock[2]
+        if abs(dx) >= reach or abs(dy) >= reach:
+            continue
+        shade = _asteroid_shade(dx, dy, rock, scene["light"])
+        if shade is not None:
+            return _unit(shade)
+    return _asteroids_sky(u, v, seed, scene)
+
+
+def render_asteroids(width, height, seed, palette_name, phase=0.0):
+    """Asteroid belt: lit, tumbling rocks drifting through dust and stars."""
+    scene = _asteroids_scene(width, height, seed, phase)
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _asteroids_value(*_view(x, y, width, height), seed, scene))
+
+
+# ---------------------------------------------------------------- blackhole
+
+def _blackhole_scene(width, height, seed, phase=0.0):
+    """Horizon radius, disk tilt and roll, spiral arm count and the turning disk."""
+    rng = random.Random(seed)
+    half_x = width / max(1.0, min(width, height))
+    half_y = height / max(1.0, min(width, height))
+    roll = rng.uniform(-0.45, 0.45)
+    return {"center": (rng.uniform(-0.12, 0.12), rng.uniform(-0.12, 0.12)),
+            "radius": rng.uniform(0.17, 0.24), "tilt": rng.uniform(0.16, 0.3),
+            "roll": (math.cos(roll), math.sin(roll)), "arms": float(rng.randint(2, 5)),
+            "spin": rng.uniform(0.0, math.tau) - _loop(phase, 2),
+            "stars": _sky_stars(rng, 140, half_x, half_y)}
+
+
+def _blackhole_disk(u, v, edge, scene):
+    """The direct image of the tilted disk; its far half hides behind the horizon."""
+    x = u
+    y = v / scene["tilt"]
+    big = max(math.sqrt(x * x + y * y), 1e-6)
+    streak = 0.6 + 0.4 * math.sin(scene["arms"] * math.atan2(y, x) + 4.0 * big + scene["spin"])
+    beam = 1.0 + 0.55 * x / big
+    seen = 1.0 if y > 0.0 else edge
+    return (4.0 / (big * big) * _smoothstep((big - 2.0) / 0.35)
+            * _smoothstep((6.5 - big) / 2.5) * streak * (beam * beam) * seen)
+
+
+def _blackhole_halo(u, v, r, edge, scene):
+    """Photon ring plus the far side of the disk bent over the top of the hole."""
+    up = max(0.0, -v / r)
+    ring = (r - 1.5) / 0.04
+    arc = (r - (1.5 + 0.55 * up)) / (0.05 + 0.4 * up * up)
+    shimmer = 0.8 + 0.2 * math.sin(scene["arms"] * math.atan2(v, u) + 3.0 * r + scene["spin"])
+    beam = 1.0 + 0.5 * u / r
+    return (edge * (0.9 * math.exp(-(ring * ring))
+                    + (0.4 + 0.9 * up) * math.exp(-(arc * arc)) * shimmer) * (beam * beam))
+
+
+def _blackhole_sky(u, v, seed, scene):
+    dust = 0.03 + 0.14 * max(0.0, _contrast(fbm(u * 12.0, v * 12.0, seed, octaves=4), 2.2))
+    return min(1.0, dust + 0.8 * _star_glow(u, v, scene["stars"]))
+
+
+def _blackhole_value(u, v, seed, scene):
+    ox, oy = scene["center"]
+    cos_r, sin_r = scene["roll"]
+    radius = scene["radius"]
+    du = u - ox
+    dv = v - oy
+    a = (du * cos_r + dv * sin_r) / radius
+    b = (dv * cos_r - du * sin_r) / radius
+    r = max(math.sqrt(a * a + b * b), 1e-6)
+    edge = _unit((r - 1.0) / 0.03)
+    lens = 1.0 - 1.6 / (r * r)
+    sky = _blackhole_sky(du * lens, dv * lens, seed, scene) * edge
+    energy = _blackhole_disk(a, b, edge, scene) + _blackhole_halo(a, b, r, edge, scene)
+    glow = 1.0 - math.exp(-1.6 * energy)
+    return _unit(sky * (1.0 - glow) + glow)
+
+
+def render_blackhole(width, height, seed, palette_name, phase=0.0):
+    """Black hole: a lensed starfield, photon ring and a turning, Doppler-beamed disk."""
+    scene = _blackhole_scene(width, height, seed, phase)
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _blackhole_value(*_view(x, y, width, height), seed, scene))
+
+
+# ---------------------------------------------------------------- supernova
+
+def _supernova_scene(width, height, seed, phase=0.0):
+    """A breathing shell of filaments around a pulsing core with diffraction spikes."""
+    rng = random.Random(seed)
+    half_x = width / max(1.0, min(width, height))
+    half_y = height / max(1.0, min(width, height))
+    center = (rng.uniform(-0.12, 0.12), rng.uniform(-0.12, 0.12))
+    radius = rng.uniform(0.5, 0.68) * (1.0 + 0.06 * math.sin(_loop(phase, 1)))
+    spike = rng.uniform(0.0, math.pi / 2.0)
+    return {"center": center, "radius": radius, "spike": (math.cos(spike), math.sin(spike)),
+            "pulse": 1.0 + 0.3 * math.cos(_loop(phase, 1)), "phase": phase,
+            "stars": _sky_stars(rng, 110, half_x, half_y)}
+
+
+def _supernova_spikes(u, v, spike):
+    a = u * spike[0] + v * spike[1]
+    b = v * spike[0] - u * spike[1]
+    across_b = b / 0.008
+    across_a = a / 0.008
+    return (math.exp(-(across_b * across_b)) * math.exp(-abs(a) / 0.35)
+            + math.exp(-(across_a * across_a)) * math.exp(-abs(b) / 0.35))
+
+
+def _supernova_value(u, v, seed, scene):
+    u -= scene["center"][0]
+    v -= scene["center"][1]
+    r = math.sqrt(u * u + v * v)
+    radius = scene["radius"]
+    wobble = polar_noise(0.0, math.atan2(v, u), seed, 6.0, 3)
+    shell_radius = radius * (1.0 + 0.5 * (wobble - 0.5))
+    band = (r - shell_radius) / (0.12 * radius)
+    shell = math.exp(-(band * band))
+    n = fbm(u * 40.0 + 31.0, v * 40.0, seed, octaves=5, phase=scene["phase"])
+    ridge = max(0.0, 1.0 - abs(2.0 * _contrast(n, 2.5) - 1.0))
+    ridge2 = ridge * ridge
+    inner = r / (0.9 * radius)
+    blast = (r - 1.14 * shell_radius) / (0.04 * radius)
+    core = r / 0.05
+    energy = (1.6 * shell * (0.2 + ridge2 * ridge2 * 1.6) + 0.7 * math.exp(-(inner * inner)) * n * n
+              + 0.3 * math.exp(-(blast * blast))
+              + scene["pulse"] * (2.0 * (1.0 / (1.0 + core * core))
+                                  + 0.9 * _supernova_spikes(u, v, scene["spike"]))
+              + 0.8 * _star_glow(u, v, scene["stars"]))
+    return _unit(1.0 - math.exp(-1.3 * energy))
+
+
+def render_supernova(width, height, seed, palette_name, phase=0.0):
+    """Supernova remnant: knotted filament shell, glowing gas and a spiked, pulsing core."""
+    scene = _supernova_scene(width, height, seed, phase)
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _supernova_value(*_view(x, y, width, height), seed, scene))
+
+
 # Single source of truth for style names: used by render(), the CLI and tests.
 STYLES = {
     "waves": render_waves,
@@ -2824,6 +3157,10 @@ STYLES = {
     "marbling": render_marbling,
     "attractor": render_attractor,
     "opart": render_opart,
+    "lunar": render_lunar,
+    "asteroids": render_asteroids,
+    "blackhole": render_blackhole,
+    "supernova": render_supernova,
 }
 
 
@@ -2891,6 +3228,10 @@ NATIVE_STYLES = {
     "marbling": _animated_scene(_marbling_scene),
     "attractor": _animated_scene(_attractor_scene),
     "opart": _animated_scene(_opart_scene),
+    "lunar": _animated_scene(_lunar_scene),
+    "asteroids": _animated_scene(_asteroids_scene),
+    "blackhole": _animated_scene(_blackhole_scene),
+    "supernova": _animated_scene(_supernova_scene),
 }
 
 
@@ -2905,6 +3246,7 @@ ANIMATED_STYLES = frozenset({
     "cosmic", "mandala", "orbits", "quasar", "torus",
     "circuit", "mandelbrot", "prism", "shard",
     "cymatics", "optics", "contour", "marbling", "attractor", "opart",
+    "lunar", "asteroids", "blackhole", "supernova",
 })
 
 

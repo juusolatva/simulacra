@@ -17,7 +17,7 @@ mod abstract_art_core {
     use pyo3::types::PyBytes;
 
     use crate::palette::Palette;
-    use crate::styles::{Style, brush, drift, fields, mosaic, quasar, shapes, woodblock};
+    use crate::styles::{Style, brush, drift, fields, mosaic, quasar, shapes, space, woodblock};
 
     type Stops = Vec<(i64, i64, i64)>;
 
@@ -27,7 +27,7 @@ mod abstract_art_core {
 
     /// Names of the styles this module can render.
     #[pymodule_export]
-    const STYLES: [&str; 44] = [
+    const STYLES: [&str; 48] = [
         "aurora",
         "blobs",
         "bloom",
@@ -72,6 +72,10 @@ mod abstract_art_core {
         "marbling",
         "attractor",
         "opart",
+        "lunar",
+        "asteroids",
+        "blackhole",
+        "supernova",
     ];
 
     fn extract_style(style: &str, scene: &Bound<'_, PyAny>) -> PyResult<Box<dyn Style>> {
@@ -81,6 +85,10 @@ mod abstract_art_core {
             "marbling" => Box::new(scene.extract::<fields::Marbling>()?),
             "attractor" => Box::new(scene.extract::<brush::Attractor>()?),
             "opart" => Box::new(scene.extract::<fields::Opart>()?),
+            "lunar" => Box::new(scene.extract::<space::Lunar>()?),
+            "asteroids" => Box::new(scene.extract::<space::Asteroids>()?),
+            "blackhole" => Box::new(scene.extract::<space::Blackhole>()?),
+            "supernova" => Box::new(scene.extract::<space::Supernova>()?),
             "blobs" => Box::new(scene.extract::<fields::Blobs>()?),
             "bloom" => Box::new(scene.extract::<fields::Bloom>()?),
             "circuit" => Box::new(scene.extract::<shapes::Circuit>()?),

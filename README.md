@@ -1,6 +1,6 @@
 # Abstract Art
 
-Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **44 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
+Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -53,7 +53,7 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--style` | `waves` | One of the 44 style names listed below. |
+| `--style` | `waves` | One of the 48 style names listed below. |
 | `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
 | `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
 | `--palette` | `deep` | One of the 24 palette names listed below. |
@@ -173,6 +173,10 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `marbling` | Paper marbling: ink drops and comb strokes are applied in order and undone per pixel, so each pixel is traced back to striped base paint. Drops drift and the combs swing back and forth in a loop. |
 | `attractor` | A Clifford strange attractor drawn as a log-scaled density of about six orbit points per pixel (capped at 24 million). Seeds pick parameters that give a lively orbit; animation moves the four parameters on small circles. |
 | `opart` | Op art: stripes, checkerboard or rings magnified by two or three moving lenses, so the pattern bulges without folding. |
+| `lunar` | Lunar surface: overlapping craters with raised rims and central peaks in the large ones, lit by a low sun that casts soft long shadows. Animation swings the sun across the sky. |
+| `asteroids` | A tilted asteroid belt: lumpy, tumbling rocks lit from one side, sorted near to far so close ones drift faster, over dust and stars. |
+| `blackhole` | A black hole: lensed starfield, a photon ring, and a tilted accretion disk whose far side arches over the top, with Doppler beaming and a turning spiral pattern. |
+| `supernova` | A supernova remnant: a knotted filament shell, glowing gas and a pulsing core with diffraction spikes. Animation evolves the filaments and breathes the shell. |
 
 Changing dimensions can change the scene's arrangement as well as the number of pixels. Most shapes, ring radii, and wave frequencies are relative to the canvas, and `blobs`, `nebula`, `drift`, and `crystal` also scale their noise to it. Other noise textures, star sizes, and brush widths are still measured in pixels, so their detail changes with resolution.
 
@@ -319,7 +323,7 @@ For a fixed script version and Python environment, the same inputs produce repea
 
 ## Performance and limitations
 
-Without the Rust core, rendering runs on the CPU in Python loops: the original 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 44 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
+Without the Rust core, rendering runs on the CPU in Python loops: the original 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 48 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
 
 - Start with 128 × 128 or 256 × 256 previews before increasing resolution.
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
@@ -333,7 +337,7 @@ Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no 
 
 ## Optional Rust core
 
-The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 44). When the module is missing, the pure-Python renderers produce the same images.
+The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 48). When the module is missing, the pure-Python renderers produce the same images.
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 

@@ -159,7 +159,7 @@ class RenderingTests(unittest.TestCase):
         self.assertGreater(changed, 64)
 
     def test_all_styles_have_valid_dimensions_and_channels(self):
-        self.assertEqual(len(art.STYLES), 44)
+        self.assertEqual(len(art.STYLES), 48)
         for style in art.STYLES:
             with self.subTest(style=style):
                 pixels = art.render(40, 28, 1, style, 'deep')
@@ -529,6 +529,79 @@ class RenderingTests(unittest.TestCase):
         dark = sum(color == art.PALETTES['thermal'][0] for row in pixels for color in row)
         self.assertGreater(dark, 64 * 64 // 4)
         self.assertLess(dark, 64 * 64)
+
+    def test_lunar_craters_are_bowls_with_raised_rims_and_nothing_far_away(self):
+        crater = [(0.0, 0.0, 0.2, 0.2, 1.0)]
+        self.assertEqual(art._lunar_height(2.0, 2.0, crater), 0.0)
+        self.assertLess(art._lunar_height(0.1, 0.0, crater), 0.0)
+        self.assertGreater(art._lunar_height(0.2, 0.0, crater), 0.0)
+        flat = [(0.0, 0.0, 0.2, 0.2, 0.0)]
+        self.assertLess(art._lunar_height(0.0, 0.0, flat), 0.0)  # no peak: the floor stays low
+        self.assertGreater(art._lunar_height(0.0, 0.0, crater), art._lunar_height(0.0, 0.0, flat))
+
+    def test_lunar_shadows_are_long_and_follow_the_sun(self):
+        wall = [(0.0, 0.0, 0.2, 0.3, 0.0)]
+        toward_sun = (1.0, 0.0, 0.3, 0.0, 0.0, 1.0)
+        # A pixel on the far side of the rim from the sun sits in its shadow...
+        behind = art._lunar_shadow(-0.26, 0.0, art._lunar_height(-0.26, 0.0, wall), toward_sun, wall)
+        # ...while the same offset on the sunward side of the crater, and open ground, are lit.
+        open_ground = art._lunar_shadow(0.9, 0.0, 0.0, toward_sun, wall)
+        self.assertLess(behind, 0.5)
+        self.assertEqual(open_ground, 1.0)
+        light = [art._lunar_scene(64, 48, 2, phase)['light'][:2] for phase in (0.0, 0.25)]
+        self.assertNotEqual(light[0], light[1])
+        pixels = art.render(64, 48, 2, 'lunar', 'sepia')
+        shadow = sum(art.palette_color(art.PALETTES['sepia'], 0.1))
+        self.assertTrue(any(sum(color) <= shadow for row in pixels for color in row))
+
+    def test_asteroids_are_sorted_near_first_and_drift_a_whole_loop(self):
+        scene = art._asteroids_scene(80, 60, 3)
+        fades = [rock[10] for rock in scene['rocks']]
+        self.assertEqual(len(fades), 80)
+        self.assertEqual(fades, sorted(fades, reverse=True))
+        self.assertEqual(scene, art._asteroids_scene(80, 60, 3, 1.0))
+        moved = art._asteroids_scene(80, 60, 3, 0.25)
+        self.assertNotEqual([rock[:2] for rock in scene['rocks']],
+                            [rock[:2] for rock in moved['rocks']])
+        for rock in scene['rocks']:  # the outline never outgrows the cull box (1.5 radii)
+            self.assertLess(1.0 + rock[4] + rock[6] + rock[8], 1.5)
+
+    def test_blackhole_horizon_is_black_and_the_photon_ring_glows(self):
+        size = 128
+        scene = art._blackhole_scene(size, size, 4)
+        scale = size / 2.0
+        (ox, oy), radius = scene['center'], scene['radius']
+        cos_r, sin_r = scene['roll']
+        dark = art.PALETTES['thermal'][0]
+        pixels = art.render(size, size, 4, 'blackhole', 'thermal')
+
+        def pixel(a, b):  # a, b in horizon radii, in the disk's rolled frame
+            u = ox + (a * cos_r - b * sin_r) * radius
+            v = oy + (b * cos_r + a * sin_r) * radius
+            return pixels[round(v * scale + (size - 1) / 2.0)][round(u * scale + (size - 1) / 2.0)]
+
+        self.assertEqual(pixel(0.0, 0.0), dark)
+        ring = pixel(0.0, -1.55)  # the lensed far side of the disk arches over the top
+        self.assertGreater(sum(ring), sum(art.palette_color(art.PALETTES['thermal'], 0.4)))
+
+    def test_supernova_core_outshines_the_shell_and_the_shell_the_void(self):
+        size = 96
+        scene = art._supernova_scene(size, size, 5)
+        scale = size / 2.0
+        (ox, oy), radius = scene['center'], scene['radius']
+        stops = art.PALETTES['thermal']
+        pixels = art.render(size, size, 5, 'supernova', 'thermal')
+
+        def luminance(du, dv):
+            x = round((ox + du) * scale + (size - 1) / 2.0)
+            y = round((oy + dv) * scale + (size - 1) / 2.0)
+            return sum(pixels[y][x])
+
+        self.assertGreater(luminance(0.0, 0.0), sum(art.palette_color(stops, 0.8)))
+        shell = max(luminance(radius * math.cos(a / 8.0), radius * math.sin(a / 8.0))
+                    for a in range(51))
+        self.assertGreater(shell, luminance(0.0, 0.5 * radius))
+        self.assertGreater(luminance(0.0, 0.5 * radius), sum(stops[0]) + 20)
 
     def test_every_palette_is_valid_and_starts_dark(self):
         for name, stops in art.PALETTES.items():
