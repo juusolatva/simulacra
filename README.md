@@ -1,6 +1,6 @@
 # Abstract Art
 
-Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **37 styles**, **15 palettes**, static PNG output, and looping animated output as APNG or GIF.
+Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **38 styles**, **16 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -53,10 +53,10 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--style` | `waves` | One of the 37 style names listed below. |
+| `--style` | `waves` | One of the 38 style names listed below. |
 | `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
 | `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
-| `--palette` | `deep` | One of the 15 palette names listed below. |
+| `--palette` | `deep` | One of the 16 palette names listed below. |
 | `--palette-stops` | — | A custom palette instead of a named one: two or more comma-separated hex colors from dark to light, such as `0c061c,5814a8,ff8800`. Colors are `rrggbb` or `rgb`, with an optional `#`. Quote the value if it contains `#`, which a shell treats as a comment otherwise. Cannot be combined with `--palette`. |
 | `--width` | `256` | Output width in pixels; must be a positive integer. |
 | `--height` | `256` | Output height in pixels; must be a positive integer. |
@@ -105,6 +105,15 @@ python3 abstract_art.py --style horizon --palette forest --seed 12 --width 960 -
 python3 abstract_art.py --style geo --palette gold --seed 3 --out geometry.png
 python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
 ```
+
+### Woodblock landscapes in watercolor colors
+
+```bash
+python3 abstract_art.py --style woodblock --palette watercolor --seed 5 --out woodblock.png
+python3 abstract_art.py --style woodblock --palette watercolor --seed 7 --width 640 --height 480 --frames 48 --fps 12 --out woodblock.gif
+```
+
+`watercolor` is a color palette usable with every style. In `woodblock`, the last palette stop supplies the paper and the other stops supply the printed forms and carved marks; the contours remain crisp.
 
 ### An animated sequence
 
@@ -156,6 +165,7 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `ember` | Narrow vertical ember glows with varying brightness and falloff. |
 | `comet` | Fading streaks painted with soft brushes; trails wrap across image edges. |
 | `ink` | Quadratic Bézier strokes painted with tapered soft brushes. |
+| `woodblock` | Abstract layered hills, steep cliffs and rolling waves, with crisp carved contours and palette-colored paper. Seeds choose the landforms and open or cropped compositions; waves roll and land slowly reshapes in a loop. |
 | `mosaic` | Glass tiles set in dark grout: a patchwork of checkers, stripes, chevrons, diamond and square rings, lattices, rosettes, mazes and noise smears, often mirrored, sometimes in a ragged shape on a dark ground with scattered sparkles. Inspired by Jan Anderzen's glass mosaic *Palaisinpa kukkana* (*Come Back as a Flower*), 2020, at the Turtola tram stop in Tampere, Finland. |
 
 Changing dimensions can change the scene's arrangement as well as the number of pixels. Most shapes, ring radii, and wave frequencies are relative to the canvas, and `blobs`, `nebula`, `drift`, and `crystal` also scale their noise to it. Other noise textures, star sizes, and brush widths are still measured in pixels, so their detail changes with resolution.
@@ -180,6 +190,7 @@ Each palette is a list of RGB stops, five or more, starting dark (many styles dr
 | `tropical` | Deep teal through turquoise and lime to hot pink. |
 | `jewel` | Near-black through sapphire, emerald and amethyst to gold. |
 | `vaporwave` | Dark indigo through violet and magenta to cyan and pale pink. |
+| `watercolor` | Muted indigo through mist blue and dusty rose to warm paper. Softens color contrast while keeping the selected style’s edges and texture. |
 | `sherbet` | Dark purple through raspberry, coral and orange to cream. |
 
 The `ember` style and the `ember` palette are independent choices. You can use, for example, `--style ember --palette ocean`.
@@ -188,7 +199,7 @@ The `ember` style and the `ember` palette are independent choices. You can use, 
 
 Every style moves. Each takes a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
 
-Every style moves. The motion is a rotation, a drift of waves, a circling of clouds, cells, stars or brush strokes, a sweep of jets, a slow zoom (`mandelbrot` dives toward a spiral in the seahorse valley, then back out), or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. The list is `ANIMATED_STYLES` in the module.
+Every style moves. The motion is a rotation, a drift of waves, a circling of clouds, cells, stars or brush strokes, a sweep of jets, a slow zoom (`mandelbrot` dives toward a spiral in the seahorse valley, then back out), or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. `woodblock` rolls its wave layers and reshapes its hills and cliffs. The list is `ANIMATED_STYLES` in the module.
 
 Pass `--slideshow` to render seeds `seed`, `seed + 1`, …, `seed + N - 1` instead, a slideshow of unrelated scenes. (A style added to the registry without motion gets this automatically, and the CLI prints a note.)
 
@@ -308,7 +319,7 @@ Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no 
 
 ## Optional Rust core
 
-The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 37). When the module is missing, the pure-Python renderers produce the same images.
+The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 38). When the module is missing, the pure-Python renderers produce the same images.
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 

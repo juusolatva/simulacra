@@ -17,7 +17,7 @@ mod abstract_art_core {
     use pyo3::types::PyBytes;
 
     use crate::palette::Palette;
-    use crate::styles::{Style, brush, drift, fields, mosaic, quasar, shapes};
+    use crate::styles::{Style, brush, drift, fields, mosaic, quasar, shapes, woodblock};
 
     type Stops = Vec<(i64, i64, i64)>;
 
@@ -27,7 +27,7 @@ mod abstract_art_core {
 
     /// Names of the styles this module can render.
     #[pymodule_export]
-    const STYLES: [&str; 37] = [
+    const STYLES: [&str; 38] = [
         "aurora",
         "blobs",
         "bloom",
@@ -65,6 +65,7 @@ mod abstract_art_core {
         "comet",
         "ember",
         "mosaic",
+        "woodblock",
     ];
 
     fn extract_style(style: &str, scene: &Bound<'_, PyAny>) -> PyResult<Box<dyn Style>> {
@@ -106,6 +107,7 @@ mod abstract_art_core {
             "comet" => Box::new(scene.extract::<brush::Comet>()?),
             "ember" => Box::new(scene.extract::<brush::Ember>()?),
             "mosaic" => Box::new(scene.extract::<mosaic::Mosaic>()?),
+            "woodblock" => Box::new(scene.extract::<woodblock::Woodblock>()?),
             _ => {
                 return Err(PyValueError::new_err(format!(
                     "no native renderer for style {style:?}"

@@ -44,6 +44,7 @@ Styles:
     comet      - fast glowing streaks with fading motion trails
     ink        - flowing liquid ink strokes with tapered tails and soft edges
     mosaic     - glass-tile patchwork of checkers, chevrons, diamonds and rosettes
+    woodblock  - carved abstract hills, cliffs and rolling waves on palette-colored paper
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -174,6 +175,13 @@ PALETTES = {
         (240, 70, 190),
         (80, 220, 240),
         (255, 230, 245),
+    ],
+    "watercolor": [
+        (36, 43, 63),
+        (91, 119, 153),
+        (164, 190, 202),
+        (204, 157, 159),
+        (246, 237, 219),
     ],
     "sherbet": [
         (36, 8, 52),
@@ -2249,6 +2257,71 @@ def render_mosaic(width, height, seed, palette_name, phase=0.0):
     return pixels
 
 
+# ---------------------------------------------------------------- woodblock
+
+
+def _woodblock_profile(kind, angle, bend):
+    """Related silhouettes: rounded hills, steep cliffs and leaning wave crests."""
+    if kind == "cliff":
+        return 0.72 * math.tanh(3.5 * math.sin(angle)) + 0.18 * math.sin(3 * angle + bend)
+    if kind == "wave":
+        return math.sin(angle + 0.72 * math.sin(angle + bend))
+    return 0.76 * math.sin(angle) + 0.24 * math.sin(2 * angle + bend)
+
+
+def _woodblock_layer(rng, index, count, width, height, kind, top, phase):
+    scale = min(width, height)
+    frequency = rng.uniform(1.1, 2.4) * math.tau
+    offset = rng.uniform(0, math.tau)
+    bend = rng.uniform(-0.7, 0.7) + 0.45 * math.sin(_loop(phase, 1))
+    travel = _loop(phase, -1 if index % 2 else 1)
+    amplitude = rng.uniform(0.07, 0.16) * scale
+    base = height * (top + index * (0.92 - top) / count)
+    surface = [base + amplitude * _woodblock_profile(
+        kind, x / scale * frequency + offset + travel, bend) for x in range(width)]
+    return {"surface": surface, "spacing": rng.uniform(0.028, 0.045) * scale,
+            "color": 0.14 + 0.62 * (1 - index / max(1, count - 1)),
+            "carve": rng.uniform(0, math.tau), "wave": kind == "wave"}
+
+
+def _woodblock_scene(width, height, seed, phase=0.0):
+    rng = random.Random(seed)
+    mode = rng.choice(("hill", "cliff", "wave", "mixed"))
+    count = rng.randint(4, 7)
+    # Some prints are cropped into their first ridge; others leave open paper.
+    top = rng.choice((-0.22, 0.20, 0.34))
+    kinds = [rng.choice(("hill", "cliff", "wave")) if mode == "mixed" else mode
+             for _ in range(count)]
+    return {"layers": [_woodblock_layer(rng, i, count, width, height, kind, top, phase)
+                       for i, kind in enumerate(kinds)], "scale": min(width, height)}
+
+
+def _woodblock_ink(layer, depth, x, scale):
+    # The grooves follow each silhouette, with a gentle sideways bend at depth.
+    groove = depth / layer["spacing"]
+    groove += 0.16 * math.sin(x / scale * 18 + depth / scale * 12 + layer["carve"])
+    if depth < 0.007 * scale:
+        return 0.04
+    if groove % 1.0 < 0.12:
+        return 0.94 if layer["wave"] else 0.86
+    return layer["color"]
+
+
+def _woodblock_value(scene, x, y):
+    for layer in reversed(scene["layers"]):
+        depth = y - layer["surface"][x]
+        if depth >= 0:
+            return _woodblock_ink(layer, depth, x, scene["scale"])
+    return 1.0
+
+
+def render_woodblock(width, height, seed, palette_name, phase=0.0):
+    """Layered woodblock hills, cliffs and waves with carved, palette-colored marks."""
+    scene = _woodblock_scene(width, height, seed, phase)
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _woodblock_value(scene, x, y))
+
+
 # ---------------------------------------------------------------- render dispatch
 
 # Single source of truth for style names: used by render(), the CLI and tests.
@@ -2290,6 +2363,7 @@ STYLES = {
     "comet": render_comet,
     "ink": render_ink,
     "mosaic": render_mosaic,
+    "woodblock": render_woodblock,
 }
 
 
@@ -2350,6 +2424,7 @@ NATIVE_STYLES = {
     "comet": _animated_scene(_comet_scene),
     "ember": _animated_scene(_ember_scene),
     "mosaic": _animated_scene(_mosaic_scene),
+    "woodblock": _animated_scene(_woodblock_scene),
 }
 
 
@@ -2359,7 +2434,7 @@ NATIVE_STYLES = {
 ANIMATED_STYLES = frozenset({
     "aurora", "blobs", "bloom", "cosmos", "crystal", "drift", "galaxy", "gems", "geo",
     "horizon", "interference", "kaleidoscope", "nebula", "petals", "pinwheel", "plasma",
-    "mosaic", "rings", "spiral", "starburst", "voronoi", "waves",
+    "mosaic", "woodblock", "rings", "spiral", "starburst", "voronoi", "waves",
     "comet", "constellations", "ember", "flowfield", "ink", "lissajous",
     "cosmic", "mandala", "orbits", "quasar", "torus",
     "circuit", "mandelbrot", "prism", "shard",

@@ -159,7 +159,7 @@ class RenderingTests(unittest.TestCase):
         self.assertGreater(changed, 64)
 
     def test_all_styles_have_valid_dimensions_and_channels(self):
-        self.assertEqual(len(art.STYLES), 37)
+        self.assertEqual(len(art.STYLES), 38)
         for style in art.STYLES:
             with self.subTest(style=style):
                 pixels = art.render(40, 28, 1, style, 'deep')
@@ -187,7 +187,7 @@ class RenderingTests(unittest.TestCase):
     def test_repeatable_without_global_rng_side_effects(self):
         import random
         state = random.getstate()
-        for style in ('ink', 'flowfield', 'petals'):
+        for style in ('ink', 'flowfield', 'petals', 'woodblock'):
             self.assertEqual(art.render(32, 24, 7, style, 'sunset'),
                              art.render(32, 24, 7, style, 'sunset'))
         self.assertEqual(random.getstate(), state)
@@ -374,6 +374,46 @@ class RenderingTests(unittest.TestCase):
                     with mock.patch.object(art, '_core', None):
                         python = art.render_rgb(width, height, seed, style, palette)
                     self.assertEqual(native, python)
+
+    def test_woodblock_seeds_vary_paper_space_and_landforms(self):
+        paper = art.PALETTES['watercolor'][-1]
+        open_space, cropped, forms = False, False, set()
+        for seed in range(12):
+            pixels = art.render_woodblock(80, 60, seed, 'watercolor')
+            open_space |= any(color == paper for color in pixels[0])
+            cropped |= all(color != paper for row in pixels for color in row)
+            scene = art._woodblock_scene(80, 60, seed)
+            forms.add(tuple(layer['wave'] for layer in scene['layers']))
+        self.assertTrue(open_space)
+        self.assertTrue(cropped)
+        self.assertGreater(len(forms), 3)
+
+    def test_woodblock_scales_and_reshapes_without_changing_its_inks(self):
+        still = art._woodblock_scene(80, 60, 5)
+        doubled = art._woodblock_scene(160, 120, 5)
+        moved = art._woodblock_scene(80, 60, 5, 0.25)
+        for layer, larger, animated in zip(still['layers'], doubled['layers'], moved['layers']):
+            self.assertEqual([2 * y for y in layer['surface']], larger['surface'][::2])
+            self.assertEqual(2 * layer['spacing'], larger['spacing'])
+            self.assertNotEqual(layer['surface'], animated['surface'])
+            self.assertEqual(layer['color'], animated['color'])
+        # Integer turns are exact identities through the public render API.
+        for seed in (0, 1, 5, 7):
+            first = art.render_rgb(80, 60, seed, 'woodblock', 'watercolor')
+            self.assertEqual(first, art.render_rgb(80, 60, seed, 'woodblock', 'watercolor', 1))
+            near = art.render_rgb(80, 60, seed, 'woodblock', 'watercolor', 1 - 1e-7)
+            self.assertLess(sum(a != b for a, b in zip(first, near)), len(first) * 0.01)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_woodblock_native_matches_landforms_and_palettes(self):
+        for seed in range(8):
+            for palette in ('watercolor', 'deep', 'rainbow'):
+                for phase in (0.0, 0.27):
+                    with self.subTest(seed=seed, palette=palette, phase=phase):
+                        native = art.render_rgb(123, 87, seed, 'woodblock', palette, phase)
+                        with mock.patch.object(art, '_core', None):
+                            python = art.render_rgb(123, 87, seed, 'woodblock', palette, phase)
+                        self.assertEqual(native, python)
 
     def test_mosaic_tiles_are_flat_and_set_in_grout(self):
         size = 320  # 5-pixel tiles: the first row and column of each tile are grout
