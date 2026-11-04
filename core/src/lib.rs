@@ -27,7 +27,7 @@ mod abstract_art_core {
 
     /// Names of the styles this module can render.
     #[pymodule_export]
-    const STYLES: [&str; 38] = [
+    const STYLES: [&str; 40] = [
         "aurora",
         "blobs",
         "bloom",
@@ -35,6 +35,7 @@ mod abstract_art_core {
         "cosmic",
         "cosmos",
         "crystal",
+        "cymatics",
         "drift",
         "galaxy",
         "gems",
@@ -45,6 +46,7 @@ mod abstract_art_core {
         "mandala",
         "mandelbrot",
         "nebula",
+        "optics",
         "orbits",
         "petals",
         "pinwheel",
@@ -77,6 +79,7 @@ mod abstract_art_core {
             "cosmic" => Box::new(scene.extract::<fields::Cosmic>()?),
             "cosmos" => Box::new(scene.extract::<fields::Cosmos>()?),
             "crystal" => Box::new(scene.extract::<fields::Crystal>()?),
+            "cymatics" => Box::new(scene.extract::<fields::Cymatics>()?),
             "drift" => Box::new(scene.extract::<drift::Drift>()?),
             "galaxy" => Box::new(scene.extract::<fields::Galaxy>()?),
             "gems" => Box::new(scene.extract::<fields::Gems>()?),
@@ -87,6 +90,7 @@ mod abstract_art_core {
             "mandala" => Box::new(scene.extract::<shapes::Mandala>()?),
             "mandelbrot" => Box::new(scene.extract::<fields::Mandelbrot>()?),
             "nebula" => Box::new(scene.extract::<fields::Nebula>()?),
+            "optics" => Box::new(scene.extract::<fields::Optics>()?),
             "orbits" => Box::new(scene.extract::<fields::Orbits>()?),
             "petals" => Box::new(scene.extract::<fields::Petals>()?),
             "pinwheel" => Box::new(scene.extract::<fields::Pinwheel>()?),

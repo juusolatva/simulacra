@@ -660,3 +660,84 @@ impl Style for Crystal {
         })
     }
 }
+
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Cymatics {
+    circular: bool,
+    /// (n, m, weight, phase_a, phase_b)
+    modes: Vec<(f64, f64, f64, f64, f64)>,
+}
+
+impl Style for Cymatics {
+    fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
+        let (cx, cy) = center(width, height);
+        let scale = (width.min(height) as f64 / 2.0).max(1.0);
+        shade(width, height, palette, |x, y| {
+            let u = (x as f64 - cx) / scale;
+            let v = (y as f64 - cy) / scale;
+            let mut w = 0.0;
+            if self.circular {
+                let r = u.hypot(v);
+                let theta = v.atan2(u);
+                for &(n, m, weight, phase_a, phase_b) in &self.modes {
+                    let radial = (n * PI * r + phase_a).cos() / (1.0 + 0.4 * n * r).sqrt();
+                    w += weight * radial * (m * theta + phase_b).cos();
+                }
+            } else {
+                for &(n, m, weight, phase_a, phase_b) in &self.modes {
+                    let a = (n * PI * u + phase_a).cos() * (m * PI * v + phase_b).cos();
+                    let b = (m * PI * u + phase_b).cos() * (n * PI * v + phase_a).cos();
+                    w += weight * (a - b);
+                }
+            }
+            1.0 / (1.0 + (-3.2 * w).exp())
+        })
+    }
+}
+
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Optics {
+    /// (kx, ky, wave_phase)
+    waves: Vec<(f64, f64, f64)>,
+    /// (fkx, fky, ffreq, fphase)
+    film: (f64, f64, f64, f64),
+    blades: f64,
+    spin: f64,
+    /// (fx, fy, radius, amp)
+    flares: Vec<(f64, f64, f64, f64)>,
+}
+
+impl Style for Optics {
+    fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
+        let (cx, cy) = center(width, height);
+        let scale = (width.min(height) as f64 / 2.0).max(1.0);
+        let (fkx, fky, ffreq, fphase) = self.film;
+        shade(width, height, palette, |x, y| {
+            let u = (x as f64 - cx) / scale;
+            let v = (y as f64 - cy) / scale;
+            let mut caustic = 0.0;
+            for &(kx, ky, wave_phase) in &self.waves {
+                let ridge = 1.0 - (u * kx + v * ky + wave_phase).sin().abs();
+                caustic += ridge * ridge * ridge;
+            }
+            caustic *= 0.25;
+            let film = 0.5 + 0.5 * ((u * fkx + v * fky + caustic * ffreq) * TAU + fphase).cos();
+            let mut diffraction = 0.0;
+            for &(fx, fy, radius, amp) in &self.flares {
+                let dx = u - fx;
+                let dy = v - fy;
+                let d = dx.hypot(dy);
+                let spike = 0.5 + 0.5 * (self.blades * dy.atan2(dx) + self.spin).cos();
+                let spike2 = spike * spike;
+                let airy = 0.5 + 0.5 * (d * 26.0 - fphase).cos();
+                let core = gaussian(d, radius * 0.28);
+                let halo = gaussian(d, radius) * (0.65 * (spike2 * spike2) + 0.35 * airy);
+                diffraction += amp * (core + halo);
+            }
+            let energy = 0.85 * caustic + 0.32 * film * (0.25 + caustic) + 0.65 * diffraction;
+            1.0 - (-1.5 * energy).exp()
+        })
+    }
+}

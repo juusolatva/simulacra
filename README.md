@@ -1,6 +1,6 @@
 # Abstract Art
 
-Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **38 styles**, **16 palettes**, static PNG output, and looping animated output as APNG or GIF.
+Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **40 styles**, **20 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -53,7 +53,7 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--style` | `waves` | One of the 38 style names listed below. |
+| `--style` | `waves` | One of the 40 style names listed below. |
 | `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
 | `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
 | `--palette` | `deep` | One of the 16 palette names listed below. |
@@ -167,6 +167,8 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `ink` | Quadratic Bézier strokes painted with tapered soft brushes. |
 | `woodblock` | Abstract layered hills, steep cliffs and rolling waves, with crisp carved contours and palette-colored paper. Seeds choose the landforms and open or cropped compositions; waves roll and land slowly reshapes in a loop. |
 | `mosaic` | Glass tiles set in dark grout: a patchwork of checkers, stripes, chevrons, diamond and square rings, lattices, rosettes, mazes and noise smears, often mirrored, sometimes in a ragged shape on a dark ground with scattered sparkles. Inspired by Jan Anderzen's glass mosaic *Palaisinpa kukkana* (*Come Back as a Flower*), 2020, at the Turtola tram stop in Tampere, Finland. |
+| `cymatics` | Coupled Chladni standing-wave displacement fields (square or circular modes chosen by the seed), mapping wave troughs, nodal lines, and crests across the palette. |
+| `optics` | Unified wave optics combining refractive caustic filaments, thin-film interference fringes, and multi-blade aperture diffraction spikes with Airy rings. |
 
 Changing dimensions can change the scene's arrangement as well as the number of pixels. Most shapes, ring radii, and wave frequencies are relative to the canvas, and `blobs`, `nebula`, `drift`, and `crystal` also scale their noise to it. Other noise textures, star sizes, and brush widths are still measured in pixels, so their detail changes with resolution.
 
@@ -185,6 +187,9 @@ Each palette is a list of RGB stops, five or more, starting dark (many styles dr
 | `gold` | Dark brown through amber to pale gold. |
 | `ultraviolet` | Dark violet through purple to lavender. |
 | `lagoon` | Dark teal through turquoise to pale mint. |
+| `noir` | Near-black through charcoal and slate to silver and paper white. |
+| `phosphor` | Vacuum black through CRT phosphor green to bright white-green. |
+| `tundra` | Deep peat through spruce, lichen and glacial blue-gray to frost. |
 | `rainbow` | Near-black violet through indigo, blue, green, yellow and orange to red (seven stops). |
 | `candy` | Dark plum through magenta and pink to aqua and cream. |
 | `tropical` | Deep teal through turquoise and lime to hot pink. |
@@ -192,6 +197,7 @@ Each palette is a list of RGB stops, five or more, starting dark (many styles dr
 | `vaporwave` | Dark indigo through violet and magenta to cyan and pale pink. |
 | `watercolor` | Muted indigo through mist blue and dusty rose to warm paper. Softens color contrast while keeping the selected style’s edges and texture. |
 | `sherbet` | Dark purple through raspberry, coral and orange to cream. |
+| `risoprint` | Deep indigo through teal, fluorescent pink and sunflower to warm rice paper. |
 
 The `ember` style and the `ember` palette are independent choices. You can use, for example, `--style ember --palette ocean`.
 
@@ -319,7 +325,7 @@ Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no 
 
 ## Optional Rust core
 
-The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 38). When the module is missing, the pure-Python renderers produce the same images.
+The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 40). When the module is missing, the pure-Python renderers produce the same images.
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 

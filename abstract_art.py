@@ -45,6 +45,8 @@ Styles:
     ink        - flowing liquid ink strokes with tapered tails and soft edges
     mosaic     - glass-tile patchwork of checkers, chevrons, diamonds and rosettes
     woodblock  - carved abstract hills, cliffs and rolling waves on palette-colored paper
+    cymatics   - Chladni plate acoustic standing-wave displacement fields
+    optics     - refractive caustic webs, thin-film fringes and aperture diffraction
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -137,6 +139,27 @@ PALETTES = {
         (56, 160, 156),
         (176, 230, 220),
     ],
+    "noir": [
+        (8, 8, 10),
+        (37, 40, 48),
+        (88, 94, 106),
+        (168, 176, 188),
+        (244, 246, 250),
+    ],
+    "phosphor": [
+        (2, 8, 4),
+        (12, 54, 20),
+        (30, 136, 56),
+        (82, 230, 118),
+        (220, 255, 228),
+    ],
+    "tundra": [
+        (14, 22, 24),
+        (44, 68, 66),
+        (95, 122, 118),
+        (156, 184, 182),
+        (228, 238, 238),
+    ],
     # Multi-hue palettes. They still start dark, because many styles draw their
     # background from the first stop, and then sweep through several hues.
     "rainbow": [
@@ -189,6 +212,13 @@ PALETTES = {
         (250, 90, 80),
         (255, 170, 60),
         (255, 245, 190),
+    ],
+    "risoprint": [
+        (24, 16, 36),
+        (0, 130, 138),
+        (230, 50, 120),
+        (244, 180, 40),
+        (248, 242, 230),
     ],
 }
 
@@ -2322,6 +2352,126 @@ def render_woodblock(width, height, seed, palette_name, phase=0.0):
                   lambda x, y: _woodblock_value(scene, x, y))
 
 
+# ---------------------------------------------------------------- cymatics
+
+
+def _cymatics_scene(width, height, seed, phase=0.0):
+    rng = random.Random(seed)
+    circular = rng.random() < 0.5
+    modes = []
+    for i in range(3):
+        n = float(rng.randint(2, 5))
+        m = float(rng.randint(1, 6))
+        if not circular and n == m:
+            m = n + 1.0
+        weight = rng.uniform(0.45, 0.75)
+        phase_a = rng.uniform(0.0, math.tau) + _loop(phase, 1 if i % 2 == 0 else -1)
+        phase_b = rng.uniform(0.0, math.tau) + _loop(phase, -2 if i == 1 else 1)
+        modes.append((n, m, weight, phase_a, phase_b))
+    return {"circular": circular, "modes": modes}
+
+
+def _cymatics_value(x, y, cx, cy, scale, circular, modes):
+    u = (x - cx) / scale
+    v = (y - cy) / scale
+    w = 0.0
+    if circular:
+        r = math.hypot(u, v)
+        theta = math.atan2(v, u)
+        for n, m, weight, phase_a, phase_b in modes:
+            radial = math.cos(n * math.pi * r + phase_a) / math.sqrt(1.0 + 0.4 * n * r)
+            w += weight * radial * math.cos(m * theta + phase_b)
+    else:
+        for n, m, weight, phase_a, phase_b in modes:
+            a = math.cos(n * math.pi * u + phase_a) * math.cos(m * math.pi * v + phase_b)
+            b = math.cos(m * math.pi * u + phase_b) * math.cos(n * math.pi * v + phase_a)
+            w += weight * (a - b)
+    return 1.0 / (1.0 + math.exp(-3.2 * w))
+
+
+def render_cymatics(width, height, seed, palette_name, phase=0.0):
+    """Chladni plate acoustic standing-wave displacement fields (square and circular)."""
+    scene = _cymatics_scene(width, height, seed, phase)
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    scale = max(1.0, min(width, height) / 2.0)
+    circular, modes = scene["circular"], scene["modes"]
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _cymatics_value(x, y, cx, cy, scale, circular, modes))
+
+
+# ---------------------------------------------------------------- optics
+
+
+def _optics_scene(width, height, seed, phase=0.0):
+    rng = random.Random(seed)
+    waves = []
+    for i in range(4):
+        angle = i * (math.pi / 4.0) + rng.uniform(-0.25, 0.25)
+        freq = rng.uniform(2.2, 3.8) * math.pi
+        wave_phase = rng.uniform(0.0, math.tau) + _loop(phase, 1 if i % 2 == 0 else -1)
+        waves.append((freq * math.cos(angle), freq * math.sin(angle), wave_phase))
+    film = (
+        rng.uniform(-2.4, 2.4),
+        rng.uniform(-2.4, 2.4),
+        rng.uniform(2.6, 4.2),
+        rng.uniform(0.0, math.tau) + _loop(phase, 1),
+    )
+    blades = float(rng.choice((4, 6, 8)))
+    spin = rng.uniform(0.0, math.tau) + _loop(phase, -1)
+    flares = []
+    for i in range(3):
+        fx = rng.uniform(-0.55, 0.55)
+        fy = rng.uniform(-0.55, 0.55)
+        dx, dy = _circle_offset(i, 0.14, phase)
+        flares.append((fx + dx, fy + dy, rng.uniform(0.22, 0.36), rng.uniform(0.55, 0.85)))
+    return {"waves": waves, "film": film, "blades": blades, "spin": spin, "flares": flares}
+
+
+def _optics_caustic(u, v, waves):
+    total = 0.0
+    for kx, ky, wave_phase in waves:
+        ridge = 1.0 - abs(math.sin(u * kx + v * ky + wave_phase))
+        total += ridge * ridge * ridge
+    return total * 0.25
+
+
+def _optics_diffraction(u, v, blades, spin, film_phase, flares):
+    total = 0.0
+    for fx, fy, radius, amp in flares:
+        dx = u - fx
+        dy = v - fy
+        d = math.hypot(dx, dy)
+        spike = 0.5 + 0.5 * math.cos(blades * math.atan2(dy, dx) + spin)
+        spike2 = spike * spike
+        airy = 0.5 + 0.5 * math.cos(d * 26.0 - film_phase)
+        q_core = d / (radius * 0.28)
+        core = math.exp(-(q_core * q_core) / 2.0)
+        q_halo = d / radius
+        halo = math.exp(-(q_halo * q_halo) / 2.0) * (0.65 * (spike2 * spike2) + 0.35 * airy)
+        total += amp * (core + halo)
+    return total
+
+
+def _optics_value(x, y, cx, cy, scale, scene):
+    u = (x - cx) / scale
+    v = (y - cy) / scale
+    caustic = _optics_caustic(u, v, scene["waves"])
+    fkx, fky, ffreq, fphase = scene["film"]
+    film = 0.5 + 0.5 * math.cos((u * fkx + v * fky + caustic * ffreq) * math.tau + fphase)
+    diffraction = _optics_diffraction(u, v, scene["blades"], scene["spin"], fphase, scene["flares"])
+    energy = 0.85 * caustic + 0.32 * film * (0.25 + caustic) + 0.65 * diffraction
+    return 1.0 - math.exp(-1.5 * energy)
+
+
+def render_optics(width, height, seed, palette_name, phase=0.0):
+    """Unified wave optics: refractive caustic webs, thin-film fringes and aperture diffraction."""
+    scene = _optics_scene(width, height, seed, phase)
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    scale = max(1.0, min(width, height) / 2.0)
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _optics_value(x, y, cx, cy, scale, scene))
+
+
 # ---------------------------------------------------------------- render dispatch
 
 # Single source of truth for style names: used by render(), the CLI and tests.
@@ -2364,6 +2514,8 @@ STYLES = {
     "ink": render_ink,
     "mosaic": render_mosaic,
     "woodblock": render_woodblock,
+    "cymatics": render_cymatics,
+    "optics": render_optics,
 }
 
 
@@ -2425,6 +2577,8 @@ NATIVE_STYLES = {
     "ember": _animated_scene(_ember_scene),
     "mosaic": _animated_scene(_mosaic_scene),
     "woodblock": _animated_scene(_woodblock_scene),
+    "cymatics": _animated_scene(_cymatics_scene),
+    "optics": _animated_scene(_optics_scene),
 }
 
 
@@ -2438,6 +2592,7 @@ ANIMATED_STYLES = frozenset({
     "comet", "constellations", "ember", "flowfield", "ink", "lissajous",
     "cosmic", "mandala", "orbits", "quasar", "torus",
     "circuit", "mandelbrot", "prism", "shard",
+    "cymatics", "optics",
 })
 
 
