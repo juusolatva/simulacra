@@ -2642,7 +2642,7 @@ def _marbling_scene(width, height, seed, phase=0.0):
 def _marbling_trace(u, v, ops):
     """Undo the ops from the last to the first. Returns ``(u, v, None)`` or ``(.., ink)``."""
     for kind, a, b, c, d, _, _ in reversed(ops):
-        if kind == 0.0:
+        if kind < 0.5:
             du, dv = u - a, v - b
             dist2 = du * du + dv * dv
             if dist2 < c * c:

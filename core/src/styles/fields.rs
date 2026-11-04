@@ -832,7 +832,7 @@ impl Marbling {
     /// Undo the ops from last to first; `Some(ink)` when the point lies inside a drop.
     fn trace(&self, mut u: f64, mut v: f64) -> (f64, f64, Option<f64>) {
         for &(kind, a, b, c, d, _, _) in self.ops.iter().rev() {
-            if kind == 0.0 {
+            if kind < 0.5 {
                 let (du, dv) = (u - a, v - b);
                 let dist2 = du * du + dv * dv;
                 if dist2 < c * c {
