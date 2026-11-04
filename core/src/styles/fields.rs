@@ -741,3 +741,130 @@ impl Style for Optics {
         })
     }
 }
+
+const CONTOUR_LEVELS: f64 = 14.0;
+
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Contour {
+    phase: f64,
+}
+
+impl Style for Contour {
+    fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
+        let k = 24.0 / width.max(height) as f64;
+        let terrain = |x: f64, y: f64| contrast(fbm_loop(x * k, y * k, seed, 5, self.phase), 2.0);
+        let half_base = (0.0015 * width.min(height) as f64).max(0.75);
+        shade(width, height, palette, |x, y| {
+            let (fx, fy) = (x as f64, y as f64);
+            let h0 = terrain(fx, fy);
+            let hx = terrain((x + 1) as f64, fy);
+            let hy = terrain(fx, (y + 1) as f64);
+            let s = h0 * CONTOUR_LEVELS;
+            let step = (hx * CONTOUR_LEVELS - s).hypot(hy * CONTOUR_LEVELS - s) + 1e-9;
+            let level = s.floor();
+            let frac = s - level;
+            let nearest = if frac < 0.5 { level } else { level + 1.0 };
+            let major = (nearest as i64).rem_euclid(5) == 0;
+            let half = half_base * if major { 2.0 } else { 1.0 };
+            let line = unit(1.0 - frac.min(1.0 - frac) / step / half);
+            let base = unit(level / CONTOUR_LEVELS);
+            let ink = if major { 0.95 } else { 0.78 };
+            base * (1.0 - line) + ink * line
+        })
+    }
+}
+
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Opart {
+    pattern: i64,
+    angle: f64,
+    freq: f64,
+    shift: f64,
+    /// (x, y, radius, strength)
+    bulges: Vec<(f64, f64, f64, f64)>,
+}
+
+impl Style for Opart {
+    fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
+        let (cx, cy) = center(width, height);
+        let scale = (width.min(height) as f64 / 2.0).max(1.0);
+        shade(width, height, palette, |x, y| {
+            let mut u = (x as f64 - cx) / scale;
+            let mut v = (y as f64 - cy) / scale;
+            let mut glow = 0.0;
+            for &(bx, by, radius, strength) in &self.bulges {
+                let q = (u - bx).hypot(v - by) / radius;
+                let f = strength * (-(q * q)).exp();
+                u = bx + (u - bx) * (1.0 - f);
+                v = by + (v - by) * (1.0 - f);
+                glow += f;
+            }
+            let along = u * self.angle.cos() + v * self.angle.sin();
+            let across = v * self.angle.cos() - u * self.angle.sin();
+            let wave = match self.pattern {
+                0 => (TAU * self.freq * along + self.shift).sin(),
+                1 => {
+                    (TAU * self.freq * 0.5 * along + self.shift).sin()
+                        * (TAU * self.freq * 0.5 * across - self.shift).sin()
+                }
+                _ => (TAU * self.freq * u.hypot(v) + self.shift).sin(),
+            };
+            let steep = if self.pattern == 1 { 8.0 } else { 5.0 };
+            let sharp = 1.0 / (1.0 + ((-steep) * wave).exp());
+            0.04 + 0.8 * sharp + 0.16 * glow.min(1.0)
+        })
+    }
+}
+
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Marbling {
+    /// (kind, a, b, c, d, e, f): kind 0 is a drop, kind 1 a comb.
+    ops: Vec<(f64, f64, f64, f64, f64, f64, f64)>,
+    bands: f64,
+    angle: f64,
+    slide: f64,
+}
+
+impl Marbling {
+    /// Undo the ops from last to first; `Some(ink)` when the point lies inside a drop.
+    fn trace(&self, mut u: f64, mut v: f64) -> (f64, f64, Option<f64>) {
+        for &(kind, a, b, c, d, _, _) in self.ops.iter().rev() {
+            if kind < 0.5 {
+                let (du, dv) = (u - a, v - b);
+                let dist2 = du * du + dv * dv;
+                if dist2 < c * c {
+                    return (u, v, Some(d));
+                }
+                let keep = (1.0 - c * c / dist2).sqrt();
+                u = a + du * keep;
+                v = b + dv * keep;
+            } else {
+                let w = u * -a.sin() + v * a.cos() - c;
+                let near = (w - b * (w / b + 0.5).floor()).abs();
+                let shift = d * (-near / (0.25 * b)).exp();
+                u -= shift * a.cos();
+                v -= shift * a.sin();
+            }
+        }
+        (u, v, None)
+    }
+}
+
+impl Style for Marbling {
+    fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
+        let (cx, cy) = center(width, height);
+        let scale = (width.min(height) as f64 / 2.0).max(1.0);
+        shade(width, height, palette, |x, y| {
+            let (u, v, ink) = self.trace((x as f64 - cx) / scale, (y as f64 - cy) / scale);
+            if let Some(ink) = ink {
+                return ink;
+            }
+            let band = ((v * self.angle.cos() - u * self.angle.sin()) * self.bands + self.slide)
+                .floor() as i64;
+            0.1 + 0.8 * ((band * 2).rem_euclid(5) as f64) / 4.0
+        })
+    }
+}

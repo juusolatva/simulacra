@@ -1,6 +1,6 @@
 # Abstract Art
 
-Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **40 styles**, **20 palettes**, static PNG output, and looping animated output as APNG or GIF.
+Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **44 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -53,10 +53,10 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--style` | `waves` | One of the 40 style names listed below. |
+| `--style` | `waves` | One of the 44 style names listed below. |
 | `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
 | `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
-| `--palette` | `deep` | One of the 16 palette names listed below. |
+| `--palette` | `deep` | One of the 24 palette names listed below. |
 | `--palette-stops` | — | A custom palette instead of a named one: two or more comma-separated hex colors from dark to light, such as `0c061c,5814a8,ff8800`. Colors are `rrggbb` or `rgb`, with an optional `#`. Quote the value if it contains `#`, which a shell treats as a comment otherwise. Cannot be combined with `--palette`. |
 | `--width` | `256` | Output width in pixels; must be a positive integer. |
 | `--height` | `256` | Output height in pixels; must be a positive integer. |
@@ -169,6 +169,10 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `mosaic` | Glass tiles set in dark grout: a patchwork of checkers, stripes, chevrons, diamond and square rings, lattices, rosettes, mazes and noise smears, often mirrored, sometimes in a ragged shape on a dark ground with scattered sparkles. Inspired by Jan Anderzen's glass mosaic *Palaisinpa kukkana* (*Come Back as a Flower*), 2020, at the Turtola tram stop in Tampere, Finland. |
 | `cymatics` | Coupled Chladni standing-wave displacement fields (square or circular modes chosen by the seed), mapping wave troughs, nodal lines, and crests across the palette. |
 | `optics` | Unified wave optics combining refractive caustic filaments, thin-film interference fringes, and multi-blade aperture diffraction spikes with Airy rings. |
+| `contour` | Topographic map: terraced fbm terrain with thin contour lines and a bold index line on every fifth level. Animates by evolving the terrain. |
+| `marbling` | Paper marbling: ink drops and comb strokes are applied in order and undone per pixel, so each pixel is traced back to striped base paint. Drops drift and the combs swing back and forth in a loop. |
+| `attractor` | A Clifford strange attractor drawn as a log-scaled density of about six orbit points per pixel (capped at 24 million). Seeds pick parameters that give a lively orbit; animation moves the four parameters on small circles. |
+| `opart` | Op art: stripes, checkerboard or rings magnified by two or three moving lenses, so the pattern bulges without folding. |
 
 Changing dimensions can change the scene's arrangement as well as the number of pixels. Most shapes, ring radii, and wave frequencies are relative to the canvas, and `blobs`, `nebula`, `drift`, and `crystal` also scale their noise to it. Other noise textures, star sizes, and brush widths are still measured in pixels, so their detail changes with resolution.
 
@@ -198,6 +202,10 @@ Each palette is a list of RGB stops, five or more, starting dark (many styles dr
 | `watercolor` | Muted indigo through mist blue and dusty rose to warm paper. Softens color contrast while keeping the selected style’s edges and texture. |
 | `sherbet` | Dark purple through raspberry, coral and orange to cream. |
 | `risoprint` | Deep indigo through teal, fluorescent pink and sunflower to warm rice paper. |
+| `thermal` | Black through violet and red to orange and pale yellow, like a heat camera. |
+| `crimson` | Near-black through oxblood and red to pale rose. |
+| `sepia` | Dark umber through brown and tan to cream, like an old photograph. |
+| `patina` | Dark bronze through copper to verdigris green and pale mint. |
 
 The `ember` style and the `ember` palette are independent choices. You can use, for example, `--style ember --palette ocean`.
 
@@ -311,7 +319,7 @@ For a fixed script version and Python environment, the same inputs produce repea
 
 ## Performance and limitations
 
-Without the Rust core, rendering runs on the CPU in Python loops: the original 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 37 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
+Without the Rust core, rendering runs on the CPU in Python loops: the original 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 44 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
 
 - Start with 128 × 128 or 256 × 256 previews before increasing resolution.
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
@@ -325,7 +333,7 @@ Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no 
 
 ## Optional Rust core
 
-The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 40). When the module is missing, the pure-Python renderers produce the same images.
+The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 44). When the module is missing, the pure-Python renderers produce the same images.
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 
