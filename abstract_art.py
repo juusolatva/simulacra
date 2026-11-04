@@ -47,6 +47,10 @@ Styles:
     woodblock  - carved abstract hills, cliffs and rolling waves on palette-colored paper
     cymatics   - Chladni plate acoustic standing-wave displacement fields
     optics     - refractive caustic webs, thin-film fringes and aperture diffraction
+    contour    - topographic map of terraced terrain with index contour lines
+    marbling   - paper marbling from ink drops and comb strokes
+    attractor  - Clifford strange attractor as a log-scaled density image
+    opart      - op art stripes, checks and rings bulged by moving lenses
 
 Usage:
     python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
@@ -159,6 +163,34 @@ PALETTES = {
         (95, 122, 118),
         (156, 184, 182),
         (228, 238, 238),
+    ],
+    "thermal": [
+        (0, 0, 4),
+        (66, 10, 104),
+        (188, 55, 84),
+        (249, 142, 9),
+        (252, 255, 164),
+    ],
+    "crimson": [
+        (12, 2, 4),
+        (64, 6, 16),
+        (140, 14, 30),
+        (214, 48, 52),
+        (255, 196, 184),
+    ],
+    "sepia": [
+        (20, 14, 10),
+        (66, 48, 34),
+        (128, 96, 66),
+        (194, 162, 122),
+        (242, 228, 202),
+    ],
+    "patina": [
+        (16, 12, 10),
+        (92, 48, 28),
+        (178, 104, 62),
+        (70, 150, 130),
+        (196, 232, 214),
     ],
     # Multi-hue palettes. They still start dark, because many styles draw their
     # background from the first stop, and then sweep through several hues.
@@ -2472,6 +2504,258 @@ def render_optics(width, height, seed, palette_name, phase=0.0):
                   lambda x, y: _optics_value(x, y, cx, cy, scale, scene))
 
 
+# ---------------------------------------------------------------- contour
+
+
+_CONTOUR_LEVELS = 14
+_CONTOUR_MAJOR_EVERY = 5
+
+
+def _contour_scene(width, height, seed, phase=0.0):
+    return {"phase": phase}
+
+
+def _contour_value(x, y, width, height, seed, phase):
+    """Terraced fbm terrain with an index line on every fifth contour."""
+    k = 24.0 / max(width, height)
+    h0 = _contrast(fbm(x * k, y * k, seed, octaves=5, phase=phase), 2.0)
+    hx = _contrast(fbm((x + 1) * k, y * k, seed, octaves=5, phase=phase), 2.0)
+    hy = _contrast(fbm(x * k, (y + 1) * k, seed, octaves=5, phase=phase), 2.0)
+    s = h0 * _CONTOUR_LEVELS
+    step = math.hypot(hx * _CONTOUR_LEVELS - s, hy * _CONTOUR_LEVELS - s) + 1e-9
+    level = math.floor(s)
+    frac = s - level
+    nearest = level if frac < 0.5 else level + 1
+    major = nearest % _CONTOUR_MAJOR_EVERY == 0
+    half = max(0.75, 0.0015 * min(width, height)) * (2.0 if major else 1.0)
+    line = max(0.0, min(1.0, 1.0 - min(frac, 1.0 - frac) / step / half))
+    base = max(0.0, min(1.0, level / _CONTOUR_LEVELS))
+    ink = 0.95 if major else 0.78
+    return base * (1.0 - line) + ink * line
+
+
+def render_contour(width, height, seed, palette_name, phase=0.0):
+    """Topographic map: terraced fbm terrain with contour lines and bold index lines."""
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _contour_value(x, y, width, height, seed, phase))
+
+
+# ---------------------------------------------------------------- opart
+
+_OPART_PATTERNS = ("stripes", "checker", "rings")
+
+
+def _opart_scene(width, height, seed, phase=0.0):
+    rng = random.Random(seed)
+    pattern = rng.randrange(len(_OPART_PATTERNS))
+    angle = rng.uniform(0.0, math.pi)
+    freq = rng.uniform(3.0, 5.0)
+    shift = rng.uniform(0.0, math.tau) + _loop(phase, 1)
+    bulges = []
+    for i in range(rng.randint(2, 3)):
+        bx = rng.uniform(-0.8, 0.8)
+        by = rng.uniform(-0.8, 0.8)
+        radius = rng.uniform(0.32, 0.6)
+        strength = rng.uniform(0.5, 0.85)
+        dx, dy = _circle_offset(i, 0.18, phase)
+        bulges.append((bx + dx, by + dy, radius, strength))
+    return {"pattern": pattern, "angle": angle, "freq": freq, "shift": shift, "bulges": bulges}
+
+
+def _opart_warp(u, v, bulges):
+    """Magnify the plane around each bulge; returns the sampled point and the bulge glow."""
+    glow = 0.0
+    for bx, by, radius, strength in bulges:
+        q = math.hypot(u - bx, v - by) / radius
+        f = strength * math.exp(-(q * q))
+        u = bx + (u - bx) * (1.0 - f)
+        v = by + (v - by) * (1.0 - f)
+        glow += f
+    return u, v, glow
+
+
+def _opart_value(x, y, cx, cy, scale, scene):
+    u, v, glow = _opart_warp((x - cx) / scale, (y - cy) / scale, scene["bulges"])
+    angle, freq, shift = scene["angle"], scene["freq"], scene["shift"]
+    pattern = scene["pattern"]
+    along = u * math.cos(angle) + v * math.sin(angle)
+    across = v * math.cos(angle) - u * math.sin(angle)
+    if pattern == 0:
+        wave = math.sin(math.tau * freq * along + shift)
+    elif pattern == 1:
+        wave = math.sin(math.tau * freq * 0.5 * along + shift) * math.sin(math.tau * freq * 0.5 * across - shift)
+    else:
+        wave = math.sin(math.tau * freq * math.hypot(u, v) + shift)
+    sharp = 1.0 / (1.0 + math.exp(-(8.0 if pattern == 1 else 5.0) * wave))
+    return 0.04 + 0.8 * sharp + 0.16 * min(1.0, glow)
+
+
+def render_opart(width, height, seed, palette_name, phase=0.0):
+    """Op art: stripes, checks or rings bulged and warped by moving lenses."""
+    scene = _opart_scene(width, height, seed, phase)
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    scale = max(1.0, min(width, height) / 2.0)
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _opart_value(x, y, cx, cy, scale, scene))
+
+
+# ---------------------------------------------------------------- marbling
+
+_MARBLING_BANDS = 7.0
+
+
+def _marbling_scene(width, height, seed, phase=0.0):
+    """Ink drops and combs as ``(kind, a, b, c, d, e, f)`` ops, applied in order.
+
+    Drop (kind 0): centre ``a, b``, radius ``c``, ink position ``d``. Comb (kind 1):
+    shift direction angle ``a``, tine spacing ``b``, offset ``c``, strength ``d``.
+    The renderer undoes the ops from last to first for each pixel.
+    """
+    rng = random.Random(seed)
+    half_x = width / max(1.0, min(width, height))
+    half_y = height / max(1.0, min(width, height))
+    ops = []
+    index = 0
+
+    def drops(count):
+        nonlocal index
+        for _ in range(count):
+            dx, dy = _circle_offset(index, 0.05, phase)
+            ops.append((0.0, rng.uniform(-half_x, half_x) + dx, rng.uniform(-half_y, half_y) + dy,
+                        rng.uniform(0.14, 0.4), rng.uniform(0.0, 1.0), 0.0, 0.0))
+            index += 1
+
+    def comb(sign):
+        angle = rng.uniform(0.0, math.pi)
+        spacing = rng.uniform(0.2, 0.4)
+        ops.append((1.0, angle, spacing, rng.uniform(0.0, spacing),
+                    sign * rng.uniform(0.6, 1.0) * math.cos(_loop(phase, 1)), 0.0, 0.0))
+
+    drops(8)
+    comb(1.0)
+    drops(2)
+    comb(-1.0)
+    return {"ops": ops, "bands": _MARBLING_BANDS, "angle": rng.uniform(0.0, math.pi),
+            "slide": 5.0 * (phase % 1.0)}
+
+
+def _marbling_trace(u, v, ops):
+    """Undo the ops from the last to the first. Returns ``(u, v, None)`` or ``(.., ink)``."""
+    for kind, a, b, c, d, _, _ in reversed(ops):
+        if kind == 0.0:
+            du, dv = u - a, v - b
+            dist2 = du * du + dv * dv
+            if dist2 < c * c:
+                return u, v, d
+            keep = math.sqrt(1.0 - c * c / dist2)
+            u = a + du * keep
+            v = b + dv * keep
+        else:
+            w = u * -math.sin(a) + v * math.cos(a) - c
+            near = abs(w - b * math.floor(w / b + 0.5))
+            shift = d * math.exp(-near / (0.25 * b))
+            u -= shift * math.cos(a)
+            v -= shift * math.sin(a)
+    return u, v, None
+
+
+def _marbling_value(x, y, cx, cy, scale, scene):
+    u, v, ink = _marbling_trace((x - cx) / scale, (y - cy) / scale, scene["ops"])
+    if ink is not None:
+        return ink
+    angle = scene["angle"]
+    band = math.floor((v * math.cos(angle) - u * math.sin(angle)) * scene["bands"] + scene["slide"])
+    return 0.1 + 0.8 * ((band * 2) % 5) / 4.0
+
+
+def render_marbling(width, height, seed, palette_name, phase=0.0):
+    """Paper marbling: ink drops and comb strokes traced back to striped paint."""
+    scene = _marbling_scene(width, height, seed, phase)
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    scale = max(1.0, min(width, height) / 2.0)
+    return _shade(width, height, PALETTES[palette_name],
+                  lambda x, y: _marbling_value(x, y, cx, cy, scale, scene))
+
+
+# ---------------------------------------------------------------- attractor
+
+_ATTRACTOR_MAX_POINTS = 24_000_000
+
+
+def _clifford_step(x, y, a, b, c, d):
+    return math.sin(a * y) + c * math.cos(a * x), math.sin(b * x) + d * math.cos(b * y)
+
+
+def _clifford_bounds(params):
+    """Extent of a short orbit and how many of its cells in a 32 x 32 grid it visits."""
+    x, y = 0.1, 0.1
+    xs, ys = [], []
+    for i in range(3100):
+        x, y = _clifford_step(x, y, *params)
+        if i >= 100:
+            xs.append(x)
+            ys.append(y)
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _clifford_is_lively(params):
+    min_x, max_x, min_y, max_y = _clifford_bounds(params)
+    span_x, span_y = max_x - min_x, max_y - min_y
+    if span_x < 1.0 or span_y < 1.0:
+        return False
+    x, y = 0.1, 0.1
+    cells = set()
+    for i in range(3100):
+        x, y = _clifford_step(x, y, *params)
+        if i >= 100:
+            cells.add((int((x - min_x) / span_x * 31.999), int((y - min_y) / span_y * 31.999)))
+    return len(cells) >= 150
+
+
+def _attractor_scene(width, height, seed, phase=0.0):
+    rng = random.Random(seed)
+    params = (rng.uniform(-2.0, 2.0), rng.uniform(-2.0, 2.0),
+              rng.uniform(-1.6, 1.6), rng.uniform(-1.6, 1.6))
+    for _ in range(200):
+        if _clifford_is_lively(params):
+            break
+        params = (rng.uniform(-2.0, 2.0), rng.uniform(-2.0, 2.0),
+                  rng.uniform(-1.6, 1.6), rng.uniform(-1.6, 1.6))
+    a_off = _circle_offset(0, 0.06, phase)
+    c_off = _circle_offset(1, 0.06, phase)
+    params = (params[0] + a_off[0], params[1] + a_off[1], params[2] + c_off[0], params[3] + c_off[1])
+    min_x, max_x, min_y, max_y = _clifford_bounds(params)
+    span = max(max_x - min_x, max_y - min_y, 1e-6)
+    return {
+        "params": params,
+        "mid": ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0),
+        "scale": 0.9 * min(width, height) / span,
+        "points": min(6 * width * height, _ATTRACTOR_MAX_POINTS),
+    }
+
+
+def render_attractor(width, height, seed, palette_name, phase=0.0):
+    """Clifford strange attractor drawn as a log-scaled point-density image."""
+    scene = _attractor_scene(width, height, seed, phase)
+    a, b, c, d = scene["params"]
+    mid_x, mid_y = scene["mid"]
+    scale = scene["scale"]
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    counts = [0] * (width * height)
+    x, y = 0.1, 0.1
+    for i in range(scene["points"] + 100):
+        x, y = math.sin(a * y) + c * math.cos(a * x), math.sin(b * x) + d * math.cos(b * y)
+        if i >= 100:
+            ix = int(cx + (x - mid_x) * scale + 0.5)
+            iy = int(cy + (y - mid_y) * scale + 0.5)
+            if 0 <= ix < width and 0 <= iy < height:
+                counts[iy * width + ix] += 1
+    norm = max(math.log1p(max(counts)), 1e-9)
+    stops = PALETTES[palette_name]
+    return [[palette_color(stops, math.log1p(n) / norm) for n in counts[y * width:(y + 1) * width]]
+            for y in range(height)]
+
+
 # ---------------------------------------------------------------- render dispatch
 
 # Single source of truth for style names: used by render(), the CLI and tests.
@@ -2516,6 +2800,10 @@ STYLES = {
     "woodblock": render_woodblock,
     "cymatics": render_cymatics,
     "optics": render_optics,
+    "contour": render_contour,
+    "marbling": render_marbling,
+    "attractor": render_attractor,
+    "opart": render_opart,
 }
 
 
@@ -2579,6 +2867,10 @@ NATIVE_STYLES = {
     "woodblock": _animated_scene(_woodblock_scene),
     "cymatics": _animated_scene(_cymatics_scene),
     "optics": _animated_scene(_optics_scene),
+    "contour": _animated_scene(_contour_scene),
+    "marbling": _animated_scene(_marbling_scene),
+    "attractor": _animated_scene(_attractor_scene),
+    "opart": _animated_scene(_opart_scene),
 }
 
 
@@ -2592,7 +2884,7 @@ ANIMATED_STYLES = frozenset({
     "comet", "constellations", "ember", "flowfield", "ink", "lissajous",
     "cosmic", "mandala", "orbits", "quasar", "torus",
     "circuit", "mandelbrot", "prism", "shard",
-    "cymatics", "optics",
+    "cymatics", "optics", "contour", "marbling", "attractor", "opart",
 })
 
 

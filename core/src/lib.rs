@@ -27,7 +27,7 @@ mod abstract_art_core {
 
     /// Names of the styles this module can render.
     #[pymodule_export]
-    const STYLES: [&str; 40] = [
+    const STYLES: [&str; 44] = [
         "aurora",
         "blobs",
         "bloom",
@@ -68,11 +68,19 @@ mod abstract_art_core {
         "ember",
         "mosaic",
         "woodblock",
+        "contour",
+        "marbling",
+        "attractor",
+        "opart",
     ];
 
     fn extract_style(style: &str, scene: &Bound<'_, PyAny>) -> PyResult<Box<dyn Style>> {
         Ok(match style {
             "aurora" => Box::new(scene.extract::<fields::Aurora>()?),
+            "contour" => Box::new(scene.extract::<fields::Contour>()?),
+            "marbling" => Box::new(scene.extract::<fields::Marbling>()?),
+            "attractor" => Box::new(scene.extract::<brush::Attractor>()?),
+            "opart" => Box::new(scene.extract::<fields::Opart>()?),
             "blobs" => Box::new(scene.extract::<fields::Blobs>()?),
             "bloom" => Box::new(scene.extract::<fields::Bloom>()?),
             "circuit" => Box::new(scene.extract::<shapes::Circuit>()?),

@@ -336,3 +336,36 @@ impl Style for Constellations {
         })
     }
 }
+
+#[derive(FromPyObject)]
+#[pyo3(from_item_all)]
+pub struct Attractor {
+    params: (f64, f64, f64, f64),
+    mid: (f64, f64),
+    scale: f64,
+    points: usize,
+}
+
+impl Style for Attractor {
+    fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
+        let (a, b, c, d) = self.params;
+        let (cx, cy) = ((width as f64 - 1.0) / 2.0, (height as f64 - 1.0) / 2.0);
+        let mut counts = vec![0u32; width * height];
+        let (mut x, mut y) = (0.1_f64, 0.1_f64);
+        for i in 0..self.points + 100 {
+            (x, y) = ((a * y).sin() + c * (a * x).cos(), (b * x).sin() + d * (b * y).cos());
+            if i >= 100 {
+                let ix = (cx + (x - self.mid.0) * self.scale + 0.5) as i64;
+                let iy = (cy + (y - self.mid.1) * self.scale + 0.5) as i64;
+                if (0..width as i64).contains(&ix) && (0..height as i64).contains(&iy) {
+                    counts[iy as usize * width + ix as usize] += 1;
+                }
+            }
+        }
+        let top = f64::from(counts.iter().copied().max().unwrap_or(0));
+        let norm = top.ln_1p().max(1e-9);
+        shade(width, height, palette, |px, py| {
+            f64::from(counts[py * width + px]).ln_1p() / norm
+        })
+    }
+}

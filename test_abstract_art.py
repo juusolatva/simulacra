@@ -159,7 +159,7 @@ class RenderingTests(unittest.TestCase):
         self.assertGreater(changed, 64)
 
     def test_all_styles_have_valid_dimensions_and_channels(self):
-        self.assertEqual(len(art.STYLES), 40)
+        self.assertEqual(len(art.STYLES), 44)
         for style in art.STYLES:
             with self.subTest(style=style):
                 pixels = art.render(40, 28, 1, style, 'deep')
@@ -281,7 +281,7 @@ class RenderingTests(unittest.TestCase):
                         for a, b in zip(left, right))
                     / (len(pixels) * (len(pixels[0]) - 1)))
 
-        for style in ('plasma', 'spiral', 'interference', 'cymatics', 'optics'):
+        for style in ('plasma', 'spiral', 'interference', 'cymatics', 'optics', 'opart'):
             with self.subTest(style=style):
                 coarse = roughness(art.render(32, 32, 1, style, 'deep'))
                 fine = roughness(art.render(128, 128, 1, style, 'deep'))
@@ -477,6 +477,40 @@ class RenderingTests(unittest.TestCase):
         flat_film = dict(art._optics_scene(48, 36, 1), film=(0.0, 0.0, 0.0, math.pi / 2))
         with mock.patch.object(art, '_optics_scene', return_value=flat_film):
             self.assertNotEqual(full, art.render_optics(48, 36, 1, 'deep'))
+
+    def test_contour_draws_bold_index_lines_over_terraces(self):
+        pixels = art.render(96, 64, 3, 'contour', 'thermal')
+        colors = {color for row in pixels for color in row}
+        self.assertGreater(len(colors), 40)
+
+    def test_opart_covers_every_pattern_and_keeps_lenses_inside(self):
+        patterns = set()
+        for seed in range(16):
+            scene = art._opart_scene(64, 48, seed)
+            patterns.add(scene['pattern'])
+            self.assertGreaterEqual(len(scene['bulges']), 2)
+            for _, _, radius, strength in scene['bulges']:
+                self.assertGreater(radius, 0.0)
+                self.assertLess(strength, 1.0)
+        self.assertEqual(patterns, {0, 1, 2})
+
+    def test_marbling_scene_nests_drops_between_two_combs(self):
+        scene = art._marbling_scene(64, 48, 4)
+        kinds = [op[0] for op in scene['ops']]
+        self.assertEqual(kinds.count(0.0), 10)
+        self.assertEqual(kinds.count(1.0), 2)
+        still = art.render_rgb(48, 36, 4, 'marbling', 'sepia')
+        self.assertNotEqual(still, art.render_rgb(48, 36, 4, 'marbling', 'sepia', 0.3))
+
+    def test_attractor_scene_is_lively_and_frames_the_orbit(self):
+        for seed in range(8):
+            scene = art._attractor_scene(80, 60, seed)
+            self.assertEqual(len(scene['params']), 4)
+            self.assertEqual(scene['points'], 6 * 80 * 60)
+        pixels = art.render(64, 64, 2, 'attractor', 'thermal')
+        dark = sum(color == art.PALETTES['thermal'][0] for row in pixels for color in row)
+        self.assertGreater(dark, 64 * 64 // 4)
+        self.assertLess(dark, 64 * 64)
 
     def test_every_palette_is_valid_and_starts_dark(self):
         for name, stops in art.PALETTES.items():
