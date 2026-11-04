@@ -469,6 +469,14 @@ class RenderingTests(unittest.TestCase):
             blades.add(scene['blades'])
         self.assertTrue(blades.issubset({4.0, 6.0, 8.0}))
         self.assertGreaterEqual(len(blades), 2)
+        full = art.render_optics(48, 36, 1, 'deep')
+        with mock.patch.object(art, '_optics_caustic', return_value=0.0):
+            self.assertNotEqual(full, art.render_optics(48, 36, 1, 'deep'))
+        with mock.patch.object(art, '_optics_diffraction', return_value=0.0):
+            self.assertNotEqual(full, art.render_optics(48, 36, 1, 'deep'))
+        flat_film = dict(art._optics_scene(48, 36, 1), film=(0.0, 0.0, 0.0, math.pi / 2))
+        with mock.patch.object(art, '_optics_scene', return_value=flat_film):
+            self.assertNotEqual(full, art.render_optics(48, 36, 1, 'deep'))
 
     def test_every_palette_is_valid_and_starts_dark(self):
         for name, stops in art.PALETTES.items():
