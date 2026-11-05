@@ -104,7 +104,7 @@ Project key: `juusolatva_abstract-art`.
 - **S2245 (pseudorandom generator):** false positive. Seeded `random.Random` is used deliberately for reproducible art.
 - **S5863 in the determinism test:** false positive. The two sides are separate renders that must be equal.
 - **pythonsecurity:S8707 (path traversal on `--out`, or on the benchmark's `--save` and `--compare`):** accepted. A local tool reads and writes where its user asks.
-- **Re-raised findings:** moving code (for example into a new `_x_scene()` or helper) makes SonarQube report the same S2245 or S8707 again at the new location. Triage them the same way, noting in the comment that the code moved.
+- **Re-raised findings:** moving code (for example into a new `_x_scene()` or helper) makes SonarQube report the same S2245 or S8707 again at the new location. Renaming a file re-raises every finding in it (the Simulacra rename in PR #23 re-raised 59, all re-triaged). Triage them the same way, noting in the comment that the code moved.
 - **pythonsecurity:S8705 (command argument injection in the benchmark's `run_cli`):** false positive. The command is a list without a shell, built from the constant `CLI_WORKLOADS`, an integer seed and a path in our own temporary directory.
 - **S1172 (`seed` unused in `render_mandelbrot`):** accepted, because the shared renderer signature requires it. Other S1172 findings are real: a helper that nothing calls any more (for example `_no_scene` after mandelbrot got a scene) should be deleted.
 - **S9073 (composite assertion):** split `assert a and b` into two asserts, including in test helpers.
