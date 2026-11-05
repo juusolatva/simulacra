@@ -363,17 +363,27 @@ class RenderingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 art.write_png(from_bytes, packed[:-1], 2, 2)
 
+    def _assert_native_matches_python(self, cases, phases):
+        for style in art.NATIVE_STYLES:
+            for width, height, seed, palette in cases:
+                for phase in phases:
+                    with self.subTest(style=style, size=(width, height), seed=seed, phase=phase):
+                        native = art.render_rgb(width, height, seed, style, palette, phase)
+                        with mock.patch.object(art, '_core', None):
+                            python = art.render_rgb(width, height, seed, style, palette, phase)
+                        self.assertEqual(native, python)
+
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_styles_match_python_exactly(self):
         cases = ((37, 23, 1, 'deep'), (64, 48, -7, 'neon'), (1, 1, 2 ** 40 + 3, 'gold'),
                  (2, 5, 9, 'ocean'), (29, 61, 12345, 'sunset'))
-        for style in art.NATIVE_STYLES:
-            for width, height, seed, palette in cases:
-                with self.subTest(style=style, size=(width, height), seed=seed):
-                    native = art.render_rgb(width, height, seed, style, palette)
-                    with mock.patch.object(art, '_core', None):
-                        python = art.render_rgb(width, height, seed, style, palette)
-                    self.assertEqual(native, python)
+        self._assert_native_matches_python(cases, (0.0, 0.37, -1.81))
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    @unittest.skipUnless(os.environ.get('ABSTRACT_ART_SLOW'), 'set ABSTRACT_ART_SLOW=1 to run')
+    def test_native_styles_match_python_exactly_at_larger_sizes(self):
+        cases = ((200, 150, 3, 'lagoon'), (150, 200, 2 ** 33 + 1, 'thermal'))
+        self._assert_native_matches_python(cases, (0.37, 0.81))
 
     def test_woodblock_seeds_vary_paper_space_and_landforms(self):
         paper = art.PALETTES['watercolor'][-1]

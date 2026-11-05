@@ -30,6 +30,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | New styles `lunar`, `asteroids`, `blackhole`, `supernova`: all animated and native, in `core/src/styles/space.rs` (per-pixel; shared star field via `_sky_stars()` and `_star_glow()`) | Done | — |
 | GIF output (`write_gif`: own LZW encoder, one shared 256-color table sampled from the palette, chosen by a `.gif` `--out`) | Done | PR #10 |
 | CI: SonarQube Cloud with coverage (about 96%), OSV-Scanner | Done | PR #14 |
+| Rust rewrite (`PLAN.md`), Phase 1: test workflow for every PR, native-versus-Python test at nonzero phases and larger sizes | Done | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
 Measured at 640×480: the original 36 styles took 178 s in pure Python at the start (`mosaic` came later). With every style native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
@@ -38,6 +39,7 @@ Measured at 640×480: the original 36 styles took 178 s in pure Python at the st
 
 ```bash
 python3 -m unittest -q                     # full suite, pure Python (native tests skip)
+ABSTRACT_ART_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes test_abstract_art   # slow native check
 .venv/bin/python -m unittest -q            # with the Rust core: also checks native == Python
 source .venv/bin/activate && maturin develop --release -m core/Cargo.toml   # rebuild core
 cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/Cargo.toml --all-targets
@@ -54,6 +56,7 @@ Do not commit generated images.
 
 ## CI
 
+- **Tests (`.github/workflows/tests.yml`):** runs on every push to main and every pull request, forks included (no secrets): the suite on Python 3.12 and 3.14, each without and with the Rust core; a separate job for the slow native-versus-Python comparison at larger sizes (`ABSTRACT_ART_SLOW=1`); and `cargo test` plus Clippy with `-D warnings`.
 - **SonarQube Cloud (`.github/workflows/sonarqube.yml`, `sonar-project.properties`, `.coveragerc`):** runs the suite twice under `coverage` (once without the Rust core, once with it built via `maturin develop`, appended into one report) and scans with `coverage.xml`. Only Python coverage is collected; Rust is exercised through the same tests. The scan needs `SONAR_TOKEN` and skips pull requests from forks, which cannot read secrets. SonarQube's Automatic Analysis must be off, because it conflicts with CI analysis.
 - **OSV-Scanner (`.github/workflows/osv-scanner.yml`):** scans `-r ./`, which finds `core/Cargo.lock` (the Python module has no dependencies). Pull requests and merge groups use the PR workflow, and pushes to main, a weekly schedule and manual runs use the full scan. SARIF upload is off (`upload-sarif: false`) while the repository is private, since code scanning needs GitHub Code Security there; turn it back on when the repository is public. Actions are pinned by commit SHA with the version in a comment.
 
