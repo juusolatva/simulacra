@@ -1,5 +1,6 @@
 //! Polygon-, segment- and ring-based styles.
 
+use crate::math::Libm;
 use pyo3::FromPyObject;
 
 use super::{Style, gaussian, small_side, unit};
@@ -40,7 +41,7 @@ impl Style for Circuit {
                     }
                 }
             }
-            1.0 - (-1.2 * v).exp()
+            1.0 - (-1.2 * v).m_exp()
         })
     }
 }
@@ -59,9 +60,9 @@ impl Style for Geo {
             // Python sums with sum(), which is compensated since 3.12.
             let v = py_sum(self.polygons.iter().map(|poly| {
                 let q = poly_min_dist(x, y, poly) / sigma;
-                (-0.5 * (q * q)).exp()
+                (-0.5 * (q * q)).m_exp()
             }));
-            1.0 - (-v).exp()
+            1.0 - (-v).m_exp()
         })
     }
 }
@@ -119,7 +120,7 @@ impl Style for Prism {
                     }
                 }
             }
-            1.0 - (-1.1 * v).exp()
+            1.0 - (-1.1 * v).m_exp()
         })
     }
 }
@@ -145,15 +146,15 @@ impl Style for Mandala {
             let (x, y) = (x as f64, y as f64);
             let (dx, dy) = (x - cx, y - cy);
             let r = dx.hypot(dy);
-            let theta = dy.atan2(dx);
-            let mut v = (-(r * r) / (2.0 * medallion * medallion)).exp() * 3.5;
+            let theta = dy.m_atan2(dx);
+            let mut v = (-(r * r) / (2.0 * medallion * medallion)).m_exp() * 3.5;
             let noise = polar_noise(r * 0.05, theta, seed, 3.0, 2);
             for &(radius, size, wob) in &self.rings {
                 let d = r - radius * (1.0 + wob * (noise - 0.5));
-                v += (-(d * d) / (2.0 * (size * size))).exp() * 1.6;
+                v += (-(d * d) / (2.0 * (size * size))).m_exp() * 1.6;
             }
             for &(r0, r1, phase) in &self.spokes {
-                let dang = (theta - phase).sin().atan2((theta - phase).cos());
+                let dang = (theta - phase).m_sin().m_atan2((theta - phase).m_cos());
                 if r0 <= r && r <= r1 && dang.abs() < 0.06 {
                     v += 0.9;
                 }
@@ -161,10 +162,10 @@ impl Style for Mandala {
             for &(gx, gy, size) in &self.glyphs {
                 let d = (x - gx).hypot(y - gy);
                 if d < size * 0.9 {
-                    v += (-(d * d) / (2.0 * size * size)).exp() * 2.2;
+                    v += (-(d * d) / (2.0 * size * size)).m_exp() * 2.2;
                 }
             }
-            1.0 - (-0.7 * v).exp()
+            1.0 - (-0.7 * v).m_exp()
         })
     }
 }

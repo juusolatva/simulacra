@@ -4,6 +4,7 @@
 //! fuse multiply-adds by default), so results agree bit-for-bit apart from
 //! any differences in the platform math library.
 
+use crate::math::Libm;
 use crate::geometry::py_mod;
 
 /// Integer lattice hash in [0, 1]. Python ints are unbounded, but every step
@@ -101,8 +102,8 @@ pub fn fbm_loop(x: f64, y: f64, seed: u32, octaves: u32, phase: f64) -> f64 {
 #[inline]
 pub fn polar_noise(r_coord: f64, theta: f64, seed: u32, around: f64, octaves: u32) -> f64 {
     fbm(
-        r_coord + around * theta.cos(),
-        around * theta.sin(),
+        r_coord + around * theta.m_cos(),
+        around * theta.m_sin(),
         seed,
         octaves,
     )

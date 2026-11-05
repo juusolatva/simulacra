@@ -1,5 +1,6 @@
 //! Noise- and wave-based styles that compute each pixel independently.
 
+use crate::math::Libm;
 use std::f64::consts::{PI, TAU};
 
 use pyo3::FromPyObject;
@@ -44,7 +45,7 @@ impl Style for Waves {
             let mut v = 0.1 + n * 0.5;
             for &(amp, freq, phase) in &self.layers {
                 let angle = (x + y * 0.9) * freq * TAU / size + phase;
-                v += amp / 67.0 * angle.sin() * (0.3 + n);
+                v += amp / 67.0 * angle.m_sin() * (0.3 + n);
             }
             unit(v * 1.4)
         })
@@ -64,9 +65,9 @@ impl Style for Plasma {
             let mut v = 0.0;
             let n = fbm(x * 0.01, y * 0.01, seed, 4);
             for &(amp, kx, ky, phase) in &self.layers {
-                v += amp * (x * kx + y * ky + phase).sin();
+                v += amp * (x * kx + y * ky + phase).m_sin();
             }
-            0.5 + 0.5 * (v * 1.5 + n * 3.0).sin()
+            0.5 + 0.5 * (v * 1.5 + n * 3.0).m_sin()
         })
     }
 }
@@ -83,11 +84,11 @@ impl Style for Interference {
             let (x, y) = (x as f64, y as f64);
             let mut v = 0.0;
             for &(phase, kx, ky, amp) in &self.layers {
-                v += (x * kx + y * ky + phase).sin() * amp;
+                v += (x * kx + y * ky + phase).m_sin() * amp;
             }
             let n = fbm(x * 0.006, y * 0.006, seed, 2);
             v += n * 2.0;
-            (v * 0.35).sin() * 0.5 + 0.5 + (n - 0.5) * 0.3
+            (v * 0.35).m_sin() * 0.5 + 0.5 + (n - 0.5) * 0.3
         })
     }
 }
@@ -109,11 +110,11 @@ impl Style for Kaleidoscope {
             let dx = (x as f64 - cx) / scale;
             let dy = (y as f64 - cy) / scale;
             let r = dx.hypot(dy);
-            let angle = (py_mod(dy.atan2(dx) + sector / 2.0, sector) - sector / 2.0).abs();
-            let (u, v) = (r * angle.cos(), r * angle.sin());
+            let angle = (py_mod(dy.m_atan2(dx) + sector / 2.0, sector) - sector / 2.0).abs();
+            let (u, v) = (r * angle.m_cos(), r * angle.m_sin());
             let n = fbm(u * 32.0, v * 32.0, seed, 3);
-            let t = 0.5 + 0.5 * (r * 18.0 + angle * folds * 2.0 + n * 4.0 + self.phase).sin();
-            t * (-0.35 * r * r).exp()
+            let t = 0.5 + 0.5 * (r * 18.0 + angle * folds * 2.0 + n * 4.0 + self.phase).m_sin();
+            t * (-0.35 * r * r).m_exp()
         })
     }
 }
@@ -137,7 +138,7 @@ impl Style for Pinwheel {
             let dy = y as f64 - half_h;
             let r = (dx * dx + dy * dy).sqrt();
             let theta = if dx != 0.0 || dy != 0.0 {
-                dy.atan2(dx)
+                dy.m_atan2(dx)
             } else {
                 0.0
             };
@@ -168,17 +169,17 @@ impl Style for Galaxy {
             let dx = x as f64 - cx;
             let dy = y as f64 - cy;
             let r = (dx * dx + dy * dy).sqrt();
-            let theta = dy.atan2(dx);
+            let theta = dy.m_atan2(dx);
             let n = fbm(x as f64 * 0.0035, y as f64 * 0.0035, seed, 2);
             let q = r / self.bulge_r;
-            let mut v = (-0.5 * (q * q)).exp() * self.bulge_amp * (0.8 + 0.4 * n);
+            let mut v = (-0.5 * (q * q)).m_exp() * self.bulge_amp * (0.8 + 0.4 * n);
             for &(r0, arm_width, phase, pitch, amp) in &self.arms {
-                let arm_theta = phase + (r / r0).ln_1p() * pitch;
+                let arm_theta = phase + (r / r0).m_ln_1p() * pitch;
                 let d = (py_mod(arm_theta - theta + PI, TAU) - PI).abs();
                 let q = d / arm_width;
-                v += (-0.5 * (q * q) - r / max_r).exp() * amp;
+                v += (-0.5 * (q * q) - r / max_r).m_exp() * amp;
             }
-            (1.0 - (-v).exp()) * 0.95
+            (1.0 - (-v).m_exp()) * 0.95
         })
     }
 }
@@ -201,7 +202,7 @@ impl Style for Bloom {
                 v += gaussian((x - bx).hypot(y - by), br) * amp;
             }
             v *= 0.4 + 1.2 * n;
-            1.0 - (-1.4 * v).exp()
+            1.0 - (-1.4 * v).m_exp()
         })
     }
 }
@@ -224,7 +225,7 @@ impl Style for Nebula {
             let mut v = 0.0;
             for &(ccx, ccy, cr, amp) in &self.clouds {
                 let d2 = (x - ccx) * (x - ccx) + (y - ccy) * (y - ccy);
-                v += (-d2 / (2.0 * (cr * cr))).exp() * amp;
+                v += (-d2 / (2.0 * (cr * cr))).m_exp() * amp;
             }
             let n = fbm_loop(x * noise_k, y * noise_k, seed, 4, self.phase);
             v *= (0.2 + 1.6 * (contrast(n, 2.0) - 0.2)).max(0.0);
@@ -235,7 +236,7 @@ impl Style for Nebula {
             {
                 v += 1.2;
             }
-            1.0 - (-1.3 * v).exp()
+            1.0 - (-1.3 * v).m_exp()
         })
     }
 }
@@ -292,14 +293,14 @@ impl Style for Cosmic {
         let arm_sigma = (small * 0.08).max(1.0);
         let star_sigma = (small * 0.02).max(1.0);
         let (arm_cos, arm_sin, arm_tan) =
-            (self.arm_ang.cos(), self.arm_ang.sin(), self.arm_w.tan());
+            (self.arm_ang.m_cos(), self.arm_ang.m_sin(), self.arm_w.m_tan());
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
             let rad = (x - ox).hypot(y - oy);
             let mut v = gaussian(rad, glow_sigma) * 0.6;
-            let ang = (y - oy).atan2(x - ox);
+            let ang = (y - oy).m_atan2(x - ox);
             let ang_diff = py_mod(ang - self.arm_ang + PI, 2.0 * PI) - PI;
-            let dist_along = rad * arm_tan + self.arm_r * (ang_diff / self.arm_w).cos();
+            let dist_along = rad * arm_tan + self.arm_r * (ang_diff / self.arm_w).m_cos();
             let d2 = (x - (ox + dist_along * arm_cos)).hypot(y - (oy + dist_along * arm_sin));
             v += gaussian(d2, arm_sigma) * 1.2;
             for &(sx, sy, size, brightness) in &self.stars {
@@ -308,7 +309,7 @@ impl Style for Cosmic {
                     v += size * brightness * gaussian(ds, star_sigma);
                 }
             }
-            1.0 - (-1.2 * v).exp()
+            1.0 - (-1.2 * v).m_exp()
         })
     }
 }
@@ -330,8 +331,8 @@ impl Style for Rings {
             let mut t = 0.0;
             for &(radius, phase) in &self.rings {
                 if radius * 0.9 < r && r < radius * 1.1 {
-                    let angle = dy.atan2(dx);
-                    t = 0.3 + 0.35 * (1.0 + (angle + phase).cos());
+                    let angle = dy.m_atan2(dx);
+                    t = 0.3 + 0.35 * (1.0 + (angle + phase).m_cos());
                 }
             }
             t
@@ -353,11 +354,11 @@ impl Style for Starburst {
         shade(width, height, palette, |x, y| {
             let (dx, dy) = ((x as f64 - cx) / scale, (y as f64 - cy) / scale);
             let r = dx.hypot(dy);
-            let theta = dy.atan2(dx);
-            let ray = (0.5 + 0.5 * (theta * self.rays + self.phase).cos()).powf(12.0);
+            let theta = dy.m_atan2(dx);
+            let ray = (0.5 + 0.5 * (theta * self.rays + self.phase).m_cos()).m_powf(12.0);
             let q = r / 0.18;
-            let glow = (-(q * q)).exp();
-            glow + ray * (-r * 1.3).exp() * (1.0 - (-r * 12.0).exp())
+            let glow = (-(q * q)).m_exp();
+            glow + ray * (-r * 1.3).m_exp() * (1.0 - (-r * 12.0).m_exp())
         })
     }
 }
@@ -376,7 +377,7 @@ impl Style for Spiral {
         shade(width, height, palette, |x, y| {
             let (dx, dy) = (x as f64 - cx, y as f64 - cy);
             let r = (dx * dx + dy * dy).sqrt() / max_r;
-            let theta = dy.atan2(dx);
+            let theta = dy.m_atan2(dx);
             let mut v = 0.0;
             for &(turns, phase, amp, arm_width) in &self.arms {
                 let d = py_mod(r * turns * TAU - theta - phase, TAU);
@@ -384,7 +385,7 @@ impl Style for Spiral {
                 v += amp * gaussian(dist, arm_width);
             }
             v *= 1.0 - 0.5 * r;
-            1.0 - (-1.6 * v).exp()
+            1.0 - (-1.6 * v).m_exp()
         })
     }
 }
@@ -404,12 +405,12 @@ impl Style for Petals {
         shade(width, height, palette, |x, y| {
             let (dx, dy) = ((x as f64 - cx) / scale, (y as f64 - cy) / scale);
             let r = dx.hypot(dy);
-            let theta = dy.atan2(dx);
-            let angular = (0.5 + 0.5 * (self.count * theta + self.phase).cos()).powf(3.0);
+            let theta = dy.m_atan2(dx);
+            let angular = (0.5 + 0.5 * (self.count * theta + self.phase).m_cos()).m_powf(3.0);
             let q = (r - self.length * 0.52) / (self.length * 0.3);
-            let radial = (-(q * q)).exp();
+            let radial = (-(q * q)).m_exp();
             let q = r / 0.16;
-            angular * radial + (-(q * q)).exp()
+            angular * radial + (-(q * q)).m_exp()
         })
     }
 }
@@ -427,13 +428,13 @@ impl Style for Aurora {
             let (x, y) = (x as f64, y as f64);
             let mut v = 0.0;
             for &(y0, amp, freq, phase, bw) in &self.ribbons {
-                let yy = y0 + amp * (x * freq + phase).sin();
+                let yy = y0 + amp * (x * freq + phase).m_sin();
                 let d = (y - yy) / amp;
-                let w = (-d * d).exp();
-                let s = (x * freq * 2.0 + phase).sin();
+                let w = (-d * d).m_exp();
+                let s = (x * freq * 2.0 + phase).m_sin();
                 v += w * (0.5 + 0.5 * s) * bw;
             }
-            0.05 + 0.95 * (1.0 - (-1.5 * v).exp())
+            0.05 + 0.95 * (1.0 - (-1.5 * v).m_exp())
         })
     }
 }
@@ -456,7 +457,7 @@ impl Style for Gems {
                 let d2 = dx * dx + dy * dy;
                 if d2 < cr * cr {
                     let depth = d2.sqrt() / cr;
-                    let local = ((rot + depth * 3.0).cos() + 1.0) / 2.0;
+                    let local = ((rot + depth * 3.0).m_cos() + 1.0) / 2.0;
                     t = unit((1.0 - depth) * local);
                 }
             }
@@ -485,7 +486,7 @@ impl Style for Cosmos {
                     // d >= 0, so truncation matches Python's int().
                     let k = ((d / max_r) * (rings - 1) as f64 + 0.5) as i64;
                     let w = gaussian(d, max_r / (rings - 1).max(1) as f64);
-                    let s = (k as f64 * 2.0 + phase).sin();
+                    let s = (k as f64 * 2.0 + phase).m_sin();
                     v += w * amp * (0.5 + 0.5 * s);
                     weight += w;
                 }
@@ -594,8 +595,8 @@ impl Style for Voronoi {
                 }
             }
             let gap = second - nearest.0;
-            let edge = (-gap / (scale * 0.012).max(0.5)).exp();
-            nearest.1 * (-nearest.0 / (scale * 0.3)).exp() + edge * 0.5
+            let edge = (-gap / (scale * 0.012).max(0.5)).m_exp();
+            nearest.1 * (-nearest.0 / (scale * 0.3)).m_exp() + edge * 0.5
         })
     }
 }
@@ -645,17 +646,17 @@ impl Style for Crystal {
                 0.0
             };
             // Python's round() is half-to-even.
-            let tilt = ((gx.hypot(gy) * relief).atan() / tilt_step).round_ties_even() * tilt_step;
-            let azimuth = (gy.atan2(gx) / az_step).round_ties_even() * az_step;
+            let tilt = ((gx.hypot(gy) * relief).m_atan() / tilt_step).round_ties_even() * tilt_step;
+            let azimuth = (gy.m_atan2(gx) / az_step).round_ties_even() * az_step;
             let n = (
-                -tilt.sin() * azimuth.cos(),
-                -tilt.sin() * azimuth.sin(),
-                tilt.cos(),
+                -tilt.m_sin() * azimuth.m_cos(),
+                -tilt.m_sin() * azimuth.m_sin(),
+                tilt.m_cos(),
             );
             let diffuse = (n.0 * light.0 + n.1 * light.1 + n.2 * light.2).max(0.0);
             let spec = (n.0 * half.0 + n.1 * half.1 + n.2 * half.2)
                 .max(0.0)
-                .powf(24.0);
+                .m_powf(24.0);
             0.75 * diffuse * (0.5 + at(x, y)) + 0.5 * spec - 0.2
         })
     }
@@ -679,19 +680,19 @@ impl Style for Cymatics {
             let mut w = 0.0;
             if self.circular {
                 let r = u.hypot(v);
-                let theta = v.atan2(u);
+                let theta = v.m_atan2(u);
                 for &(n, m, weight, phase_a, phase_b) in &self.modes {
-                    let radial = (n * PI * r + phase_a).cos() / (1.0 + 0.4 * n * r).sqrt();
-                    w += weight * radial * (m * theta + phase_b).cos();
+                    let radial = (n * PI * r + phase_a).m_cos() / (1.0 + 0.4 * n * r).sqrt();
+                    w += weight * radial * (m * theta + phase_b).m_cos();
                 }
             } else {
                 for &(n, m, weight, phase_a, phase_b) in &self.modes {
-                    let a = (n * PI * u + phase_a).cos() * (m * PI * v + phase_b).cos();
-                    let b = (m * PI * u + phase_b).cos() * (n * PI * v + phase_a).cos();
+                    let a = (n * PI * u + phase_a).m_cos() * (m * PI * v + phase_b).m_cos();
+                    let b = (m * PI * u + phase_b).m_cos() * (n * PI * v + phase_a).m_cos();
                     w += weight * (a - b);
                 }
             }
-            1.0 / (1.0 + (-3.2 * w).exp())
+            1.0 / (1.0 + (-3.2 * w).m_exp())
         })
     }
 }
@@ -719,25 +720,25 @@ impl Style for Optics {
             let v = (y as f64 - cy) / scale;
             let mut caustic = 0.0;
             for &(kx, ky, wave_phase) in &self.waves {
-                let ridge = 1.0 - (u * kx + v * ky + wave_phase).sin().abs();
+                let ridge = 1.0 - (u * kx + v * ky + wave_phase).m_sin().abs();
                 caustic += ridge * ridge * ridge;
             }
             caustic *= 0.25;
-            let film = 0.5 + 0.5 * ((u * fkx + v * fky + caustic * ffreq) * TAU + fphase).cos();
+            let film = 0.5 + 0.5 * ((u * fkx + v * fky + caustic * ffreq) * TAU + fphase).m_cos();
             let mut diffraction = 0.0;
             for &(fx, fy, radius, amp) in &self.flares {
                 let dx = u - fx;
                 let dy = v - fy;
                 let d = dx.hypot(dy);
-                let spike = 0.5 + 0.5 * (self.blades * dy.atan2(dx) + self.spin).cos();
+                let spike = 0.5 + 0.5 * (self.blades * dy.m_atan2(dx) + self.spin).m_cos();
                 let spike2 = spike * spike;
-                let airy = 0.5 + 0.5 * (d * 26.0 - fphase).cos();
+                let airy = 0.5 + 0.5 * (d * 26.0 - fphase).m_cos();
                 let core = gaussian(d, radius * 0.28);
                 let halo = gaussian(d, radius) * (0.65 * (spike2 * spike2) + 0.35 * airy);
                 diffraction += amp * (core + halo);
             }
             let energy = 0.85 * caustic + 0.32 * film * (0.25 + caustic) + 0.65 * diffraction;
-            1.0 - (-1.5 * energy).exp()
+            1.0 - (-1.5 * energy).m_exp()
         })
     }
 }
@@ -796,23 +797,23 @@ impl Style for Opart {
             let mut glow = 0.0;
             for &(bx, by, radius, strength) in &self.bulges {
                 let q = (u - bx).hypot(v - by) / radius;
-                let f = strength * (-(q * q)).exp();
+                let f = strength * (-(q * q)).m_exp();
                 u = bx + (u - bx) * (1.0 - f);
                 v = by + (v - by) * (1.0 - f);
                 glow += f;
             }
-            let along = u * self.angle.cos() + v * self.angle.sin();
-            let across = v * self.angle.cos() - u * self.angle.sin();
+            let along = u * self.angle.m_cos() + v * self.angle.m_sin();
+            let across = v * self.angle.m_cos() - u * self.angle.m_sin();
             let wave = match self.pattern {
-                0 => (TAU * self.freq * along + self.shift).sin(),
+                0 => (TAU * self.freq * along + self.shift).m_sin(),
                 1 => {
-                    (TAU * self.freq * 0.5 * along + self.shift).sin()
-                        * (TAU * self.freq * 0.5 * across - self.shift).sin()
+                    (TAU * self.freq * 0.5 * along + self.shift).m_sin()
+                        * (TAU * self.freq * 0.5 * across - self.shift).m_sin()
                 }
-                _ => (TAU * self.freq * u.hypot(v) + self.shift).sin(),
+                _ => (TAU * self.freq * u.hypot(v) + self.shift).m_sin(),
             };
             let steep = if self.pattern == 1 { 8.0 } else { 5.0 };
-            let sharp = 1.0 / (1.0 + ((-steep) * wave).exp());
+            let sharp = 1.0 / (1.0 + ((-steep) * wave).m_exp());
             0.04 + 0.8 * sharp + 0.16 * glow.min(1.0)
         })
     }
@@ -842,11 +843,11 @@ impl Marbling {
                 u = a + du * keep;
                 v = b + dv * keep;
             } else {
-                let w = u * -a.sin() + v * a.cos() - c;
+                let w = u * -a.m_sin() + v * a.m_cos() - c;
                 let near = (w - b * (w / b + 0.5).floor()).abs();
-                let shift = d * (-near / (0.25 * b)).exp();
-                u -= shift * a.cos();
-                v -= shift * a.sin();
+                let shift = d * (-near / (0.25 * b)).m_exp();
+                u -= shift * a.m_cos();
+                v -= shift * a.m_sin();
             }
         }
         (u, v, None)
@@ -862,7 +863,7 @@ impl Style for Marbling {
             if let Some(ink) = ink {
                 return ink;
             }
-            let band = ((v * self.angle.cos() - u * self.angle.sin()) * self.bands + self.slide)
+            let band = ((v * self.angle.m_cos() - u * self.angle.m_sin()) * self.bands + self.slide)
                 .floor() as i64;
             0.1 + 0.8 * ((band * 2).rem_euclid(5) as f64) / 4.0
         })

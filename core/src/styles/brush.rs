@@ -4,6 +4,7 @@
 //! addition is not associative, so stamping runs sequentially in exactly the
 //! order `abstract_art.py` uses. Only the final per-pixel shading is parallel.
 
+use crate::math::Libm;
 use std::f64::consts::TAU;
 
 use pyo3::FromPyObject;
@@ -17,7 +18,7 @@ use crate::raster::shade;
 /// Maps an intensity buffer through `1 - exp(-max(0, v))`, as `_glow_pixels` does.
 fn glow_pixels(width: usize, height: usize, palette: &Palette, glow: &[f64]) -> Vec<u8> {
     shade(width, height, palette, |x, y| {
-        1.0 - (-glow[y * width + x].max(0.0)).exp()
+        1.0 - (-glow[y * width + x].max(0.0)).m_exp()
     })
 }
 
@@ -75,8 +76,8 @@ impl Style for Flowfield {
             for _ in 0..120 {
                 let angle = fbm(x / scale * 40.0, y / scale * 40.0, seed, 3) * TAU * 2.0;
                 let (ox, oy) = (x, y);
-                x += angle.cos() * step;
-                y += angle.sin() * step;
+                x += angle.m_cos() * step;
+                y += angle.m_sin() * step;
                 let mut previous = None;
                 for i in 0..=samples {
                     let fraction = i as f64 / samples as f64;
@@ -113,11 +114,11 @@ impl Style for Comet {
             let limit = (radius * 2.0) * (radius * 2.0);
             for s in 0..steps {
                 let t = (s as f64 + 0.5) / steps as f64;
-                let px = x0 + angle.cos() * speed * t;
-                let py = y0 + angle.sin() * speed * t;
+                let px = x0 + angle.m_cos() * speed * t;
+                let py = y0 + angle.m_sin() * speed * t;
                 let (ix, iy) = (px.floor() as i64, py.floor() as i64);
                 let fall = (1.0 - t * 1.6).max(0.0);
-                let g = fall.powf(3.0) * (0.4 + 0.6 * (1.0 - t));
+                let g = fall.m_powf(3.0) * (0.4 + 0.6 * (1.0 - t));
                 for ddx in -reach..=reach {
                     for ddy in -reach..=reach {
                         let dx = (ix + ddx) as f64 - px;
@@ -126,7 +127,7 @@ impl Style for Comet {
                         if d2 <= limit {
                             let (xx, yy) = ((ix + ddx).rem_euclid(w), (iy + ddy).rem_euclid(h));
                             glow[yy as usize * width + xx as usize] +=
-                                g * (-2.0 * d2 / (radius * radius)).exp();
+                                g * (-2.0 * d2 / (radius * radius)).m_exp();
                         }
                     }
                 }
@@ -155,7 +156,7 @@ impl Style for Ink {
                 let u = 1.0 - t;
                 let px = u * u * x0 + 2.0 * u * t * cx + t * t * x1;
                 let py = u * u * y0 + 2.0 * u * t * cy + t * t * y1;
-                let radius = (brush * (1.0 - t).powf(0.7)).max(0.5);
+                let radius = (brush * (1.0 - t).m_powf(0.7)).max(0.5);
                 let reach = (radius * 2.0).ceil() as i64;
                 let limit = (radius * 2.0) * (radius * 2.0);
                 for yy in ((py as i64) - reach).max(0)..((py as i64) + reach + 1).min(h) {
@@ -164,7 +165,7 @@ impl Style for Ink {
                         let d2 = ex * ex + ey * ey;
                         if d2 <= limit {
                             glow[yy as usize * width + xx as usize] +=
-                                alpha * (-2.0 * d2 / (radius * radius)).exp() * 0.3;
+                                alpha * (-2.0 * d2 / (radius * radius)).m_exp() * 0.3;
                         }
                     }
                 }
@@ -185,7 +186,7 @@ impl Style for Ember {
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let mut glow_sum = vec![0.0; width * height];
         for &(cx, y0, rise, size, phase, base_flicker) in &self.embers {
-            let flicker = base_flicker * (0.55 + 0.45 * (phase + 2.0 * phase.sin()).sin());
+            let flicker = base_flicker * (0.55 + 0.45 * (phase + 2.0 * phase.m_sin()).m_sin());
             let cy_top = y0 - rise;
             // The horizontal falloff is exactly 0.0 once |dx| >= size * 2 + 0.01.
             let reach = size * 2.0 + 0.01 + 1.0;
@@ -315,7 +316,7 @@ impl Style for Constellations {
                 let iy = (sy + (ey - sy) * t) as i64;
                 if (0..width as i64).contains(&ix) && (0..height as i64).contains(&iy) {
                     let frac = k as f64 / steps as f64;
-                    let falloff = (-(frac * frac) / 2.0).exp();
+                    let falloff = (-(frac * frac) / 2.0).m_exp();
                     lines[iy as usize * width + ix as usize] += falloff * 0.9;
                 }
             }
@@ -332,7 +333,7 @@ impl Style for Constellations {
                 v += gaussian((fx - sx).hypot(fy - sy), radius) * brightness;
             }
             v += lines[y * width + x];
-            unit(1.0 - (-v).exp())
+            unit(1.0 - (-v).m_exp())
         })
     }
 }
@@ -353,7 +354,7 @@ impl Style for Attractor {
         let mut counts = vec![0u32; width * height];
         let (mut x, mut y) = (0.1_f64, 0.1_f64);
         for i in 0..self.points + 100 {
-            (x, y) = ((a * y).sin() + c * (a * x).cos(), (b * x).sin() + d * (b * y).cos());
+            (x, y) = ((a * y).m_sin() + c * (a * x).m_cos(), (b * x).m_sin() + d * (b * y).m_cos());
             if i >= 100 {
                 let ix = (cx + (x - self.mid.0) * self.scale + 0.5) as i64;
                 let iy = (cy + (y - self.mid.1) * self.scale + 0.5) as i64;
@@ -363,9 +364,9 @@ impl Style for Attractor {
             }
         }
         let top = f64::from(counts.iter().copied().max().unwrap_or(0));
-        let norm = top.ln_1p().max(1e-9);
+        let norm = top.m_ln_1p().max(1e-9);
         shade(width, height, palette, |px, py| {
-            f64::from(counts[py * width + px]).ln_1p() / norm
+            f64::from(counts[py * width + px]).m_ln_1p() / norm
         })
     }
 }

@@ -5,6 +5,7 @@
 //! returns packed RGB bytes (row-major, 3 bytes per pixel).
 
 mod geometry;
+mod math;
 mod noise;
 mod palette;
 mod raster;
