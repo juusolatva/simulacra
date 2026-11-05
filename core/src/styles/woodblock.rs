@@ -1,6 +1,7 @@
 //! Carved landscapes. Python builds the animated silhouettes; Rust shades the
 //! paper, overlapping layers and contour grooves in Python's operation order.
 
+use crate::math::Libm;
 use rayon::prelude::*;
 
 use super::Style;
@@ -20,7 +21,7 @@ struct Layer {
 impl Layer {
     fn ink(&self, depth: f64, x: usize, scale: f64) -> f64 {
         let mut groove = depth / self.spacing;
-        groove += 0.16 * (x as f64 / scale * 18.0 + depth / scale * 12.0 + self.carve).sin();
+        groove += 0.16 * (x as f64 / scale * 18.0 + depth / scale * 12.0 + self.carve).m_sin();
         if depth < 0.007 * scale {
             return 0.04;
         }

@@ -1,6 +1,7 @@
 # Rust rewrite plan
 
-Status: Phase 1 in progress (test workflow and wider native comparison done).
+Status: Phase 1 in progress (test workflow, wider native comparison, `portable`
+drift and compatibility policy done).
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -115,12 +116,14 @@ Timing: while style experimentation continues.
   and -1.81, and `test_native_styles_match_python_exactly_at_larger_sizes`
   (opt-in with `ABSTRACT_ART_SLOW=1`) runs 200 × 150 and 150 × 200 at phases
   0.37 and 0.81 in its own CI job.
-- [ ] Measure the `portable` drift now, with the current core: add a feature
+- [x] Measure the `portable` drift now, with the current core: add a feature
   that routes the libm calls listed in Phase 2 through the `libm` crate (leave
   `hypot` as it is, since Phase 2 replaces it), rerun that comparison per
   style, and compare the attractor parameters chosen for each seed. Decide the
   compatibility policy from the result; it shapes the Phase 2 math module and
-  the fixtures.
+  the fixtures. Done on 2026-11-07; see "Measured `portable` drift" below.
+  Policy decided on 2026-11-07: release builds use `portable` (see
+  "Compatibility policy").
 - [ ] Record scene preparation, native rendering, encoding, and total runtime
   separately using release builds.
 - [ ] Measure first renders and repeated renders separately. Explicitly record
@@ -355,10 +358,15 @@ on a machine without Python, with documented compatibility and performance.
 
 ## Compatibility policy
 
-The proposed default is to preserve existing seeded artwork during migration.
-Confirm this policy in Phase 1, from the measured `portable` drift, before
-porting seeded builders. Do not silently substitute a different RNG and assume
-matching seed values produce matching scenes.
+Decided on 2026-11-07, from the measured drift below: release builds use the
+`portable` math backend, and the resulting drift from the Python reference is
+accepted. Seeded artwork is otherwise preserved: the random generator, draw
+order and numeric behavior are ported exactly, and the `system` backend still
+proves each port against Python. Accepted consequences: `cymatics` may differ
+by one level in rare pixels, every `attractor` image carries different
+point-density noise, and about 9% of `attractor` seeds draw a different
+attractor than the Python version. Do not silently substitute a different
+RNG and assume matching seed values produce matching scenes.
 
 Exact compatibility requires matching seed initialization, including negative
 and large integer seeds; random helpers such as `random()`, `uniform()`,
@@ -400,14 +408,40 @@ occupied cells, 12 sampled phases, up to 300 attempts), so a different libm
 can choose a different parameter set and draw a different attractor for the
 same seed.
 
+### Measured `portable` drift
+
+Measured on 2026-11-07 (Fedora, glibc 2.43, CPython 3.14, `libm` 0.2.16).
+The `portable` cargo feature of `core` sends `exp`, `sin`, `cos`, `tan`,
+`atan`, `atan2`, `powf` and `ln_1p` through the `libm` crate
+(`core/src/math.rs`, trait `Libm`); the default build is unchanged and still
+byte-identical to Python. Renders compared: every style at 200 × 150
+(seed 3, lagoon), 150 × 200 (seed 17, thermal), 160 × 120 (seed -7, neon) and
+640 × 480 (seed 1, deep), each at phases 0, 0.37 and 0.81.
+
+| Style | Shaders on `portable`, scenes from Python | Scenes on `portable` math too |
+| --- | --- | --- |
+| 46 styles | Byte-identical | Byte-identical |
+| `cymatics` | 2 bytes differ by 1 (one render of 12) | Same |
+| `attractor` | Every render differs: 7.9% of bytes, up to 157 levels | 8.1% of bytes, up to 251 levels |
+
+- Attractor renders with the same parameters show the same curves; the
+  differences are point-density noise along them, because the chaotic orbit
+  samples the same attractor along a different path.
+- Parameter selection is the visible risk: with the scene builder's `sin` and
+  `cos` (and the other libm functions it uses) taken from the `libm` crate,
+  46 of seeds 0 to 499 (9%) chose different attractor parameters, so those
+  seeds draw a different attractor. The scene check replaced Python's `math`
+  functions through `ctypes`; `**` (libm `pow`) was not replaced.
+- Speed: with the `portable` shaders a full pass over all styles at
+  1280 × 960 took about 12% longer (5.8 s against 6.5 s, including Python
+  scene time); `lunar` was about 20% slower.
+
 Resolution: the `system` math backend proves the port against Python on the
 same machine; release builds use the `portable` backend, so a given seed
 gives the same image on every platform, which the `portable` fixtures check
-on every release target. Measure how far `portable` output drifts from the
-reference per style in Phase 1 (differing bytes, and whether attractor
-parameters or trajectories change) and decide whether that drift is
-acceptable before porting seeded builders. "Standalone" and "byte-identical
-to Python everywhere" cannot both hold without this choice.
+on every release target. The drift was measured in Phase 1 (see "Measured
+`portable` drift") and accepted. "Standalone" and "byte-identical to Python
+everywhere" cannot both hold, and this policy chooses the first.
 
 If preserving historical output becomes too restrictive, introduce an explicit
 generation-algorithm version as a separate product decision.
@@ -436,10 +470,10 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 
 1. Record why prebuilt wheels or a bundled Python application are not enough
    (see "Alternatives considered"), or ship one as an interim release.
-2. Add the test workflow, and extend the native-versus-Python test to nonzero
+2. Done: add the test workflow, and extend the native-versus-Python test to nonzero
    phases and larger sizes.
-3. Measure `portable` drift with the current core and confirm the
-   compatibility policy.
+3. Done: measure `portable` drift and decide the compatibility policy
+   (release builds use `portable`).
 4. Establish the stage-level performance baseline.
 5. Extract the Python-independent Rust engine while retaining the adapter,
    including the math module (CPython's `hypot`, `system` and `portable`

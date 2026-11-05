@@ -92,3 +92,8 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --locked --manifest-path core/Cargo.toml --all-targets -- -D warnings
+
+      - name: Cargo test and Clippy with the portable math backend
+        run: |
+          cargo test --locked --manifest-path core/Cargo.toml --features portable
+          cargo clippy --locked --manifest-path core/Cargo.toml --all-targets --features portable -- -D warnings
