@@ -15,6 +15,15 @@ from unittest import mock
 
 import abstract_art as art
 
+# Styles whose native output may differ from Python when the core is built with
+# the portable math feature (see "Measured portable drift" in PLAN.md).
+PORTABLE_DRIFT_STYLES = frozenset({'attractor', 'cymatics'})
+
+
+def _may_drift(style):
+    """True if the native core uses portable math and ``style`` can differ from Python."""
+    return getattr(art._core, 'PORTABLE', False) and style in PORTABLE_DRIFT_STYLES
+
 
 def chunks(path):
     data = pathlib.Path(path).read_bytes()
@@ -365,6 +374,8 @@ class RenderingTests(unittest.TestCase):
 
     def _assert_native_matches_python(self, cases, phases):
         for style in art.NATIVE_STYLES:
+            if _may_drift(style):
+                continue
             for width, height, seed, palette in cases:
                 for phase in phases:
                     with self.subTest(style=style, size=(width, height), seed=seed, phase=phase):
@@ -971,7 +982,7 @@ class RenderingTests(unittest.TestCase):
 
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_matches_python_at_any_phase(self):
-        for style in sorted(art.ANIMATED_STYLES):
+        for style in sorted(s for s in art.ANIMATED_STYLES if not _may_drift(s)):
             for phase in (0.13, 0.5, 2.25, -0.4):
                 with self.subTest(style=style, phase=phase):
                     native = art.render_rgb(37, 29, 6, style, 'neon', phase)

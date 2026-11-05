@@ -409,9 +409,12 @@ on a machine without Python, with documented compatibility and performance.
 
 ## Compatibility policy
 
-Decided on 2026-11-07, from the measured drift below: release builds use the
-`portable` math backend, and the resulting drift from the Python reference is
-accepted. Seeded artwork is otherwise preserved: the random generator, draw
+Decided on 2026-11-07, from the measured drift below: the standalone release
+binaries (Phase 3 onward) are built with `--features portable`, and the
+resulting drift from the Python reference is accepted. Development builds of
+the Python extension (`maturin develop`, with or without `--release`) keep the
+default `system` backend, because the differential tests need it; the
+`portable` feature is opt-in until the release pipeline sets it. Seeded artwork is otherwise preserved: the random generator, draw
 order and numeric behavior are ported exactly, and the `system` backend still
 proves each port against Python. Accepted consequences: `cymatics` may differ
 by one level in rare pixels, every `attractor` image carries different

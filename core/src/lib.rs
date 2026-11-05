@@ -26,6 +26,11 @@ mod abstract_art_core {
         Palette::new(stops).map_err(PyValueError::new_err)
     }
 
+    /// True when built with the `portable` feature (the pure-Rust `libm` crate),
+    /// whose output can differ from Python's; see `PORTABLE_DRIFT_STYLES` in Python.
+    #[pymodule_export]
+    const PORTABLE: bool = cfg!(feature = "portable");
+
     /// Names of the styles this module can render.
     #[pymodule_export]
     const STYLES: [&str; 48] = [

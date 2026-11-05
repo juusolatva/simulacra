@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   python:
-    name: Python ${{ matrix.python }}${{ matrix.core && ' with the Rust core' || '' }}
+    name: Python ${{ matrix.python }}${{ matrix.core && format(' with the Rust core{0}', matrix.core == 'portable' && ' (portable math)' || '') || '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read # Check out the code
@@ -25,6 +25,12 @@ jobs:
       matrix:
         python: ['3.12', '3.14']
         core: [false, true]
+        # The core with the portable math backend (a new core value, so include adds a
+        # job rather than changing one). The suite skips exact Python comparisons
+        # only for the styles in PORTABLE_DRIFT_STYLES.
+        include:
+          - python: '3.12'
+            core: portable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,7 +45,9 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install maturin
-          .venv/bin/maturin develop --release -m core/Cargo.toml
+          .venv/bin/maturin develop --release -m core/Cargo.toml ${MATRIX_FEATURES:+--features "$MATRIX_FEATURES"}
+        env:
+          MATRIX_FEATURES: ${{ matrix.core == 'portable' && 'portable' || '' }}
 
       - name: Run the tests
         run: |
