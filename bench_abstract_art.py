@@ -100,6 +100,8 @@ CLI_WORKLOADS = (
                                 "--frames", "48"]),
     ("apng 640x480x48 attractor", ["--style", "attractor", "--width", "640", "--height", "480",
                                    "--frames", "48"]),
+    ("apng 640x480x48 woodblock", ["--style", "woodblock", "--width", "640", "--height", "480",
+                                   "--frames", "48"]),
     ("gif 320x240x48 plasma", ["--style", "plasma", "--width", "320", "--height", "240",
                                "--frames", "48", "gif"]),
     ("gif 640x480x48 woodblock", ["--style", "woodblock", "--width", "640", "--height", "480",
@@ -118,6 +120,7 @@ def run_cli(arguments, seed, directory):
     if hasattr(os, "wait4"):
         _, status, usage = os.wait4(process.pid, 0)
         code = os.waitstatus_to_exitcode(status)
+        process.returncode = code  # wait4 reaped it, so tell Popen it has finished
         # ru_maxrss is in bytes on macOS and in KiB on Linux and the BSDs.
         peak = usage.ru_maxrss / (1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0)
     else:  # Windows has no wait4, so peak memory is not measured there.
@@ -211,6 +214,8 @@ def main():
 
 def checked_inputs(parser, args, registry):
     """Styles (all of ``registry`` by default), width and height, or a parser error."""
+    if (args.width is None) != (args.height is None):
+        parser.error("give both --width and --height, or neither (and --size)")
     styles = args.styles.split(",") if args.styles else list(registry)
     unknown = [s for s in styles if s not in registry]
     if unknown:

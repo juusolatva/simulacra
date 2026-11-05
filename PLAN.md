@@ -170,7 +170,8 @@ glibc 2.43, CPython 3.14.10, release build of the core with the `system`
 backend), seed 1, palette `deep`. Single runs vary by about ±30%; rerun on the
 same machine before comparing.
 
-`bench_abstract_art.py --stages --width W --height H --phase 0.37`, totals over
+`bench_abstract_art.py --stages --width W --height H --phase 0.37 --repeat 3`,
+totals over
 all 48 native styles (best of 3, except the cold scene, which is one run):
 
 | Size | Scene, cold | Scene, warm | Shader | PNG encode and write |
@@ -190,26 +191,31 @@ Notable per style:
 - At 640 × 480 PNG encoding costs as much as shading in total, and more than
   shading for most fast styles.
 
-`bench_abstract_art.py --cli` (a fresh process per workload, wall time and peak
-resident memory):
+`bench_abstract_art.py --cli` (a fresh process per workload, one run each, wall
+time and peak resident memory). These runs were about 20% slower than the
+stage runs above, a sign of the machine's run-to-run variance:
 
 | Workload | Seconds | Peak MiB |
 | --- | --- | --- |
-| Still 640 × 480 `waves` | 0.15 | 33 |
-| Still 640 × 480 `attractor` | 0.61 | 35 |
-| Still 640 × 480 `woodblock` | 0.15 | 34 |
-| Still 640 × 480 `lunar` | 0.27 | 33 |
-| Still 4K `plasma` | 1.00 | 102 |
-| Still 4K `ink` | 2.88 | 103 |
-| APNG 320 × 240, 48 frames, `plasma` | 0.76 | 44 |
-| APNG 640 × 480, 48 frames, `attractor` | 6.48 | 76 |
-| GIF 320 × 240, 48 frames, `plasma` | 2.57 | 48 |
-| GIF 640 × 480, 48 frames, `woodblock` | 8.34 | 85 |
+| Still 640 × 480 `waves` | 0.22 | 33 |
+| Still 640 × 480 `attractor` | 0.74 | 35 |
+| Still 640 × 480 `woodblock` | 0.20 | 33 |
+| Still 640 × 480 `lunar` | 0.38 | 35 |
+| Still 4K `plasma` | 1.19 | 102 |
+| Still 4K `ink` | 3.54 | 102 |
+| APNG 320 × 240, 48 frames, `plasma` | 0.98 | 42 |
+| APNG 640 × 480, 48 frames, `attractor` | 8.14 | 75 |
+| APNG 640 × 480, 48 frames, `woodblock` | 2.89 | 76 |
+| GIF 320 × 240, 48 frames, `plasma` | 3.82 | 48 |
+| GIF 640 × 480, 48 frames, `woodblock` | 9.21 | 85 |
 
-Encoding 48 woodblock frames at 640 × 480 alone took 9.3 s as GIF (the
-pure-Python color mapping and LZW encoder) against 2.4 s as APNG, so GIF
-encoding is the largest single cost in animated output. Peak memory grows
-with the retained frames (48 frames at 640 × 480 are 42 MiB of packed RGB).
+The same 48 `woodblock` frames at 640 × 480 take 9.2 s end to end as GIF and
+2.9 s as APNG. Encoding alone (best of 3, frames already rendered) takes 8.2 s
+as GIF (the pure-Python color mapping and LZW encoder) and 2.4 s as APNG, so
+GIF encoding is the largest single cost in animated output. Among the APNG
+runs, `attractor` is slow because its sequential orbit shader runs per frame.
+Peak memory grows with the retained frames (48 frames at 640 × 480 are
+42 MiB of packed RGB).
 
 ## Phase 2: Extract the Python-independent engine
 
