@@ -45,6 +45,8 @@ ABSTRACT_ART_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes test_abstrac
 source .venv/bin/activate && maturin develop --release -m core/Cargo.toml   # rebuild core
 cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/Cargo.toml --all-targets
 python3 bench_abstract_art.py --width 640 --height 480 --compare <saved.json>
+.venv/bin/python bench_abstract_art.py --stages --width 640 --height 480 --phase 0.37   # scene/shader/PNG per style
+.venv/bin/python bench_abstract_art.py --cli   # end-to-end CLI runs with peak memory
 python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
 python3 abstract_art.py --help             # lists styles (from STYLES) and palettes
 # coverage as CI runs it: in a venv without the core, run the suite, then build the core, run it again, append:
