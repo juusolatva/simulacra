@@ -115,11 +115,17 @@ def run_cli(arguments, seed, directory):
                "--out", str(pathlib.Path(directory) / ("cli" + suffix))]
     start = time.perf_counter()
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL)
-    _, status, usage = os.wait4(process.pid, 0)
+    if hasattr(os, "wait4"):
+        _, status, usage = os.wait4(process.pid, 0)
+        code = os.waitstatus_to_exitcode(status)
+        # ru_maxrss is in bytes on macOS and in KiB on Linux and the BSDs.
+        peak = usage.ru_maxrss / (1024.0 * 1024.0 if sys.platform == "darwin" else 1024.0)
+    else:  # Windows has no wait4, so peak memory is not measured there.
+        code, peak = process.wait(), None
     elapsed = time.perf_counter() - start
-    if os.waitstatus_to_exitcode(status):
+    if code:
         raise RuntimeError("CLI failed: %s" % " ".join(command))
-    return {"seconds": elapsed, "peak_mib": usage.ru_maxrss / 1024.0}
+    return {"seconds": elapsed, "peak_mib": peak}
 
 
 def environment():
@@ -185,14 +191,7 @@ def main():
         run_detailed(parser, args)
         return
 
-    styles = args.styles.split(",") if args.styles else list(art.STYLES)
-    unknown = [s for s in styles if s not in art.STYLES]
-    if unknown:
-        parser.error("unknown style(s): %s" % ", ".join(unknown))
-    width = args.size if args.width is None else args.width
-    height = args.size if args.height is None else args.height
-    if width <= 0 or height <= 0 or args.repeat <= 0:
-        parser.error("sizes and repeat must be positive")
+    styles, width, height = checked_inputs(parser, args, art.STYLES)
     baseline = {}
     if args.compare:
         try:
@@ -210,16 +209,27 @@ def main():
                        "seconds": results}, handle, indent=1)
 
 
+def checked_inputs(parser, args, registry):
+    """Styles (all of ``registry`` by default), width and height, or a parser error."""
+    styles = args.styles.split(",") if args.styles else list(registry)
+    unknown = [s for s in styles if s not in registry]
+    if unknown:
+        parser.error("unknown style(s): %s" % ", ".join(unknown))
+    width = args.size if args.width is None else args.width
+    height = args.size if args.height is None else args.height
+    if width <= 0 or height <= 0 or args.repeat <= 0:
+        parser.error("sizes and repeat must be positive")
+    return styles, width, height
+
+
 def run_detailed(parser, args):
     """``--stages`` and ``--cli``: print tables and optionally save them with the environment."""
     if art._core is None:
         parser.error("--stages and --cli need the Rust core")
+    styles, width, height = checked_inputs(parser, args, art.NATIVE_STYLES)
     report = {"environment": environment()}
     with tempfile.TemporaryDirectory() as directory:
         if args.stages:
-            styles = args.styles.split(",") if args.styles else list(art.NATIVE_STYLES)
-            width = args.size if args.width is None else args.width
-            height = args.size if args.height is None else args.height
             stages = {style: time_stages(style, width, height, args.seed, args.palette, args.phase,
                                          args.repeat, directory) for style in styles}
             print_stages(stages)
@@ -231,7 +241,8 @@ def run_detailed(parser, args):
             for label, arguments in CLI_WORKLOADS:
                 result = run_cli(arguments, args.seed, directory)
                 report["cli"][label] = result
-                print("%-28s %9.3f %9.1f" % (label, result["seconds"], result["peak_mib"]))
+                peak = "n/a" if result["peak_mib"] is None else "%.1f" % result["peak_mib"]
+                print("%-28s %9.3f %9s" % (label, result["seconds"], peak))
     if args.save:
         with open(args.save, "w") as handle:
             json.dump(report, handle, indent=1)
