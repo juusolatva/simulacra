@@ -10,13 +10,21 @@
 /// Libm-backed methods on `f64`, named with an `m_` prefix so call sites read
 /// like the `f64` methods they replace.
 pub trait Libm {
+    #[must_use]
     fn m_exp(self) -> f64;
+    #[must_use]
     fn m_sin(self) -> f64;
+    #[must_use]
     fn m_cos(self) -> f64;
+    #[must_use]
     fn m_tan(self) -> f64;
+    #[must_use]
     fn m_atan(self) -> f64;
+    #[must_use]
     fn m_atan2(self, other: f64) -> f64;
+    #[must_use]
     fn m_powf(self, n: f64) -> f64;
+    #[must_use]
     fn m_ln_1p(self) -> f64;
 }
 
