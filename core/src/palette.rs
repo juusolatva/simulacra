@@ -1,4 +1,4 @@
-//! Palette interpolation, ported from `palette_color()` in `abstract_art.py`.
+//! Palette interpolation, ported from `palette_color()` in `simulacra.py`.
 
 pub struct Palette {
     stops: Vec<(i64, i64, i64)>,

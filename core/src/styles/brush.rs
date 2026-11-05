@@ -2,7 +2,7 @@
 //!
 //! These accumulate contributions in a fixed order, and floating-point
 //! addition is not associative, so stamping runs sequentially in exactly the
-//! order `abstract_art.py` uses. Only the final per-pixel shading is parallel.
+//! order `simulacra.py` uses. Only the final per-pixel shading is parallel.
 
 use crate::math::Libm;
 use std::f64::consts::TAU;

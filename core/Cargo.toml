@@ -1,14 +1,14 @@
 [package]
-name = "abstract_art_core"
+name = "simulacra_core"
 version = "0.1.0"
 edition = "2024"
-description = "Native (Rust) renderers for abstract_art.py"
+description = "Native (Rust) renderers for simulacra.py"
 license = "MIT"
 publish = false
 
 [lib]
 # Must match the #[pymodule] name in src/lib.rs.
-name = "abstract_art_core"
+name = "simulacra_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

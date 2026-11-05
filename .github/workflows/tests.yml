@@ -70,12 +70,12 @@ jobs:
 
       - name: Build the Rust core and compare it with Python
         env:
-          ABSTRACT_ART_SLOW: '1'
+          SIMULACRA_SLOW: '1'
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install maturin
           .venv/bin/maturin develop --release -m core/Cargo.toml
-          .venv/bin/python -m unittest -v -k larger_sizes test_abstract_art
+          .venv/bin/python -m unittest -v -k larger_sizes test_simulacra
 
   rust:
     name: Cargo test and Clippy

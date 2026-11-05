@@ -1,4 +1,4 @@
-//! Native renderers for `abstract_art.py`.
+//! Native renderers for `simulacra.py`.
 //!
 //! Python validates arguments and generates each scene with `random.Random`,
 //! so seeds stay compatible; this crate shades the pixels in parallel and
@@ -12,7 +12,7 @@ mod raster;
 mod styles;
 
 #[pyo3::pymodule]
-mod abstract_art_core {
+mod simulacra_core {
     use pyo3::exceptions::PyValueError;
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
@@ -160,7 +160,7 @@ mod abstract_art_core {
         Ok(PyBytes::new(py, &rgb))
     }
 
-    /// fBm noise in [0, 1]; same results as `abstract_art.fbm`. A `phase`
+    /// fBm noise in [0, 1]; same results as `simulacra.fbm`. A `phase`
     /// (1.0 repeats 0.0) makes it evolve over a loop.
     #[pyfunction]
     #[pyo3(signature = (x, y, seed, octaves, phase=0.0))]
@@ -168,7 +168,7 @@ mod abstract_art_core {
         crate::noise::fbm_loop(x, y, seed, octaves, phase)
     }
 
-    /// Palette lookup; same results as `abstract_art.palette_color` (clamped to 0..=255).
+    /// Palette lookup; same results as `simulacra.palette_color` (clamped to 0..=255).
     #[pyfunction]
     fn palette_color(stops: Stops, t: f64) -> PyResult<(u8, u8, u8)> {
         let [r, g, b] = palette(stops)?.color(t);

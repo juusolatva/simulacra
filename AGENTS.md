@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-`abstract_art.py` is a generative art tool: 48 styles, 24 palettes, PNG, APNG and GIF writers and a CLI. `test_abstract_art.py` holds the `unittest` suite and `bench_abstract_art.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders all 48 styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
+`simulacra.py` is a generative art tool (Simulacra, formerly Abstract Art) that draws abstract patterns and stylized representations of real phenomena: 48 styles, 24 palettes, PNG, APNG and GIF writers and a CLI. `test_simulacra.py` holds the `unittest` suite and `bench_simulacra.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is an optional Rust extension that renders all 48 styles natively. Third-party dependencies are allowed; the standard-library-only rule has been dropped.
 
 ## Progress
 
@@ -12,7 +12,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | --- | --- | --- |
 | Bug fixes: color handling, noise range, dark and flat styles, writers, `STYLES` registry, tests | Done | PR #1 |
 | SonarQube cleanup: complexity ≤ 15, umask-safe writers | Done | PR #1 |
-| Benchmark script (`bench_abstract_art.py`) | Done | PR #2 |
+| Benchmark script (`bench_simulacra.py`) | Done | PR #2 |
 | Python algorithmic fixes: exact culling, segment-based torus and lissajous | Done | PR #2 |
 | Rust core (PyO3 + rayon) with packed `render_rgb()` | Done | PR #2 |
 | Native styles, batch 1 (18): blobs, bloom, circuit, cosmic, drift, galaxy, geo, interference, kaleidoscope, mandala, nebula, orbits, pinwheel, plasma, prism, quasar, shard, waves | Done | PR #2 |
@@ -32,6 +32,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | CI: SonarQube Cloud with coverage (about 96%), OSV-Scanner | Done | PR #14 |
 | Rust rewrite (`PLAN.md`), Phase 1: test workflow for every PR, native-versus-Python test at nonzero phases and larger sizes | Done | — |
 | Rust rewrite, Phase 1: `portable` math feature and measured drift (46 styles identical, `cymatics` ±1 in 2 bytes, `attractor` differs and 9% of seeds pick other parameters) | Done. Policy: release builds use `portable` and accept this drift | — |
+| Rename the project from Abstract Art to Simulacra (it now draws representations of real phenomena too): `simulacra.py`, `test_simulacra.py`, `bench_simulacra.py`, Rust module `simulacra_core`, `SIMULACRA_SLOW` | Done. The GitHub repository and the SonarQube project key (`juusolatva_abstract-art`) keep the old name for now | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
 Measured at 640×480: the original 36 styles took 178 s in pure Python at the start (`mosaic` came later). With every style native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
@@ -40,15 +41,15 @@ Measured at 640×480: the original 36 styles took 178 s in pure Python at the st
 
 ```bash
 python3 -m unittest -q                     # full suite, pure Python (native tests skip)
-ABSTRACT_ART_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes test_abstract_art   # slow native check
+SIMULACRA_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes test_simulacra   # slow native check
 .venv/bin/python -m unittest -q            # with the Rust core: also checks native == Python
 source .venv/bin/activate && maturin develop --release -m core/Cargo.toml   # rebuild core
 cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/Cargo.toml --all-targets
-python3 bench_abstract_art.py --width 640 --height 480 --compare <saved.json>
-.venv/bin/python bench_abstract_art.py --stages --width 640 --height 480 --phase 0.37 --repeat 3   # scene/shader/PNG per style
-.venv/bin/python bench_abstract_art.py --cli   # end-to-end CLI runs with peak memory
-python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
-python3 abstract_art.py --help             # lists styles (from STYLES) and palettes
+python3 bench_simulacra.py --width 640 --height 480 --compare <saved.json>
+.venv/bin/python bench_simulacra.py --stages --width 640 --height 480 --phase 0.37 --repeat 3   # scene/shader/PNG per style
+.venv/bin/python bench_simulacra.py --cli   # end-to-end CLI runs with peak memory
+python3 simulacra.py --style ink --palette lagoon --seed 17 --out ink.png
+python3 simulacra.py --help             # lists styles (from STYLES) and palettes
 # coverage as CI runs it: in a venv without the core, run the suite, then build the core, run it again, append:
 python -m coverage run -m unittest -q
 maturin develop -m core/Cargo.toml                 # builds the core into the active venv
@@ -59,7 +60,7 @@ Do not commit generated images.
 
 ## CI
 
-- **Tests (`.github/workflows/tests.yml`):** runs on every push to main and every pull request, forks included (no secrets): the suite on Python 3.12 and 3.14, each without and with the Rust core, plus Python 3.12 with a `portable` core; a separate job for the slow native-versus-Python comparison at larger sizes (`ABSTRACT_ART_SLOW=1`); and `cargo test` plus Clippy with `-D warnings`.
+- **Tests (`.github/workflows/tests.yml`):** runs on every push to main and every pull request, forks included (no secrets): the suite on Python 3.12 and 3.14, each without and with the Rust core, plus Python 3.12 with a `portable` core; a separate job for the slow native-versus-Python comparison at larger sizes (`SIMULACRA_SLOW=1`); and `cargo test` plus Clippy with `-D warnings`.
 - **SonarQube Cloud (`.github/workflows/sonarqube.yml`, `sonar-project.properties`, `.coveragerc`):** runs the suite twice under `coverage` (once without the Rust core, once with it built via `maturin develop`, appended into one report) and scans with `coverage.xml`. Only Python coverage is collected; Rust is exercised through the same tests. The scan needs `SONAR_TOKEN` and skips pull requests from forks, which cannot read secrets. SonarQube's Automatic Analysis must be off, because it conflicts with CI analysis.
 - **OSV-Scanner (`.github/workflows/osv-scanner.yml`):** scans `-r ./`, which finds `core/Cargo.lock` (the Python module has no dependencies). Pull requests and merge groups use the PR workflow, and pushes to main, a weekly schedule and manual runs use the full scan. SARIF upload is off (`upload-sarif: false`) while the repository is private, since code scanning needs GitHub Code Security there; turn it back on when the repository is public. Actions are pinned by commit SHA with the version in a comment.
 
@@ -71,7 +72,7 @@ Do not commit generated images.
 - **Noise:** `fbm()` returns values in `[0, 1]` centered near 0.5. Do **not** treat it as `[-1, 1]` (`n * 0.5 + 0.5` was a past bug in 8 styles). Use `_contrast(n, gain)` to stretch it, and `polar_noise()` for anything indexed by an angle, because raw `theta` creates a seam at ±π.
 - **Colors:** palette stops are sRGB, and the writers store samples unchanged. Do not reintroduce a linear-to-sRGB conversion.
 - **Writers:** `_atomic_write()` writes to a temporary file created with `os.open(..., 0o666)` and then calls `os.replace()`. Never call `os.umask()`, since it is process-wide and unsafe with threads.
-- **Rust core (`core/`, module `abstract_art_core`):** optional; imported as `_core` (None when missing). Python generates the scene (all `random.Random` use) with a `_x_scene()` builder that returns plain data. `NATIVE_STYLES` maps each native style to its builder, and `_core.render(style, width, height, seed, stops, scene)` reads the scene into a per-style Rust struct (`#[derive(FromPyObject)]`, `from_item_all`), shades rows in parallel (rayon) and returns packed RGB bytes. `render()` and `render_rgb()` use it automatically. Pass seeds through `_seed32()`. `_core.STYLES` must match `NATIVE_STYLES` (tested).
+- **Rust core (`core/`, module `simulacra_core`):** optional; imported as `_core` (None when missing). Python generates the scene (all `random.Random` use) with a `_x_scene()` builder that returns plain data. `NATIVE_STYLES` maps each native style to its builder, and `_core.render(style, width, height, seed, stops, scene)` reads the scene into a per-style Rust struct (`#[derive(FromPyObject)]`, `from_item_all`), shades rows in parallel (rayon) and returns packed RGB bytes. `render()` and `render_rgb()` use it automatically. Pass seeds through `_seed32()`. `_core.STYLES` must match `NATIVE_STYLES` (tested).
 - **Native output must be byte-identical to Python.** Port expressions operation-for-operation in the same order (no algebraic rewrites, no `mul_add`, no `clamp` where Python's `max/min` NaN behavior differs), and keep the Python renderer as the reference. `test_native_styles_match_python_exactly` enforces this; extend its cases when porting a style. Move the style's random layout into `_x_scene()` first and have the Python renderer use it, verifying unchanged output with a fingerprint. Call libm functions through the `Libm` trait in `core/src/math.rs` (`x.m_exp()`, `m_sin`, `m_cos`, `m_tan`, `m_atan`, `m_atan2`, `m_powf`, `m_ln_1p`), never the `f64` methods: the default build uses the platform libm like Python, and the `portable` feature (`--features portable`) swaps in the pure-Rust `libm` crate (see `PLAN.md`, "Measured `portable` drift"). Standalone release binaries will use `portable`; keep development builds on the default so native output stays byte-identical to Python. A core built with `portable` reports `_core.PORTABLE`, and the tests then hold only `PORTABLE_DRIFT_STYLES` (`attractor`, `cymatics`) to measured bounds instead of exact equality (`_assert_native_close`); CI runs the suite against such a build. Rust helpers that replicate Python semantics live in `core/src/geometry.rs` (`py_mod`, `py_sum`, polygon and segment distances) and `core/src/styles/mod.rs` (`gaussian`, `unit`, `center`, `small_side`).
 - **Animation (`phase`):** a style moves by adding `_loop(phase, k)` (`tau * k * phase`, `k` a whole number, negative to reverse) to phases and angles in its `_x_scene()`, so the Rust shader needs no change and native stays byte-identical. Keep it free of new random draws (derive per-item values from the index) so scenes at phase 0 match the still image, and give each style an entry in `ANIMATED_STYLES` and `_animated_scene()` in `NATIVE_STYLES`. Offsets that are not whole turns, such as the drift in `voronoi`, are measured from their starting value so phase 0 adds exactly 0.0.
 - **Looping noise:** `fbm(..., phase=)` (Rust `fbm_loop`) blends a stack of ordinary 2D noise layers, each the same noise under the seed plus `7919 * layer`. Layer 0 is the real seed, so phase 0 is exactly the still noise, and the layer index wraps, so phase 1 repeats phase 0. Octave `i` steps through `_NOISE_LAYERS + i` layers per loop so the octaves do not all stall or pulse together. The blend is linear on purpose; with an eased blend the speed varied about 3x and hitched at the loop point. A style animates its noise by passing `phase` to `fbm` and putting `"phase"` in its scene for the shader. Circling objects use `_circle_offset()`, whose offset is exactly zero at phase 0.
@@ -83,7 +84,7 @@ Do not commit generated images.
 - **Animation is complete:** all 48 styles are in `ANIMATED_STYLES`. The slideshow path in `_frame_plan` remains for a future style without motion and for `--slideshow`.
 - **Woodblock:** `_woodblock_scene()` samples animated hill, cliff and wave silhouettes per column in canvas-relative units. Python and Rust shade the same overlapping layers and carved contour grooves; the final palette stop is paper. `watercolor` is a palette, not a blur or texture filter.
 - **Per-tile styles (`mosaic`):** `_mosaic_scene()` computes one palette position per tile on a grid about `_MOSAIC_TILES` tiles across the short side, so the work does not grow with the canvas, and the Rust shader (`core/src/styles/mosaic.rs`) only expands tiles and grout to pixels. Noise there is sampled in tile units, and `value_noise` has an 8-unit cell, so tile-space noise needs scales near 1 rather than the 0.01 used per pixel. Patterns move by whole tiles (`_mosaic_shift`), wrapping after one period per loop.
-- **GIF (`write_gif`):** the table is 240 palette samples plus 16 greys, shared by all frames; pixels map to the nearest entry once per 5-bit colour cell (cached across frames), and `_lzw_codes()` is a variable-width LZW encoder whose width growth mirrors the decoder, which lags one entry behind. Delays are whole hundredths of a second (`_gif_delay`). Tests decode the output with a reference decoder in `test_abstract_art.py`.
+- **GIF (`write_gif`):** the table is 240 palette samples plus 16 greys, shared by all frames; pixels map to the nearest entry once per 5-bit colour cell (cached across frames), and `_lzw_codes()` is a variable-width LZW encoder whose width growth mirrors the decoder, which lags one entry behind. Delays are whole hundredths of a second (`_gif_delay`). Tests decode the output with a reference decoder in `test_simulacra.py`.
 - **Packed frames:** `render_rgb()` returns `width * height * 3` bytes; the writers accept rows or packed bytes (`_packed_rgb`). The CLI uses packed frames.
 - **Helpers for keeping functions small:** `_shade(width, height, stops, value)` builds rows from a per-pixel `value(x, y)`. `_sample_by_length()` and `_segment_box()` sample curves and yield the pixels near a segment. `_RowFilter` hands per-pixel code only the objects that can reach a row. `_glow_pixels()` maps a flat intensity buffer to rows.
 
@@ -115,7 +116,7 @@ Open ideas, none started: turn OSV-Scanner's SARIF upload back on once the repos
 
 ### Performance
 
-Pure Python took about 178 s for the original 36 styles at 640×480 (see `bench_abstract_art.py`). The Rust core now covers every style in `NATIVE_STYLES`. Algorithmic fixes were done in Python first because they carry over to Rust. Single-run timings on this machine vary by about ±30%, so use `--repeat` and compare against a fresh baseline.
+Pure Python took about 178 s for the original 36 styles at 640×480 (see `bench_simulacra.py`). The Rust core now covers every style in `NATIVE_STYLES`. Algorithmic fixes were done in Python first because they carry over to Rust. Single-run timings on this machine vary by about ±30%, so use `--repeat` and compare against a fresh baseline.
 
 - **Culling has been done** for the cases that keep output byte-identical: row filtering (`_RowFilter`) for stars in `orbits`, `nebula`, `cosmic` and `constellations`, and for glyphs in `mandala`; exact-zero ring bands in `mandala`; column bounds in `ember`; and bounding-box pruning of segments in `circuit` (`_nearest_segment`). A skip is allowed only where a contribution is exactly zero, either from a hard cutoff or because `exp()` underflows past `GAUSSIAN_ZERO` standard deviations.
 - **`render_torus` and `render_lissajous`** now sample their curves at a spacing tied to the glow width and measure distances to line segments (`_sample_by_length`, `_segment_box`), so curve drawing grows with the pixel count. This fixed the torus issue Greptile raised on PR #1. Their remaining cost is per-pixel work (background noise in torus).

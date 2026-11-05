@@ -13,7 +13,7 @@ import unittest
 import zlib
 from unittest import mock
 
-import abstract_art as art
+import simulacra as art
 
 # Styles whose native output may differ from Python when the core is built with
 # the portable math feature (see "Measured portable drift" in PLAN.md).
@@ -424,7 +424,7 @@ class RenderingTests(unittest.TestCase):
         self._assert_native_matches_python(cases, (0.0, 0.37, -1.81))
 
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
-    @unittest.skipUnless(os.environ.get('ABSTRACT_ART_SLOW'), 'set ABSTRACT_ART_SLOW=1 to run')
+    @unittest.skipUnless(os.environ.get('SIMULACRA_SLOW'), 'set SIMULACRA_SLOW=1 to run')
     def test_native_styles_match_python_exactly_at_larger_sizes(self):
         cases = ((200, 150, 3, 'lagoon'), (150, 200, 2 ** 33 + 1, 'thermal'))
         self._assert_native_matches_python(cases, (0.37, 0.81))
@@ -738,13 +738,13 @@ class RenderingTests(unittest.TestCase):
     def test_cli_accepts_every_registered_style(self):
         with tempfile.TemporaryDirectory() as directory:
             out = pathlib.Path(directory) / 'cli.png'
-            argv = ['abstract_art.py', '--style', 'ink', '--width', '6', '--height', '5',
+            argv = ['simulacra.py', '--style', 'ink', '--width', '6', '--height', '5',
                     '--out', str(out)]
             with mock.patch('sys.argv', argv), \
                     mock.patch('builtins.print'):
                 art.main()
             self.assertEqual(struct.unpack('>II', chunks(out)[0][1][:8]), (6, 5))
-        with mock.patch('sys.argv', ['abstract_art.py', '--style', 'nope']), \
+        with mock.patch('sys.argv', ['simulacra.py', '--style', 'nope']), \
                 mock.patch('sys.stderr'), self.assertRaises(SystemExit):
             art.main()
 
@@ -752,7 +752,7 @@ class RenderingTests(unittest.TestCase):
         """Run the CLI with ``args``; return (exit code or None, stdout, stderr)."""
         out, err = io.StringIO(), io.StringIO()
         code = None
-        with mock.patch('sys.argv', ['abstract_art.py', *args]), \
+        with mock.patch('sys.argv', ['simulacra.py', *args]), \
                 mock.patch('sys.stdout', out), mock.patch('sys.stderr', err):
             try:
                 art.main()
