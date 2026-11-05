@@ -1,6 +1,7 @@
 # Rust rewrite plan
 
-Status: Phase 1 in progress (test workflow and wider native comparison done).
+Status: Phase 1 in progress (test workflow, wider native comparison, `portable`
+drift and compatibility policy done).
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -121,7 +122,8 @@ Timing: while style experimentation continues.
   style, and compare the attractor parameters chosen for each seed. Decide the
   compatibility policy from the result; it shapes the Phase 2 math module and
   the fixtures. Done on 2026-11-07; see "Measured `portable` drift" below.
-  The policy decision is still open.
+  Policy decided on 2026-11-07: release builds use `portable` (see
+  "Compatibility policy").
 - [ ] Record scene preparation, native rendering, encoding, and total runtime
   separately using release builds.
 - [ ] Measure first renders and repeated renders separately. Explicitly record
@@ -356,10 +358,15 @@ on a machine without Python, with documented compatibility and performance.
 
 ## Compatibility policy
 
-The proposed default is to preserve existing seeded artwork during migration.
-Confirm this policy in Phase 1, from the measured `portable` drift, before
-porting seeded builders. Do not silently substitute a different RNG and assume
-matching seed values produce matching scenes.
+Decided on 2026-11-07, from the measured drift below: release builds use the
+`portable` math backend, and the resulting drift from the Python reference is
+accepted. Seeded artwork is otherwise preserved: the random generator, draw
+order and numeric behavior are ported exactly, and the `system` backend still
+proves each port against Python. Accepted consequences: `cymatics` may differ
+by one level in rare pixels, every `attractor` image carries different
+point-density noise, and about 9% of `attractor` seeds draw a different
+attractor than the Python version. Do not silently substitute a different
+RNG and assume matching seed values produce matching scenes.
 
 Exact compatibility requires matching seed initialization, including negative
 and large integer seeds; random helpers such as `random()`, `uniform()`,
@@ -432,11 +439,9 @@ byte-identical to Python. Renders compared: every style at 200 × 150
 Resolution: the `system` math backend proves the port against Python on the
 same machine; release builds use the `portable` backend, so a given seed
 gives the same image on every platform, which the `portable` fixtures check
-on every release target. Measure how far `portable` output drifts from the
-reference per style in Phase 1 (differing bytes, and whether attractor
-parameters or trajectories change) and decide whether that drift is
-acceptable before porting seeded builders. "Standalone" and "byte-identical
-to Python everywhere" cannot both hold without this choice.
+on every release target. The drift was measured in Phase 1 (see "Measured
+`portable` drift") and accepted. "Standalone" and "byte-identical to Python
+everywhere" cannot both hold, and this policy chooses the first.
 
 If preserving historical output becomes too restrictive, introduce an explicit
 generation-algorithm version as a separate product decision.
@@ -465,10 +470,10 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 
 1. Record why prebuilt wheels or a bundled Python application are not enough
    (see "Alternatives considered"), or ship one as an interim release.
-2. Add the test workflow, and extend the native-versus-Python test to nonzero
+2. Done: add the test workflow, and extend the native-versus-Python test to nonzero
    phases and larger sizes.
-3. Confirm the compatibility policy from the measured `portable` drift
-   (measurement done).
+3. Done: measure `portable` drift and decide the compatibility policy
+   (release builds use `portable`).
 4. Establish the stage-level performance baseline.
 5. Extract the Python-independent Rust engine while retaining the adapter,
    including the math module (CPython's `hypot`, `system` and `portable`

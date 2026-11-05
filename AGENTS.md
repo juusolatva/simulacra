@@ -31,7 +31,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | GIF output (`write_gif`: own LZW encoder, one shared 256-color table sampled from the palette, chosen by a `.gif` `--out`) | Done | PR #10 |
 | CI: SonarQube Cloud with coverage (about 96%), OSV-Scanner | Done | PR #14 |
 | Rust rewrite (`PLAN.md`), Phase 1: test workflow for every PR, native-versus-Python test at nonzero phases and larger sizes | Done | — |
-| Rust rewrite, Phase 1: `portable` math feature and measured drift (46 styles identical, `cymatics` ±1 in 2 bytes, `attractor` differs and 9% of seeds pick other parameters) | Done; compatibility policy still to decide | — |
+| Rust rewrite, Phase 1: `portable` math feature and measured drift (46 styles identical, `cymatics` ±1 in 2 bytes, `attractor` differs and 9% of seeds pick other parameters) | Done. Policy: release builds use `portable` and accept this drift | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
 Measured at 640×480: the original 36 styles took 178 s in pure Python at the start (`mosaic` came later). With every style native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
