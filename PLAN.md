@@ -1,7 +1,7 @@
 # Rust rewrite plan
 
-Status: Phase 1 in progress (test workflow, wider native comparison, `portable`
-drift and compatibility policy done).
+Status: Phase 1 done except wider baseline coverage (more seeds, aspect
+ratios and palettes); Phase 2 next.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -124,16 +124,19 @@ Timing: while style experimentation continues.
   the fixtures. Done on 2026-11-07; see "Measured `portable` drift" below.
   Policy decided on 2026-11-07: release builds use `portable` (see
   "Compatibility policy").
-- [ ] Record scene preparation, native rendering, encoding, and total runtime
-  separately using release builds.
-- [ ] Measure first renders and repeated renders separately. Explicitly record
+- [x] Record scene preparation, native rendering, encoding, and total runtime
+  separately using release builds (`bench_abstract_art.py --stages` and
+  `--cli`; see "Stage baseline" below).
+- [x] Measure first renders and repeated renders separately. Explicitly record
   whether the attractor parameter cache is cold or warm. The cache
   (`lru_cache(maxsize=64)` keyed by seed) lasts one process, so in the CLI a
   still image or a first frame is cold and later frames are warm.
-- [ ] Measure peak memory for still images and animations.
+- [x] Measure peak memory for still images and animations.
 - [ ] Cover preview sizes, 640 × 480, and selected 4K workloads, with several
-  seeds, aspect ratios, palettes, and nonzero animation phases.
-- [ ] Include fast fields, noise-heavy styles, brush styles, woodblock,
+  seeds, aspect ratios, palettes, and nonzero animation phases. Partly done:
+  the baseline uses one seed and palette at 640 × 480 and 4K, phase 0.37;
+  `--stages` takes any size, seed, palette and phase for more.
+- [x] Include fast fields, noise-heavy styles, brush styles, woodblock,
   attractor, lunar, and both GIF and APNG animations.
 - [ ] Keep comparisons against Python live, on the same machine, as the native
   test does today: Python and Rust builders for scene data, Python and the
@@ -159,6 +162,60 @@ Acceptance: reproducible measurements distinguish scene, shader, encoding,
 and memory costs, and the compatibility policy is decided from the measured
 `portable` drift. Historical timing claims are not used as targets for the
 expanded style collection.
+
+### Stage baseline
+
+Measured on 2026-11-07 on the reference machine (Fedora, x86_64, 8 CPUs,
+glibc 2.43, CPython 3.14.10, release build of the core with the `system`
+backend), seed 1, palette `deep`. Single runs vary by about ±30%; rerun on the
+same machine before comparing.
+
+`bench_abstract_art.py --stages --width W --height H --phase 0.37 --repeat 3`,
+totals over
+all 48 native styles (best of 3, except the cold scene, which is one run):
+
+| Size | Scene, cold | Scene, warm | Shader | PNG encode and write |
+| --- | --- | --- | --- | --- |
+| 640 × 480 | 0.72 s | 0.19 s | 1.44 s | 1.36 s |
+
+Notable per style:
+
+- `attractor`: the cold scene takes 0.50 s at any size (the parameter search
+  in `_attractor_base()`); warm, 0.003 s. Its shader is 0.16 s at 640 × 480
+  and 2.5 s at 4K (the sequential orbit).
+- `mosaic`: its scene builder takes 0.18 s at 640 × 480 and 0.24 s at 4K on
+  every frame, the only warm scene cost that matters.
+- At 4K (3840 × 2160) the slowest shaders are `lunar` 3.7 s, `ink` 3.3 s
+  (sequential stamping), `attractor` 2.5 s and `contour` 1.7 s. PNG encoding
+  (zlib level 9) adds 0.2 to 1.1 s per still.
+- At 640 × 480 PNG encoding costs as much as shading in total, and more than
+  shading for most fast styles.
+
+`bench_abstract_art.py --cli` (a fresh process per workload, one run each, wall
+time and peak resident memory). These runs were about 20% slower than the
+stage runs above, a sign of the machine's run-to-run variance:
+
+| Workload | Seconds | Peak MiB |
+| --- | --- | --- |
+| Still 640 × 480 `waves` | 0.22 | 33 |
+| Still 640 × 480 `attractor` | 0.74 | 35 |
+| Still 640 × 480 `woodblock` | 0.20 | 33 |
+| Still 640 × 480 `lunar` | 0.38 | 35 |
+| Still 4K `plasma` | 1.19 | 102 |
+| Still 4K `ink` | 3.54 | 102 |
+| APNG 320 × 240, 48 frames, `plasma` | 0.98 | 42 |
+| APNG 640 × 480, 48 frames, `attractor` | 8.14 | 75 |
+| APNG 640 × 480, 48 frames, `woodblock` | 2.89 | 76 |
+| GIF 320 × 240, 48 frames, `plasma` | 3.82 | 48 |
+| GIF 640 × 480, 48 frames, `woodblock` | 9.21 | 85 |
+
+The same 48 `woodblock` frames at 640 × 480 take 9.2 s end to end as GIF and
+2.9 s as APNG. Encoding alone (best of 3, frames already rendered) takes 8.2 s
+as GIF (the pure-Python color mapping and LZW encoder) and 2.4 s as APNG, so
+GIF encoding is the largest single cost in animated output. Among the APNG
+runs, `attractor` is slow because its sequential orbit shader runs per frame.
+Peak memory grows with the retained frames (48 frames at 640 × 480 are
+42 MiB of packed RGB).
 
 ## Phase 2: Extract the Python-independent engine
 
@@ -358,9 +415,12 @@ on a machine without Python, with documented compatibility and performance.
 
 ## Compatibility policy
 
-Decided on 2026-11-07, from the measured drift below: release builds use the
-`portable` math backend, and the resulting drift from the Python reference is
-accepted. Seeded artwork is otherwise preserved: the random generator, draw
+Decided on 2026-11-07, from the measured drift below: the standalone release
+binaries (Phase 3 onward) are built with `--features portable`, and the
+resulting drift from the Python reference is accepted. Development builds of
+the Python extension (`maturin develop`, with or without `--release`) keep the
+default `system` backend, because the differential tests need it; the
+`portable` feature is opt-in until the release pipeline sets it. Seeded artwork is otherwise preserved: the random generator, draw
 order and numeric behavior are ported exactly, and the `system` backend still
 proves each port against Python. Accepted consequences: `cymatics` may differ
 by one level in rare pixels, every `attractor` image carries different
@@ -468,13 +528,14 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 
 ## Immediate next work
 
-1. Record why prebuilt wheels or a bundled Python application are not enough
-   (see "Alternatives considered"), or ship one as an interim release.
+1. Skipped while the repository is private: record why prebuilt wheels or a
+   bundled Python application are not enough, or ship one as an interim
+   release.
 2. Done: add the test workflow, and extend the native-versus-Python test to nonzero
    phases and larger sizes.
 3. Done: measure `portable` drift and decide the compatibility policy
    (release builds use `portable`).
-4. Establish the stage-level performance baseline.
+4. Done: establish the stage-level performance baseline.
 5. Extract the Python-independent Rust engine while retaining the adapter,
    including the math module (CPython's `hypot`, `system` and `portable`
    backends) and the `portable` fixtures.

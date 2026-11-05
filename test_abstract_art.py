@@ -15,6 +15,50 @@ from unittest import mock
 
 import abstract_art as art
 
+# Styles whose native output may differ from Python when the core is built with
+# the portable math feature (see "Measured portable drift" in PLAN.md).
+PORTABLE_DRIFT_STYLES = frozenset({'attractor', 'cymatics'})
+
+
+def _may_drift(style):
+    """True if the native core uses portable math and ``style`` can differ from Python."""
+    return getattr(art._core, 'PORTABLE', False) and style in PORTABLE_DRIFT_STYLES
+
+
+def _block_means(rgb, width, height, block=4):
+    """Mean channel value of each ``block`` x ``block`` cell of packed RGB."""
+    cols = -(-width // block)
+    cells = cols * -(-height // block)
+    sums, counts = [0] * cells, [0] * cells
+    for y in range(height):
+        for x in range(width):
+            cell = (y // block) * cols + x // block
+            offset = (y * width + x) * 3
+            sums[cell] += rgb[offset] + rgb[offset + 1] + rgb[offset + 2]
+            counts[cell] += 3
+    return [total / count for total, count in zip(sums, counts)]
+
+
+def _assert_native_close(test, style, native, python, width, height):
+    """Native equals Python, or stays within the measured portable drift for ``style``.
+
+    With portable math, cymatics differs by at most one level in rare bytes, and the
+    attractor's chaotic orbit takes another path through the same attractor: its
+    point-density noise changes, but 4 x 4 block means stay close (measured drift
+    up to 3.4 levels; a different attractor scores 9.8 or more).
+    """
+    if not _may_drift(style):
+        test.assertEqual(native, python)
+        return
+    test.assertEqual(len(native), len(python))
+    if style == 'cymatics':
+        test.assertLessEqual(max(abs(a - b) for a, b in zip(native, python)), 1)
+        return
+    native_means = _block_means(native, width, height)
+    python_means = _block_means(python, width, height)
+    distance = sum(abs(a - b) for a, b in zip(native_means, python_means)) / len(native_means)
+    test.assertLess(distance, 6.0)
+
 
 def chunks(path):
     data = pathlib.Path(path).read_bytes()
@@ -371,7 +415,7 @@ class RenderingTests(unittest.TestCase):
                         native = art.render_rgb(width, height, seed, style, palette, phase)
                         with mock.patch.object(art, '_core', None):
                             python = art.render_rgb(width, height, seed, style, palette, phase)
-                        self.assertEqual(native, python)
+                        _assert_native_close(self, style, native, python, width, height)
 
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_styles_match_python_exactly(self):
@@ -977,7 +1021,7 @@ class RenderingTests(unittest.TestCase):
                     native = art.render_rgb(37, 29, 6, style, 'neon', phase)
                     with mock.patch.object(art, '_core', None):
                         python = art.render_rgb(37, 29, 6, style, 'neon', phase)
-                    self.assertEqual(native, python)
+                    _assert_native_close(self, style, native, python, 37, 29)
 
     def test_cli_frames_move_one_scene_for_animated_styles(self):
         def plan(*args):
