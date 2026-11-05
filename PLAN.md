@@ -1,6 +1,6 @@
 # Rust rewrite plan
 
-Status: proposed; implementation has not started.
+Status: Phase 1 in progress (test workflow and wider native comparison done).
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -102,16 +102,19 @@ dispatch, animation capabilities, and CLI listings do not drift apart.
 
 Timing: while style experimentation continues.
 
-- [ ] Add a test workflow that runs on every pull request, including those
+- [x] Add a test workflow (`.github/workflows/tests.yml`) that runs on every pull request, including those
   from forks: the Python suite without and with the core, `cargo test`, and
   Clippy. Today the suite runs only inside the SonarQube job, which is skipped
   for fork pull requests, and no workflow runs `cargo test` or Clippy. The
   Phase 4 ownership rule depends on this workflow.
-- [ ] Extend `test_native_styles_match_python_exactly`, which covers sizes up
+- [x] Extend `test_native_styles_match_python_exactly`, which covers sizes up
   to 64 × 48 at phase 0 only: add a nonzero phase to the existing cases, and a
   larger case in a slower job. On 2026-11-04 all 48 styles were byte-identical
   at 200 × 150 and 150 × 200 at phases 0.37 and 0.81, which took about 2.5
-  minutes of pure-Python rendering.
+  minutes of pure-Python rendering. Done: the fast test also runs phases 0.37
+  and -1.81, and `test_native_styles_match_python_exactly_at_larger_sizes`
+  (opt-in with `ABSTRACT_ART_SLOW=1`) runs 200 × 150 and 150 × 200 at phases
+  0.37 and 0.81 in its own CI job.
 - [ ] Measure the `portable` drift now, with the current core: add a feature
   that routes the libm calls listed in Phase 2 through the `libm` crate (leave
   `hypot` as it is, since Phase 2 replaces it), rerun that comparison per
