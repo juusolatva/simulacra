@@ -172,8 +172,8 @@ fn vector_norm(x: f64, y: f64, max: f64, found_nan: bool) -> f64 {
     csum = sm_hi;
     frac1 += pr_lo;
     frac2 += sm_lo;
-    let x = csum - 1.0 + (frac1 + frac2);
-    h += x / (2.0 * h); // differential correction
+    let correction = csum - 1.0 + (frac1 + frac2); // CPython's `x`
+    h += correction / (2.0 * h); // differential correction
     h / scale
 }
 
@@ -192,8 +192,8 @@ fn vector_norm_tiny(x: f64, y: f64, max: f64, found_nan: bool) -> f64 {
         )
 }
 
-/// The exponent C's `frexp` reports for a finite positive `v`: `v = m * 2**e`
-/// with `0.5 <= m < 1`.
+/// The exponent C's `frexp` reports for a finite `v >= 0`: `v = m * 2**e`
+/// with `0.5 <= m < 1`, and 0 for zero.
 #[inline]
 fn frexp_exponent(v: f64) -> i32 {
     let biased = i32::try_from((v.to_bits() >> 52) & 0x7ff).expect("11 bits");
@@ -203,11 +203,15 @@ fn frexp_exponent(v: f64) -> i32 {
     biased - 1022
 }
 
-/// `frexp_exponent` for a subnormal: scale into the normal range by 2**54,
-/// which is exact.
+/// `frexp_exponent` for zero or a subnormal (biased exponent 0). Zero gives 0,
+/// as in C; scaling it would recurse forever. A subnormal scales into the
+/// normal range by 2**54, which is exact.
 #[cold]
 #[inline(never)]
 fn subnormal_frexp_exponent(v: f64) -> i32 {
+    if v == 0.0 {
+        return 0;
+    }
     frexp_exponent(v * pow2(54)) - 54
 }
 
@@ -373,6 +377,18 @@ mod tests {
                 0x0000_0000_0000_0000,
             ), // -0, -0 -> +0
         ]);
+    }
+
+    #[test]
+    fn frexp_exponent_matches_c() {
+        use super::{frexp_exponent, pow2};
+        assert_eq!(frexp_exponent(0.0), 0);
+        assert_eq!(frexp_exponent(-0.0), 0);
+        assert_eq!(frexp_exponent(1.0), 1);
+        assert_eq!(frexp_exponent(0.75), 0);
+        assert_eq!(frexp_exponent(f64::MIN_POSITIVE), -1021);
+        assert_eq!(frexp_exponent(pow2(-1074)), -1073);
+        assert_eq!(frexp_exponent(f64::MAX), 1024);
     }
 
     #[test]
