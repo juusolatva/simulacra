@@ -128,7 +128,7 @@ Project key: `juusolatva_abstract-art`.
 
 ## Known issues and follow-ups
 
-Open ideas, none started: turn OSV-Scanner's SARIF upload back on once the repository is public (`upload-sarif` in `osv-scanner.yml`); stream animation frames to the writers instead of holding them all in memory (PLAN.md Phase 5); collect Rust coverage (PLAN.md Phase 6); animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
+Open ideas, none started: validate scenes in the engine before reading them from untrusted sources (indices, lengths against the canvas and palette, loop limits; see PLAN.md Phase 3; until then `deserialize_scene` and the adapter treat scenes as trusted); turn OSV-Scanner's SARIF upload back on once the repository is public (`upload-sarif` in `osv-scanner.yml`); stream animation frames to the writers instead of holding them all in memory (PLAN.md Phase 5); collect Rust coverage (PLAN.md Phase 6); animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
 
 ### Performance
 

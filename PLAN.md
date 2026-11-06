@@ -383,6 +383,18 @@ scene builders use, across the supported seed range.
   and static PNG output for the initial subset.
 - [ ] Validate dimensions and checked buffer-size arithmetic at the engine
   boundary, not only in CLI parsing.
+- [ ] Validate scenes at the engine boundary before any untrusted scene source
+  exists (at the latest with a CLI option that reads a scene file). The
+  shaders trust their scene: an index out of range (constellation pairs, an
+  `orbits` ring's palette stop through the unchecked `Palette::stop`), a
+  `mosaic` grid that does not match its `cols` and `rows`, `woodblock`
+  surfaces shorter than the canvas width, or a huge iteration count (`ink`
+  steps, `comet` speed and reach, constellation line steps) panics or stalls
+  rendering. Add a check per style against the canvas and palette (for
+  example a `validate(width, height, &palette)` on `Style`), limits on
+  scene-driven loop counts, and malformed-scene tests. Raised by Qodo on PR
+  #30; the same holds for scenes passed through the Python adapter, which so
+  far only come from our own builders.
 - [ ] Preserve safe temporary-file creation, destination replacement, and
   cleanup on failure. Create the temporary file with mode 0o666 so the umask
   applies, as `_create_temporary()` does: `tempfile::NamedTempFile` creates

@@ -97,6 +97,14 @@ macro_rules! style_deserialize {
         /// those of the dict the Python `_<style>_scene()` builder returns;
         /// unknown fields are ignored, as the Python adapter ignores them.
         ///
+        /// Scenes are trusted input: only the types are checked, not that the
+        /// data is consistent. An index out of range (a star pair, an `orbits`
+        /// ring's palette stop), a list shorter than the canvas (`woodblock`
+        /// surfaces) or a huge iteration count (`ink` steps) makes rendering
+        /// panic or run for a very long time, exactly as with a scene passed
+        /// through the Python adapter. Do not load scenes from untrusted sources
+        /// until the engine validates them (PLAN.md, Phase 3).
+        ///
         /// # Errors
         ///
         /// Fails if `style` is not in [`STYLES`] or the data does not match its
@@ -121,8 +129,9 @@ macro_rules! style_deserialize {
 #[cfg(feature = "serde")]
 for_each_style!(style_deserialize);
 
-/// Reads the scene for `style` from JSON text; see [`deserialize_scene`].
-/// Floats are parsed exactly (`serde_json`'s `float_roundtrip`).
+/// Reads the scene for `style` from JSON text; see [`deserialize_scene`],
+/// including why scenes must come from a trusted source for now. Floats are
+/// parsed exactly (`serde_json`'s `float_roundtrip`).
 ///
 /// # Errors
 ///
