@@ -28,7 +28,9 @@ pub trait Libm {
     fn m_ln_1p(self) -> f64;
 }
 
+// The one place allowed to call the platform libm (see clippy.toml).
 #[cfg(not(feature = "portable"))]
+#[allow(clippy::disallowed_methods)]
 impl Libm for f64 {
     #[inline]
     fn m_exp(self) -> f64 {

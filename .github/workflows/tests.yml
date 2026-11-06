@@ -68,7 +68,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      # Also checks every attractor parameter set, in both orientations, at 24 phases.
+      # Also checks every attractor parameter set against its build criteria (48 phases).
       - name: Build the Rust core and compare it with Python
         env:
           SIMULACRA_SLOW: '1'

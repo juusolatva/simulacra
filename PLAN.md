@@ -520,16 +520,35 @@ was a deliberate visual change.
 `_attractor_base()` now draws one of 256 parameter sets in `_ATTRACTOR_TABLE`
 with `choice()` and mirrors it (x and y swapped) on one `getrandbits(1)`. That
 gives 512 figures from integer draws alone, so no libm can change the choice.
-The table was searched offline. Each entry stays lively with margin (spans of
-at least 1.25 and at least 200 of 1,024 cells, where the old test needed 1.0
-and 150) at 48 phases, in both orientations, under both glibc's and the
-`libm` crate's `sin` and `cos`. Each also keeps a bright density image (mean
-log density over lit pixels of at least 0.25, which drops entries that one
-hot pixel darkens), and entries and their mirror images are at least 0.25
-apart in every parameter. With the `libm` crate's `sin` and `cos` swapped in
-through `ctypes`, 0 of 100,002 seeds picked different parameters (the old
-search: 46 of 500). The point-density noise remains. The tests recheck a
-sample of the table, and with `SIMULACRA_SLOW` every entry at 24 phases.
+The table was searched offline (candidates from a seeded generator, rounded
+to three decimals). A figure counts as stable when the orbit from four start
+points within 2e-9 of (0.1, 0.1) gives nearly the same figure under both
+glibc's and the `libm` crate's `sin` and `cos`: the start points stand in for
+the rounding differences between libms. Each entry passes in both orientations
+at all 384 phases `i / 384` with spans of at least 1.25 and at least 200 of
+1,024 cells (the old search needed 1.0 and 150), cell counts within a ratio of
+1.35 and spans within 1.15 between runs. At the 48 phases the tests check it
+passes with headroom (1.3, 220, 1.2 and 1.1). Each also keeps a bright density
+image (mean log density over lit pixels of at least 0.27; the tests need
+0.25), and entries and their mirror images are at least 0.25 apart in every
+parameter. Since the choice uses no floating-point math, no libm changes which
+figure a seed picks (the old search: 46 of 500 seeds); the point-density noise
+along the orbit remains.
+
+The first version of the table checked only liveliness at 48 phases from one
+start point. Between those phases some entries were bistable (the orbit lands
+on a thin or a broad figure depending on rounding) or fell into a narrow
+periodic window (the figure collapses to a few cells for a frame): 86 of 256
+failed somewhere at the 48 midpoints. The current table was rebuilt with the
+stability check above. Out of sample, at 768 phases (half of them new), 213 of 786,432 checks fail
+(0.03%), all at new phases: periodic windows are dense in a chaotic map, so
+sampling cannot rule them all out. The orbit the renderer actually draws
+(start (0.1, 0.1), glibc) collapses in 13 of 196,608 new frames (0.007%), each
+window narrower than 1/768 of the loop, so roughly one 60-frame animation in
+250 may show one collapsed frame.
+
+The tests check a sample of the table at 6 phases, and with `SIMULACRA_SLOW`
+every entry at the 48 phases, both orientations, with the test limits.
 
 ## Performance investigations
 
