@@ -162,6 +162,14 @@ dependencies = [
 name = "simulacra_core"
 version = "0.1.0"
 dependencies = [
+ "pyo3",
+ "simulacra_engine",
+]
+
+[[package]]
+name = "simulacra_engine"
+version = "0.1.0"
+dependencies = [
  "libm",
  "pyo3",
  "rayon",

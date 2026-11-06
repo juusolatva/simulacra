@@ -1,13 +1,35 @@
 //! Palette interpolation, ported from `palette_color()` in `simulacra.py`.
 
+use std::fmt;
+
+/// Color stops, interpolated by [`Palette::color`]. Channels are integers as in
+/// Python and are clamped to 0..=255 only when a color is produced.
 pub struct Palette {
     stops: Vec<(i64, i64, i64)>,
 }
 
+/// Why [`Palette::new`] rejected a list of stops.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PaletteError {
+    /// The palette had no stops.
+    Empty,
+}
+
+impl fmt::Display for PaletteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("palette must contain at least one color stop"),
+        }
+    }
+}
+
+impl std::error::Error for PaletteError {}
+
 impl Palette {
-    pub fn new(stops: Vec<(i64, i64, i64)>) -> Result<Self, String> {
+    /// A palette from RGB stops; fails if there are none.
+    pub fn new(stops: Vec<(i64, i64, i64)>) -> Result<Self, PaletteError> {
         if stops.is_empty() {
-            return Err("palette must contain at least one color stop".into());
+            return Err(PaletteError::Empty);
         }
         Ok(Self { stops })
     }

@@ -1,25 +1,22 @@
-[package]
-name = "simulacra_core"
+# Workspace for the native side of Simulacra (see PLAN.md, "Target architecture").
+# engine: the renderer, with no Python dependency unless its `python` feature is on.
+# py:     the `simulacra_core` Python extension, a thin adapter over the engine.
+# A `cli` crate joins in Phase 3.
+[workspace]
+members = ["engine", "py"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "Native (Rust) renderers for simulacra.py"
 license = "MIT"
 publish = false
 
-[lib]
-# Must match the #[pymodule] name in src/lib.rs.
-name = "simulacra_core"
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
+[workspace.dependencies]
 pyo3 = "0.30"
 rayon = "1.12"
 # No default features: the `arch` feature would use platform intrinsics where they exist.
-libm = { version = "0.2.16", default-features = false, optional = true }
-
-[features]
-# Route libm calls through the pure-Rust libm crate (same results on every target).
-portable = ["dep:libm"]
+libm = { version = "0.2.16", default-features = false }
 
 [profile.release]
 lto = "fat"

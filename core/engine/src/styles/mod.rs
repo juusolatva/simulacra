@@ -1,6 +1,7 @@
 //! Per-style pixel shaders. Each mirrors the matching `render_*` function in
-//! `simulacra.py` expression for expression; Python generates the scene
-//! (all random draws) and passes it in as a dict, extracted into these structs.
+//! `simulacra.py` expression for expression. Python generates the scene (all
+//! random draws) as a dict; with the `python` feature the `py` adapter extracts
+//! it into these structs.
 
 pub mod brush;
 pub mod drift;
@@ -14,7 +15,7 @@ pub mod woodblock;
 use crate::math::Libm;
 use crate::palette::Palette;
 
-/// A style whose scene has been extracted from Python and can be shaded.
+/// A style's scene, ready to shade.
 pub trait Style: Send + Sync {
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8>;
 }

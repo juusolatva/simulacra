@@ -3,7 +3,6 @@
 //! Distances use `sqrt(dx * dx + dy * dy)` on both sides so results stay bit-identical.
 
 use crate::math::Libm;
-use pyo3::FromPyObject;
 
 use super::{Style, center, unit};
 use crate::noise::{contrast, fbm, fbm_loop, polar_noise};
@@ -47,8 +46,7 @@ const LUNAR_STEPS: i64 = 18;
 const LUNAR_STEP: f64 = 0.04;
 const LUNAR_EPS: f64 = 0.004;
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Lunar {
     /// (x, y, radius, depth, peak)
     craters: Vec<(f64, f64, f64, f64, f64)>,
@@ -119,8 +117,7 @@ impl Style for Lunar {
 /// (x, y, radius, spin, e2, q2, e3, q3, e4, q4, fade, texture)
 type Rock = (f64, f64, f64, f64, f64, f64, f64, f64, f64, f64, f64, f64);
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Asteroids {
     rocks: Vec<Rock>,
     stars: Vec<Star>,
@@ -180,8 +177,7 @@ impl Style for Asteroids {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Blackhole {
     center: (f64, f64),
     radius: f64,
@@ -245,8 +241,7 @@ impl Style for Blackhole {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Supernova {
     center: (f64, f64),
     radius: f64,

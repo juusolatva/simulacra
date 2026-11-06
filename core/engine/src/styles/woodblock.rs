@@ -8,8 +8,7 @@ use super::Style;
 use crate::geometry::py_mod;
 use crate::palette::Palette;
 
-#[derive(pyo3::FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 struct Layer {
     surface: Vec<f64>,
     spacing: f64,
@@ -32,8 +31,7 @@ impl Layer {
     }
 }
 
-#[derive(pyo3::FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Woodblock {
     layers: Vec<Layer>,
     scale: f64,

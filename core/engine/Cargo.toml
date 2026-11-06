@@ -1,0 +1,18 @@
+[package]
+name = "simulacra_engine"
+description = "Simulacra's renderer: math, noise, palettes, scenes and shading, without Python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rayon.workspace = true
+libm = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+
+[features]
+# Route libm calls through the pure-Rust libm crate (same results on every target).
+portable = ["dep:libm"]
+# Derive pyo3::FromPyObject on the scene structs, for the `py` adapter crate.
+python = ["dep:pyo3"]
