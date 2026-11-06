@@ -117,7 +117,7 @@ Project key: `juusolatva_abstract-art`.
 - **S1172 (`seed` unused in `render_mandelbrot`):** accepted, because the shared renderer signature requires it. Other S1172 findings are real: a helper that nothing calls any more (for example `_no_scene` after mandelbrot got a scene) should be deleted.
 - **S9073 (composite assertion):** split `assert a and b` into two asserts, including in test helpers.
 - **Start from `origin/main`:** several sessions work on this repository in parallel, so run `git fetch` and `gh pr list` before starting and branch from `origin/main`; a local `main` can be several PRs behind.
-- **Workflow with PRs:** SonarQube Cloud (CI analysis), Semgrep and Greptile run on every PR; Greptile reviews only when the PR is opened, not on later pushes, so answer its findings with a reply on the thread (the user resolves threads).
+- **Workflow with PRs:** SonarQube Cloud (CI analysis), Semgrep, Qodo and Gemini Code Assist run on every PR (Greptile, used up to PR #26, no longer does). Fix valid review findings and answer each with a reply on its thread, naming the commit or explaining why nothing changed; the user resolves threads.
 
 ## Known issues and follow-ups
 
