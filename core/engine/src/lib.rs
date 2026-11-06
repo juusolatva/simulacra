@@ -11,10 +11,12 @@ mod geometry;
 mod math;
 pub mod noise;
 pub mod palette;
+pub mod random;
 mod raster;
 pub mod styles;
 
 pub use palette::{Palette, PaletteError};
+pub use random::PyRandom;
 pub use styles::Style;
 
 /// True when built with the `portable` feature (the pure-Rust `libm` crate),
