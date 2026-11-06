@@ -363,7 +363,7 @@ Run the test suite from the project directory:
 python3 -m unittest -v
 ```
 
-With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. A slower comparison at 200 × 150 and 150 × 200 runs with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes test_simulacra`. Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`.
+With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Slower checks, a comparison at 200 × 150 and 150 × 200 and a check of every attractor parameter set at 48 phases, run with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra` (several minutes). Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`, and Clippy with `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`.
 
 To run one regression test:
 
@@ -371,7 +371,7 @@ To run one regression test:
 python3 -m unittest -v test_simulacra.RenderingTests.test_large_flowfield_trails_are_connected
 ```
 
-The suite currently contains 82 tests covering:
+The suite currently contains 85 tests covering:
 
 - Valid dimensions and RGB channels across all registered styles.
 - Every style using a wide part of its palette, unaliased wave styles, and shapes that scale with the canvas.
@@ -389,6 +389,7 @@ The suite currently contains 82 tests covering:
 - GIF output: LZW round-trips across table resets, the shared colour table, frame delays, looping and the size limit, all checked with a reference decoder.
 - Animation: every style moves with `phase`, loops after one turn, matches its still image at phase 0 and renders identically in Rust and Python at any phase.
 - The `mosaic` style: flat tiles, even grout at fractional tile sizes, and native-equals-Python.
+- The `attractor` parameter table: entries stay lively and stable at sampled phases, and a seed's choice uses no floating-point math.
 - Preservation of existing animation output and temporary-file cleanup on failures.
 
 These checks catch structural and selected visual regressions; they do not establish that every style looks good for every seed, palette, and size. Inspect rendered images when changing drawing algorithms.
@@ -412,7 +413,7 @@ To add a style:
 4. Register it in the `STYLES` dictionary. `render()`, the CLI's `--style` choices, and the tests all read from it.
 5. Add a description to this README and the module's style list.
 6. Run the tests, add a regression check for the new style's intended behavior, and inspect square, wide, and tall renders.
-7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/src/styles/` that reads it, add it to `extract_style()` and `STYLES` in `core/src/lib.rs`, and register the scene builder in `NATIVE_STYLES`. `test_native_styles_match_python_exactly` then checks it against the Python renderer.
+7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/src/styles/` that reads it, add it to `extract_style()` and `STYLES` in `core/src/lib.rs`, and register the scene builder in `NATIVE_STYLES`. Port expressions operation for operation and call `exp`, `sin`, `cos` and the other libm functions through the `Libm` trait in `core/src/math.rs` (`x.m_sin()`); Clippy rejects the `f64` methods (`core/clippy.toml`). `test_native_styles_match_python_exactly` then checks it against the Python renderer.
 8. To make it move, add `_loop(phase, k)` or `_circle_offset()` terms in the scene builder (see `AGENTS.md`), give it an entry in `ANIMATED_STYLES`, and wrap the builder with `_animated_scene()` in `NATIVE_STYLES`. Phase 0 must give the same image as before.
 
 Pay particular attention to coordinate units: normalize positions when a shape should scale with the canvas, distinguish angles from pixel distances, and sample continuous paths densely enough to connect adjacent pixels. Test the saved image as well as the in-memory buffer.
@@ -438,7 +439,7 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | [`simulacra.py`](simulacra.py) | Palettes, noise and geometry helpers, all renderers, PNG/APNG/GIF writers, and CLI. |
 | [`test_simulacra.py`](test_simulacra.py) | Regression tests (standard library only). |
 | [`bench_simulacra.py`](bench_simulacra.py) | Per-style render benchmark with save/compare; `--stages` splits scene, shader and PNG time, and `--cli` times whole CLI runs with peak memory. |
-| [`core/`](core) | Optional Rust extension module `simulacra_core` (PyO3, rayon). |
+| [`core/`](core) | Optional Rust extension module `simulacra_core` (PyO3, rayon); `clippy.toml` keeps libm calls in `src/math.rs`. |
 | [`GLOSSARY.md`](GLOSSARY.md) | The project's visual vocabulary: style, palette, seed, scene, frame, phase, animation. |
 | [`.github/workflows/`](.github/workflows) | CI: tests on Python 3.12 and 3.14 with and without the Rust core (default and portable math), `cargo test` and Clippy; SonarQube Cloud analysis with test coverage; OSV-Scanner. |
 | `sonar-project.properties`, `.coveragerc` | SonarQube Cloud project settings and the coverage configuration the CI uses. |
@@ -447,3 +448,4 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | [`PLAN.md`](PLAN.md) | The plan for a standalone Rust application: phases, measured drift, compatibility policy and performance baseline. |
 | [`AGENTS.md`](AGENTS.md) | Conventions, triage notes, and known issues for coding agents and contributors. |
 | [`CLAUDE.md`](CLAUDE.md) | Points Claude Code at `AGENTS.md`. |
+| [`LICENSE`](LICENSE) | MIT license. |

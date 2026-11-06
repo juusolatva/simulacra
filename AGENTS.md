@@ -26,26 +26,32 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Real animation, batch 3 (6 brush and trail styles): comet, constellations, ember, flowfield, ink, lissajous move by circling positions or turning phases in their scene builders, so Rust is unchanged | Done | PR #11 |
 | Real animation, batch 4 (5 styles): torus turns about the vertical axis, quasar's jets sweep around and flare, mandala's rings counter-rotate, orbits' stars circle and rings breathe, cosmic's arm turns | Done | PR #12 |
 | Real animation, batch 5 (the last 4): circuit pads orbit, prism layers and shards turn, mandelbrot zooms into the seahorse valley and back. Every style now moves. Mandelbrot is the only Rust change (it takes scale, centre and iteration count from its scene) | Done | PR #13 |
-| New styles `contour`, `marbling`, `attractor`, `opart` and palettes `thermal`, `crimson`, `sepia`, `patina` | Done: all animated and native (`contour`, `marbling` and `opart` in `core/src/styles/fields.rs`, `attractor` in `brush.rs`) | — |
-| New styles `lunar`, `asteroids`, `blackhole`, `supernova`: all animated and native, in `core/src/styles/space.rs` (per-pixel; shared star field via `_sky_stars()` and `_star_glow()`) | Done | — |
+| New style `woodblock` and palette `watercolor` | Done: animated and native (`core/src/styles/woodblock.rs`) | PR #16 |
+| New styles `cymatics`, `optics` and palettes `noir`, `phosphor`, `tundra`, `risoprint` | Done: animated and native (`core/src/styles/fields.rs`) | PR #17 |
+| New styles `contour`, `marbling`, `attractor`, `opart` and palettes `thermal`, `crimson`, `sepia`, `patina` | Done: all animated and native (`contour`, `marbling` and `opart` in `core/src/styles/fields.rs`, `attractor` in `brush.rs`) | PR #18 |
+| New styles `lunar`, `asteroids`, `blackhole`, `supernova`: all animated and native, in `core/src/styles/space.rs` (per-pixel; shared star field via `_sky_stars()` and `_star_glow()`) | Done | PR #19 |
 | GIF output (`write_gif`: own LZW encoder, one shared 256-color table sampled from the palette, chosen by a `.gif` `--out`) | Done | PR #10 |
 | CI: SonarQube Cloud with coverage (about 96%), OSV-Scanner | Done | PR #14 |
-| Rust rewrite (`PLAN.md`), Phase 1: test workflow for every PR, native-versus-Python test at nonzero phases and larger sizes | Done | — |
-| Rust rewrite, Phase 1: `portable` math feature and measured drift (46 styles identical, `cymatics` ±1 in 2 bytes, `attractor` differs and 9% of seeds picked other parameters) | Done. Policy: release builds use `portable` and accept this drift | — |
-| `attractor` picks from a table of 256 parameter sets (512 with mirroring) instead of searching, so no libm changes a seed's figure; cold scene about 150× faster | Done | — |
-| Rename the project from Abstract Art to Simulacra (it now draws representations of real phenomena too): `simulacra.py`, `test_simulacra.py`, `bench_simulacra.py`, Rust module `simulacra_core`, `SIMULACRA_SLOW` | Done. The GitHub repository and the SonarQube project key (`juusolatva_abstract-art`) keep the old name for now | — |
+| Rust rewrite (`PLAN.md`), Phase 1: test workflow for every PR, native-versus-Python test at nonzero phases and larger sizes | Done | PR #20 |
+| Rust rewrite, Phase 1: `portable` math feature and measured drift (46 styles identical, `cymatics` ±1 in 2 bytes, `attractor` differs and 9% of seeds picked other parameters) | Done. Policy: release builds use `portable` and accept this drift | PR #21 |
+| Rust rewrite, Phase 1: stage and CLI benchmarks (`--stages`, `--cli`) and the recorded baseline | Done | PR #22 |
+| Rename the project from Abstract Art to Simulacra (it now draws representations of real phenomena too): `simulacra.py`, `test_simulacra.py`, `bench_simulacra.py`, Rust module `simulacra_core`, `SIMULACRA_SLOW` | Done. The GitHub repository and the SonarQube project key (`juusolatva_abstract-art`) keep the old name for now | PR #23 |
+| `attractor` picks from a table of 256 parameter sets (512 with mirroring) instead of searching, so no libm changes a seed's figure; cold scene about 150× faster. Clippy rejects direct `f64` libm calls outside `core/src/math.rs` | Done | PR #25 |
+| Rust rewrite, Phase 2 onward: Python-independent engine, CPython `hypot` and random generator ports, standalone binaries, native scene builders, streaming encoders | Not started; Phase 2 is next. `PLAN.md` holds the status and the checklists | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
-Measured at 640×480: the original 36 styles took 178 s in pure Python at the start (`mosaic` came later). With every style native, a run on a fast machine takes about 0.2 s in total, and about 1.4 s for the seven brush and curve styles at 4K, the slowest being `ink` (0.8 s, sequential stamping). Compare against a fresh baseline, not these numbers.
+Measured at 640×480: the original 36 styles took 178 s in pure Python at the start (`mosaic` came later). The current per-stage baseline for all 48 native styles (scene, shader, PNG, CLI runs with peak memory) is "Stage baseline" in `PLAN.md`. Compare against a fresh baseline on the same machine, not these numbers.
 
 ## Commands
 
 ```bash
 python3 -m unittest -q                     # full suite, pure Python (native tests skip)
-SIMULACRA_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes -k every_attractor_table_entry test_simulacra   # slow checks
+SIMULACRA_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes -k every_attractor_table_entry test_simulacra   # slow checks (several minutes)
 .venv/bin/python -m unittest -q            # with the Rust core: also checks native == Python
 source .venv/bin/activate && maturin develop --release -m core/Cargo.toml   # rebuild core
-cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/Cargo.toml --all-targets
+cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
+cargo clippy --manifest-path core/Cargo.toml --all-targets --features portable -- -D warnings   # CI checks both backends
+maturin develop --release -m core/Cargo.toml --features portable   # a portable core, in a separate venv: the suite then holds PORTABLE_DRIFT_STYLES to bounds
 python3 bench_simulacra.py --width 640 --height 480 --compare <saved.json>
 .venv/bin/python bench_simulacra.py --stages --width 640 --height 480 --phase 0.37 --repeat 3   # scene/shader/PNG per style
 .venv/bin/python bench_simulacra.py --cli   # end-to-end CLI runs with peak memory
@@ -109,11 +115,12 @@ Project key: `juusolatva_abstract-art`.
 - **pythonsecurity:S8705 (command argument injection in the benchmark's `run_cli`):** false positive. The command is a list without a shell, built from the constant `CLI_WORKLOADS`, an integer seed and a path in our own temporary directory.
 - **S1172 (`seed` unused in `render_mandelbrot`):** accepted, because the shared renderer signature requires it. Other S1172 findings are real: a helper that nothing calls any more (for example `_no_scene` after mandelbrot got a scene) should be deleted.
 - **S9073 (composite assertion):** split `assert a and b` into two asserts, including in test helpers.
+- **Start from `origin/main`:** several sessions work on this repository in parallel, so run `git fetch` and `gh pr list` before starting and branch from `origin/main`; a local `main` can be several PRs behind.
 - **Workflow with PRs:** SonarQube Cloud (CI analysis), Semgrep and Greptile run on every PR; Greptile reviews only when the PR is opened, not on later pushes, so answer its findings with a reply on the thread (the user resolves threads).
 
 ## Known issues and follow-ups
 
-Open ideas, none started: turn OSV-Scanner's SARIF upload back on once the repository is public (`upload-sarif` in `osv-scanner.yml`); stream animation frames to the writers instead of holding them all in memory; collect Rust coverage; animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
+Open ideas, none started: turn OSV-Scanner's SARIF upload back on once the repository is public (`upload-sarif` in `osv-scanner.yml`); stream animation frames to the writers instead of holding them all in memory (PLAN.md Phase 5); collect Rust coverage (PLAN.md Phase 6); animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
 
 ### Performance
 
