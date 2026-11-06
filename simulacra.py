@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-"""Procedurally generated abstract art.
+"""Simulacra: procedurally generated images, from abstract patterns to stylized
+representations of real phenomena.
 
 Pure Python (stdlib only) generative art engine. An optional Rust core (core/)
 renders every style natively with identical output; every style moves with a
@@ -44,7 +45,7 @@ Styles:
     comet      - fast glowing streaks with fading motion trails
     ink        - flowing liquid ink strokes with tapered tails and soft edges
     mosaic     - glass-tile patchwork of checkers, chevrons, diamonds and rosettes
-    woodblock  - carved abstract hills, cliffs and rolling waves on palette-colored paper
+    woodblock  - carved stylized hills, cliffs and rolling waves on palette-colored paper
     cymatics   - Chladni plate acoustic standing-wave displacement fields
     optics     - refractive caustic webs, thin-film fringes and aperture diffraction
     contour    - topographic map of terraced terrain with index contour lines
@@ -57,7 +58,7 @@ Styles:
     supernova  - filament shell, gas and a spiked core of an exploding star
 
 Usage:
-    python abstract_art.py --style waves --seed 7 --palette sunset --out art.png
+    python simulacra.py --style waves --seed 7 --palette sunset --out art.png
 
 Palette stops are sRGB colors and are written unchanged (a GIF quantizes them to a
 shared 256-color table).
@@ -78,7 +79,7 @@ import zlib
 
 try:
     # Optional Rust core (see core/); every style also has a pure-Python renderer.
-    import abstract_art_core as _core
+    import simulacra_core as _core
 except ImportError:
     _core = None
 
@@ -3374,7 +3375,7 @@ def _create_temporary(directory):
     """
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
     for _ in range(100):
-        name = os.path.join(directory, ".abstract-art-%s.tmp" % os.urandom(8).hex())
+        name = os.path.join(directory, ".simulacra-%s.tmp" % os.urandom(8).hex())
         try:
             return name, os.open(name, flags, 0o666)
         except FileExistsError:
@@ -3648,7 +3649,7 @@ def _hex_stops(text):
 
 
 def _build_parser():
-    parser = argparse.ArgumentParser(description="Procedurally generated abstract art")
+    parser = argparse.ArgumentParser(description="Simulacra: procedurally generated images and animations")
     parser.add_argument("--style", default="waves", choices=list(STYLES))
     seeds = parser.add_mutually_exclusive_group()
     seeds.add_argument("--seed", type=int, default=1)

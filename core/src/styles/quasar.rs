@@ -1,6 +1,6 @@
 //! `render_quasar`: accretion disk, lensing ring and Doppler-beamed jets.
 //!
-//! Mirrors `_quasar_value()` in `abstract_art.py`; the scene comes from
+//! Mirrors `_quasar_value()` in `simulacra.py`; the scene comes from
 //! `_quasar_scene()` so both implementations share the same random layout.
 
 use crate::math::Libm;

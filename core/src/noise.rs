@@ -1,4 +1,4 @@
-//! Value noise and fBm, ported operation-for-operation from `abstract_art.py`.
+//! Value noise and fBm, ported operation-for-operation from `simulacra.py`.
 //!
 //! The arithmetic order matches the Python reference exactly (Rust does not
 //! fuse multiply-adds by default), so results agree bit-for-bit apart from
@@ -56,7 +56,7 @@ pub fn fbm(x: f64, y: f64, seed: u32, octaves: u32) -> f64 {
 }
 
 /// Layers of 2D noise a looping fBm steps through for octave 0; octave `i`
-/// uses `NOISE_LAYERS + i`. See `_NOISE_LAYERS` in `abstract_art.py`.
+/// uses `NOISE_LAYERS + i`. See `_NOISE_LAYERS` in `simulacra.py`.
 const NOISE_LAYERS: u32 = 4;
 
 /// `value_noise` at loop position `z` in `[0, period)` layers: a blend of two

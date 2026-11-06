@@ -3,8 +3,8 @@ requires = ["maturin>=1.9.4,<2"]
 build-backend = "maturin"
 
 [project]
-name = "abstract_art_core"
-description = "Native (Rust) renderers for abstract_art.py"
+name = "simulacra_core"
+description = "Native (Rust) renderers for simulacra.py"
 requires-python = ">=3.10"
 license = "MIT"
 classifiers = [

@@ -3,13 +3,13 @@
 """Benchmark render time per style (via render_rgb, the path the CLI uses).
 
 Examples:
-    python3 bench_abstract_art.py                          # all styles, 256x256
-    python3 bench_abstract_art.py --size 128 --styles torus,quasar
-    python3 bench_abstract_art.py --width 640 --height 480
-    python3 bench_abstract_art.py --save baseline.json     # record results
-    python3 bench_abstract_art.py --compare baseline.json  # show speedups
-    python3 bench_abstract_art.py --stages --phase 0.37    # scene, shader, PNG per style
-    python3 bench_abstract_art.py --cli                    # end-to-end CLI runs, peak memory
+    python3 bench_simulacra.py                          # all styles, 256x256
+    python3 bench_simulacra.py --size 128 --styles torus,quasar
+    python3 bench_simulacra.py --width 640 --height 480
+    python3 bench_simulacra.py --save baseline.json     # record results
+    python3 bench_simulacra.py --compare baseline.json  # show speedups
+    python3 bench_simulacra.py --stages --phase 0.37    # scene, shader, PNG per style
+    python3 bench_simulacra.py --cli                    # end-to-end CLI runs, peak memory
 
 Each style is rendered ``--repeat`` times with the same inputs and the best
 time is reported, which is the least noisy estimate on a busy machine.
@@ -32,7 +32,7 @@ import sys
 import tempfile
 import time
 
-import abstract_art as art
+import simulacra as art
 
 
 def time_style(style, width, height, seed, palette, repeat):
@@ -174,7 +174,7 @@ def print_report(results, baseline):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Benchmark abstract_art render times")
+    parser = argparse.ArgumentParser(description="Benchmark simulacra render times")
     parser.add_argument("--size", type=int, default=256, help="square canvas size (default 256)")
     parser.add_argument("--width", type=int, help="canvas width (overrides --size)")
     parser.add_argument("--height", type=int, help="canvas height (overrides --size)")

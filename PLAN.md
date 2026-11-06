@@ -89,7 +89,7 @@ Proposed Cargo workspace layout:
 | --- | --- | --- |
 | `engine` | library | Math, noise, palettes, scenes, scene builders, rendering. No PyO3. |
 | `cli` | binary | Argument parsing, animation pipeline, encoders, limits, atomic output. |
-| `py` | cdylib | The `abstract_art_core` extension module: scene extraction and exceptions. |
+| `py` | cdylib | The `simulacra_core` extension module: scene extraction and exceptions. |
 
 Today `pyo3` is a required dependency of `core` and the scene structs derive
 `FromPyObject` directly (about 100 PyO3 references across the style modules).
@@ -114,7 +114,7 @@ Timing: while style experimentation continues.
   at 200 × 150 and 150 × 200 at phases 0.37 and 0.81, which took about 2.5
   minutes of pure-Python rendering. Done: the fast test also runs phases 0.37
   and -1.81, and `test_native_styles_match_python_exactly_at_larger_sizes`
-  (opt-in with `ABSTRACT_ART_SLOW=1`) runs 200 × 150 and 150 × 200 at phases
+  (opt-in with `SIMULACRA_SLOW=1`) runs 200 × 150 and 150 × 200 at phases
   0.37 and 0.81 in its own CI job.
 - [x] Measure the `portable` drift now, with the current core: add a feature
   that routes the libm calls listed in Phase 2 through the `libm` crate (leave
@@ -125,7 +125,7 @@ Timing: while style experimentation continues.
   Policy decided on 2026-11-07: release builds use `portable` (see
   "Compatibility policy").
 - [x] Record scene preparation, native rendering, encoding, and total runtime
-  separately using release builds (`bench_abstract_art.py --stages` and
+  separately using release builds (`bench_simulacra.py --stages` and
   `--cli`; see "Stage baseline" below).
 - [x] Measure first renders and repeated renders separately. Explicitly record
   whether the attractor parameter cache is cold or warm. The cache
@@ -170,7 +170,7 @@ glibc 2.43, CPython 3.14.10, release build of the core with the `system`
 backend), seed 1, palette `deep`. Single runs vary by about ±30%; rerun on the
 same machine before comparing.
 
-`bench_abstract_art.py --stages --width W --height H --phase 0.37 --repeat 3`,
+`bench_simulacra.py --stages --width W --height H --phase 0.37 --repeat 3`,
 totals over
 all 48 native styles (best of 3, except the cold scene, which is one run):
 
@@ -191,7 +191,7 @@ Notable per style:
 - At 640 × 480 PNG encoding costs as much as shading in total, and more than
   shading for most fast styles.
 
-`bench_abstract_art.py --cli` (a fresh process per workload, one run each, wall
+`bench_simulacra.py --cli` (a fresh process per workload, one run each, wall
 time and peak resident memory). These runs were about 20% slower than the
 stage runs above, a sign of the machine's run-to-run variance:
 

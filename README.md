@@ -1,6 +1,6 @@
-# Abstract Art
+# Simulacra
 
-Generate abstract images from mathematical patterns, noise fields, and seeded randomness. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
+Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -25,12 +25,12 @@ See the [glossary](GLOSSARY.md) for the project's visual concepts and terminolog
 
 ## Quick start
 
-You need Python 3. No third-party packages, installation step, network access, or external image libraries are required to generate images or run the tests. For much faster rendering, build the [optional Rust core](#optional-rust-core). The current test suite has been run with Python 3.14.4; the repository does not declare a minimum supported Python version.
+You need Python 3. No third-party packages, installation step, network access, or external image libraries are required to generate images or run the tests. For much faster rendering, build the [optional Rust core](#optional-rust-core). CI runs the test suite on Python 3.12 and 3.14; the Rust core declares Python 3.10 or later.
 
-Run commands from the directory containing `abstract_art.py`:
+Run commands from the directory containing `simulacra.py`:
 
 ```bash
-python3 abstract_art.py
+python3 simulacra.py
 ```
 
 This writes `art.png` in the current directory using the defaults: a 256 × 256 image, the `waves` style, seed `1`, and the `deep` palette.
@@ -38,13 +38,13 @@ This writes `art.png` in the current directory using the defaults: a 256 × 256 
 Choose a style and palette:
 
 ```bash
-python3 abstract_art.py --style petals --palette sunset --seed 7 --out petals.png
+python3 simulacra.py --style petals --palette sunset --seed 7 --out petals.png
 ```
 
 See all options:
 
 ```bash
-python3 abstract_art.py --help
+python3 simulacra.py --help
 ```
 
 If your interpreter is named `python` rather than `python3`, substitute that command in the examples.
@@ -82,13 +82,13 @@ A successful run prints the destination, style, seed, and palette. Successful wr
 ### A flower scene
 
 ```bash
-python3 abstract_art.py --style petals --palette sunset --seed 7 --width 512 --height 512 --out flower.png
+python3 simulacra.py --style petals --palette sunset --seed 7 --width 512 --height 512 --out flower.png
 ```
 
 ### A Mandelbrot image
 
 ```bash
-python3 abstract_art.py --style mandelbrot --palette ultraviolet --width 512 --height 512 --out mandelbrot.png
+python3 simulacra.py --style mandelbrot --palette ultraviolet --width 512 --height 512 --out mandelbrot.png
 ```
 
 A still Mandelbrot image uses a fixed viewport that preserves the complex plane's aspect ratio. The renderer does not use the seed, so changing `--seed` will not change this style. With `--frames` it zooms into the seahorse valley and back out.
@@ -96,21 +96,21 @@ A still Mandelbrot image uses a fixed viewport that preserves the complex plane'
 ### A wide landscape
 
 ```bash
-python3 abstract_art.py --style horizon --palette forest --seed 12 --width 960 --height 360 --out mountains.png
+python3 simulacra.py --style horizon --palette forest --seed 12 --width 960 --height 360 --out mountains.png
 ```
 
 ### Geometric outlines and flowing strokes
 
 ```bash
-python3 abstract_art.py --style geo --palette gold --seed 3 --out geometry.png
-python3 abstract_art.py --style ink --palette lagoon --seed 17 --out ink.png
+python3 simulacra.py --style geo --palette gold --seed 3 --out geometry.png
+python3 simulacra.py --style ink --palette lagoon --seed 17 --out ink.png
 ```
 
 ### Woodblock landscapes in watercolor colors
 
 ```bash
-python3 abstract_art.py --style woodblock --palette watercolor --seed 5 --out woodblock.png
-python3 abstract_art.py --style woodblock --palette watercolor --seed 7 --width 640 --height 480 --frames 48 --fps 12 --out woodblock.gif
+python3 simulacra.py --style woodblock --palette watercolor --seed 5 --out woodblock.png
+python3 simulacra.py --style woodblock --palette watercolor --seed 7 --width 640 --height 480 --frames 48 --fps 12 --out woodblock.gif
 ```
 
 `watercolor` is a color palette usable with every style. In `woodblock`, the last palette stop supplies the paper and the other stops supply the printed forms and carved marks; the contours remain crisp.
@@ -118,14 +118,14 @@ python3 abstract_art.py --style woodblock --palette watercolor --seed 7 --width 
 ### An animated sequence
 
 ```bash
-python3 abstract_art.py --style rings --palette rainbow --seed 3 --width 256 --height 256 --frames 24 --fps 12 --out rings.png
+python3 simulacra.py --style rings --palette rainbow --seed 3 --width 256 --height 256 --frames 24 --fps 12 --out rings.png
 ```
 
 This creates a two-second sequence that loops seamlessly. `rings` is one of the styles with motion, so the frames are one scene seen at 24 positions along a loop. Every built-in style has motion. With `--slideshow`, each frame is instead an unrelated scene with the next seed.
 
 ## Styles
 
-Every style accepts every built-in palette. The descriptions below describe the visual construction; astronomical names refer to artistic effects rather than physical simulations.
+Every style accepts every built-in palette. The descriptions below describe the visual construction. Styles named after real phenomena (astronomical objects, terrain, marbling, standing waves) are stylized representations built from simplified models, not physically accurate simulations.
 
 | Style | Visual construction |
 | --- | --- |
@@ -165,7 +165,7 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `ember` | Narrow vertical ember glows with varying brightness and falloff. |
 | `comet` | Fading streaks painted with soft brushes; trails wrap across image edges. |
 | `ink` | Quadratic Bézier strokes painted with tapered soft brushes. |
-| `woodblock` | Abstract layered hills, steep cliffs and rolling waves, with crisp carved contours and palette-colored paper. Seeds choose the landforms and open or cropped compositions; waves roll and land slowly reshapes in a loop. |
+| `woodblock` | Stylized layered hills, steep cliffs and rolling waves, with crisp carved contours and palette-colored paper. Seeds choose the landforms and open or cropped compositions; waves roll and land slowly reshapes in a loop. |
 | `mosaic` | Glass tiles set in dark grout: a patchwork of checkers, stripes, chevrons, diamond and square rings, lattices, rosettes, mazes and noise smears, often mirrored, sometimes in a ragged shape on a dark ground with scattered sparkles. Inspired by Jan Anderzen's glass mosaic *Palaisinpa kukkana* (*Come Back as a Flower*), 2020, at the Turtola tram stop in Tampere, Finland. |
 | `cymatics` | Coupled Chladni standing-wave displacement fields (square or circular modes chosen by the seed), mapping wave troughs, nodal lines, and crests across the palette. |
 | `optics` | Unified wave optics combining refractive caustic filaments, thin-film interference fringes, and multi-blade aperture diffraction spikes with Airy rings. |
@@ -215,7 +215,7 @@ The `ember` style and the `ember` palette are independent choices. You can use, 
 
 ## Animation
 
-Every style moves. Each takes a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
+Each style takes a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
 
 Every style moves. The motion is a rotation, a drift of waves, a circling of clouds, cells, stars or brush strokes, a sweep of jets, a slow zoom (`mandelbrot` dives toward a spiral in the seahorse valley, then back out), or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. `woodblock` rolls its wave layers and reshapes its hills and cliffs. The list is `ANIMATED_STYLES` in the module.
 
@@ -236,7 +236,7 @@ Import the module from a script in the same directory, or make its directory ava
 
 ```python
 from pathlib import Path
-import abstract_art as art
+import simulacra as art
 
 output = Path("output")
 output.mkdir(exist_ok=True)
@@ -267,7 +267,7 @@ For large images, prefer `render_rgb(width, height, seed, style, palette_name)`.
 ### Write an animation at a custom frame rate
 
 ```python
-import abstract_art as art
+import simulacra as art
 
 width, height = 128, 128
 frames = [
@@ -284,7 +284,7 @@ Both image writers accept nested rows or packed RGB bytes and validate their dim
 ### Custom palettes from hex colors
 
 ```bash
-python3 abstract_art.py --style plasma --palette-stops "#0c061c,#5814a8,#ff8800,#fff0c0" --out custom.png
+python3 simulacra.py --style plasma --palette-stops "#0c061c,#5814a8,#ff8800,#fff0c0" --out custom.png
 ```
 
 The first color is the background in many styles, so start with a dark one. The output line reports the palette as `custom`. In Python, `parse_hex_palette("#0c061c,5814a8,f80")` returns the same stops as a list of RGB tuples, which you can register as described below.
@@ -292,7 +292,7 @@ The first color is the background in many styles, so start with a dark one. The 
 ### Add a palette in Python
 
 ```python
-import abstract_art as art
+import simulacra as art
 
 art.PALETTES["ice"] = [
     (2, 8, 24),
@@ -306,7 +306,7 @@ pixels = art.render(256, 256, 4, "geo", "ice")
 art.write_png("ice.png", pixels, 256, 256)
 ```
 
-Palette entries should be a nonempty list of RGB tuples with channels in the range 0–255. The built-ins have five stops, except `rainbow` with seven; any count of two or more works. Adding an entry at runtime affects that Python process. To make a palette available in subsequent CLI runs, add it to `PALETTES` in `abstract_art.py`; CLI palette choices are derived from that dictionary.
+Palette entries should be a nonempty list of RGB tuples with channels in the range 0–255. The built-ins have five stops, except `rainbow` with seven; any count of two or more works. Adding an entry at runtime affects that Python process. To make a palette available in subsequent CLI runs, add it to `PALETTES` in `simulacra.py`; CLI palette choices are derived from that dictionary.
 
 ## How rendering works
 
@@ -323,7 +323,7 @@ For a fixed script version and Python environment, the same inputs produce repea
 
 ## Performance and limitations
 
-Without the Rust core, rendering runs on the CPU in Python loops: the original 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 48 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_abstract_art.py` to measure render times.
+Without the Rust core, rendering runs on the CPU in Python loops: the original 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 48 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_simulacra.py` to measure render times.
 
 - Start with 128 × 128 or 256 × 256 previews before increasing resolution.
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
@@ -337,9 +337,11 @@ Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no 
 
 ## Optional Rust core
 
-The `core/` directory contains `abstract_art_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 48). When the module is missing, the pure-Python renderers produce the same images.
+The `core/` directory contains `simulacra_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 48). When the module is missing, the pure-Python renderers produce the same images.
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
+
+Building with `--features portable` (`maturin develop --release -m core/Cargo.toml --features portable`) makes the core use the pure-Rust `libm` crate instead of the platform math library, so results are the same on every platform. Planned standalone releases will use it. Its output differs slightly from Python's in two styles: `cymatics` by at most one level in rare pixels, and `attractor`, whose chaotic orbit takes another path through the same curves. Development builds use the default so that native output stays byte-identical to Python. See [`PLAN.md`](PLAN.md) for the measurements.
 
 Build it into a virtual environment (requires a Rust toolchain from [rustup.rs](https://rustup.rs)):
 
@@ -348,10 +350,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install maturin
 maturin develop --release -m core/Cargo.toml
-python abstract_art.py --style quasar --width 3840 --height 2160 --out quasar-4k.png
+python simulacra.py --style quasar --width 3840 --height 2160 --out quasar-4k.png
 ```
 
-Rebuild with the same `maturin develop` command after changing Rust code. Measured on an 8-core machine at 640 × 480, native styles take 3–77 ms each, against 0.7–43 s in Python. For example, `quasar` went from 43 s to 0.05 s and `circuit` from 12 s to 0.07 s. A 4K `quasar` render including PNG encoding takes about 2 s.
+Rebuild with the same `maturin develop` command after changing Rust code. On an 8-core machine at 640 × 480, native styles take a few milliseconds to about 0.15 s each to shade, against up to 43 s in Python; PNG encoding adds 5–75 ms. `bench_simulacra.py --stages` and `--cli` measure scene building, shading, encoding and peak memory, and the latest baseline is in [`PLAN.md`](PLAN.md).
 
 ## Testing
 
@@ -361,22 +363,22 @@ Run the test suite from the project directory:
 python3 -m unittest -v
 ```
 
-With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`.
+With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. A slower comparison at 200 × 150 and 150 × 200 runs with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes test_simulacra`. Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`.
 
 To run one regression test:
 
 ```bash
-python3 -m unittest -v test_abstract_art.RenderingTests.test_large_flowfield_trails_are_connected
+python3 -m unittest -v test_simulacra.RenderingTests.test_large_flowfield_trails_are_connected
 ```
 
-The suite currently contains 67 tests covering:
+The suite currently contains 82 tests covering:
 
 - Valid dimensions and RGB channels across all registered styles.
 - Every style using a wide part of its palette, unaliased wave styles, and shapes that scale with the canvas.
 - The noise range and seam-free angular noise.
 - Writers that store palette colors unchanged, use normal file permissions without changing the process umask, and preserve existing files on failure.
 - A command-line smoke test.
-- Packed RGB rendering and writing, and byte-identical output from the Rust core.
+- Packed RGB rendering and writing, and byte-identical output from the Rust core at several sizes, seeds, palettes and phases (with a `portable` core, `attractor` and `cymatics` are held to measured bounds instead).
 - Spatial detail in formerly flat renderers and known Mandelbrot interior/exterior points.
 - Repeatability without changing global random state.
 - Lissajous curve coverage and a single-pixel galaxy edge case.
@@ -404,7 +406,7 @@ FFmpeg is optional and is not required by the script or its unit tests.
 
 To add a style:
 
-1. Implement `render_your_style(width, height, seed, palette_name, phase=0.0)` in `abstract_art.py`. A style that does not move can ignore `phase`, but then it is a slideshow under `--frames` until it is added to `ANIMATED_STYLES`.
+1. Implement `render_your_style(width, height, seed, palette_name, phase=0.0)` in `simulacra.py`. A style that does not move can ignore `phase`, but then it is a slideshow under `--frames` until it is added to `ANIMATED_STYLES`.
 2. Return exactly `height` rows containing exactly `width` RGB tuples each. Keep channel values between 0 and 255.
 3. Use `PALETTES[palette_name]` and `palette_color()` for palette mapping. If randomness is needed, create a local `random.Random(seed)`.
 4. Register it in the `STYLES` dictionary. `render()`, the CLI's `--style` choices, and the tests all read from it.
@@ -433,14 +435,15 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 
 | File | Purpose |
 | --- | --- |
-| [`abstract_art.py`](abstract_art.py) | Palettes, noise and geometry helpers, all renderers, PNG/APNG/GIF writers, and CLI. |
-| [`test_abstract_art.py`](test_abstract_art.py) | Regression tests (standard library only). |
-| [`bench_abstract_art.py`](bench_abstract_art.py) | Per-style render benchmark with save/compare. |
-| [`core/`](core) | Optional Rust extension module `abstract_art_core` (PyO3, rayon). |
+| [`simulacra.py`](simulacra.py) | Palettes, noise and geometry helpers, all renderers, PNG/APNG/GIF writers, and CLI. |
+| [`test_simulacra.py`](test_simulacra.py) | Regression tests (standard library only). |
+| [`bench_simulacra.py`](bench_simulacra.py) | Per-style render benchmark with save/compare; `--stages` splits scene, shader and PNG time, and `--cli` times whole CLI runs with peak memory. |
+| [`core/`](core) | Optional Rust extension module `simulacra_core` (PyO3, rayon). |
 | [`GLOSSARY.md`](GLOSSARY.md) | The project's visual vocabulary: style, palette, seed, scene, frame, phase, animation. |
-| [`.github/workflows/`](.github/workflows) | CI: SonarQube Cloud analysis with test coverage, and OSV-Scanner. |
+| [`.github/workflows/`](.github/workflows) | CI: tests on Python 3.12 and 3.14 with and without the Rust core (default and portable math), `cargo test` and Clippy; SonarQube Cloud analysis with test coverage; OSV-Scanner. |
 | `sonar-project.properties`, `.coveragerc` | SonarQube Cloud project settings and the coverage configuration the CI uses. |
 | [`.gitignore`](.gitignore) | Excludes Python bytecode, the virtual environment, Rust build output and coverage reports. Generated artwork is not currently ignored. |
 | [`README.md`](README.md) | Usage, API, implementation notes, and development guidance. |
+| [`PLAN.md`](PLAN.md) | The plan for a standalone Rust application: phases, measured drift, compatibility policy and performance baseline. |
 | [`AGENTS.md`](AGENTS.md) | Conventions, triage notes, and known issues for coding agents and contributors. |
 | [`CLAUDE.md`](CLAUDE.md) | Points Claude Code at `AGENTS.md`. |

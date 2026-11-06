@@ -1,5 +1,5 @@
 //! Per-style pixel shaders. Each mirrors the matching `render_*` function in
-//! `abstract_art.py` expression for expression; Python generates the scene
+//! `simulacra.py` expression for expression; Python generates the scene
 //! (all random draws) and passes it in as a dict, extracted into these structs.
 
 pub mod brush;

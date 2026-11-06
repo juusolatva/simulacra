@@ -1,6 +1,6 @@
-# Abstract Art
+# Simulacra
 
-Abstract Art creates reproducible abstract images from mathematical patterns and seeded randomness. This vocabulary describes the choices that define an image and the frames presented as output.
+Simulacra creates reproducible images, abstract patterns as well as stylized representations of real phenomena, from mathematical patterns, simulated processes and seeded randomness. This vocabulary describes the choices that define an image and the frames presented as output.
 
 ## Language
 
