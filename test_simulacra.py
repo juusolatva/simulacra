@@ -569,15 +569,54 @@ class RenderingTests(unittest.TestCase):
         still = art.render_rgb(48, 36, 4, 'marbling', 'sepia')
         self.assertNotEqual(still, art.render_rgb(48, 36, 4, 'marbling', 'sepia', 0.3))
 
-    def test_attractor_scene_is_lively_and_frames_the_orbit(self):
-        for seed in (1, 2, 3):
-            for step in range(24):
-                params = art._attractor_scene(80, 60, seed, step / 24)['params']
-                with self.subTest(seed=seed, step=step):
-                    self.assertTrue(art._clifford_is_lively(params))
+    @staticmethod
+    def _clifford_is_lively(params):
+        """The liveliness test the table was built with, at the looser old thresholds."""
+        min_x, max_x, min_y, max_y = art._clifford_bounds(params)
+        span_x, span_y = max_x - min_x, max_y - min_y
+        if span_x < 1.0 or span_y < 1.0:
+            return False
+        x, y = 0.1, 0.1
+        cells = set()
+        for i in range(3100):
+            x, y = art._clifford_step(x, y, *params)
+            if i >= 100:
+                cells.add((int((x - min_x) / span_x * 31.999), int((y - min_y) / span_y * 31.999)))
+        return len(cells) >= 150
+
+    def _assert_attractor_entries_are_lively(self, entries, phases):
+        for a, b, c, d in entries:
+            for base in ((a, b, c, d), (b, a, d, c)):
+                for step in range(phases):
+                    params = art._attractor_params(base, step / phases)
+                    with self.subTest(base=base, step=step):
+                        self.assertTrue(self._clifford_is_lively(params))
+
+    def test_attractor_table_entries_are_lively(self):
+        self._assert_attractor_entries_are_lively(art._ATTRACTOR_TABLE[::16], 6)
+
+    @unittest.skipUnless(os.environ.get('SIMULACRA_SLOW'),
+                         'set SIMULACRA_SLOW=1 to check every attractor table entry')
+    def test_every_attractor_table_entry_is_lively(self):
+        self._assert_attractor_entries_are_lively(art._ATTRACTOR_TABLE, 24)
+
+    def test_attractor_choice_needs_no_floating_point_math(self):
+        # Only integer random draws pick the parameters, so no libm can change them.
+        # Seeds 0 to 511 (CPython seeds with abs(seed), so negatives would repeat).
+        with mock.patch.object(art, 'math', None):
+            bases = [art._attractor_base(seed) for seed in range(512)]
+        table = set(art._ATTRACTOR_TABLE)
+        mirrored = [(b, a, d, c) in table for a, b, c, d in bases]
+        for (a, b, c, d), mirror in zip(bases, mirrored):
+            self.assertIn((b, a, d, c) if mirror else (a, b, c, d), table)
+        self.assertGreater(sum(mirrored), 200)
+        self.assertLess(sum(mirrored), 312)
+        self.assertGreater(len(set(bases)), 290)  # about 324 expected of 512 figures
+
+    def test_attractor_scene_frames_the_orbit(self):
         for seed in range(8):
             scene = art._attractor_scene(80, 60, seed)
-            self.assertEqual(len(scene['params']), 4)
+            self.assertEqual(scene['params'], art._attractor_base(seed))
             self.assertEqual(scene['points'], 6 * 80 * 60)
         pixels = art.render(64, 64, 2, 'attractor', 'thermal')
         dark = sum(color == art.PALETTES['thermal'][0] for row in pixels for color in row)
