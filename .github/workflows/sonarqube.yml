@@ -43,7 +43,7 @@ jobs:
       # that hand scenes to Rust. Both runs go into one report.
       - name: Build the Rust core and run the tests again
         run: |
-          .venv/bin/maturin develop -m core/Cargo.toml
+          .venv/bin/maturin develop -m core/py/Cargo.toml
           .venv/bin/python -m coverage run --append -m unittest -v
           .venv/bin/python -m coverage xml
 

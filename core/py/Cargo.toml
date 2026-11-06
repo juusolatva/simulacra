@@ -1,0 +1,20 @@
+[package]
+name = "simulacra_core"
+description = "Native (Rust) renderers for simulacra.py: the Python adapter over simulacra_engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# Must match the #[pymodule] name in src/lib.rs.
+name = "simulacra_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+simulacra_engine = { path = "../engine", features = ["python"] }
+pyo3.workspace = true
+
+[features]
+# Build the engine with the pure-Rust libm crate (see simulacra_engine).
+portable = ["simulacra_engine/portable"]

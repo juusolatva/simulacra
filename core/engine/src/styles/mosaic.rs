@@ -6,8 +6,7 @@ use rayon::prelude::*;
 use super::Style;
 use crate::palette::Palette;
 
-#[derive(pyo3::FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Mosaic {
     cols: usize,
     rows: usize,

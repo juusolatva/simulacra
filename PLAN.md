@@ -1,11 +1,13 @@
 # Rust rewrite plan
 
-Status (2026-11-07): Phase 1 is done except wider baseline coverage (more
-seeds, aspect ratios and palettes) and the `portable` fixtures, which wait for
-the Phase 2 engine crate. Phase 2 has started: the math module has the `Libm`
-trait with `system` and `portable` backends and `py_hypot`, a port of
-CPython's `hypot`, all enforced by Clippy. Next in Phase 2: split the crate.
-Phases 2b to 6 have not started.
+Status (2026-11-08): Phase 1 is done except wider baseline coverage (more
+seeds, aspect ratios and palettes) and the `portable` fixtures. Phase 2 is
+under way: `core/` is a Cargo workspace with `simulacra_engine` (no PyO3
+unless its `python` feature is on) and the `simulacra_core` adapter, the math
+module has the `Libm` backends and the CPython `hypot` port, and one registry
+(`for_each_style!`) lists the styles. Next in Phase 2: make scenes
+constructible without Python (for example `serde` JSON), which the `portable`
+fixtures need. Phases 2b to 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -246,16 +248,30 @@ they include about 0.5 s of parameter search per process.
 Timing: while experimentation continues; preserve current visuals.
 
 - [ ] Expose ordinary Rust types and APIs for render options, palettes, scenes,
-  and packed RGB buffers.
-- [ ] Split `core` into the `engine`, `cli`, and `py` workspace crates; gate the
-  scene `FromPyObject` derives behind the `python` feature.
-- [ ] Move PyO3 extraction and Python exception conversion into the adapter.
+  and packed RGB buffers. Partly done: `Palette` with a typed `PaletteError`,
+  the `Style` trait returning packed RGB, the `STYLES` registry and `PORTABLE`
+  are public engine API. Scene structs are public but their fields are not,
+  so only the adapter can build them so far; render options (validated
+  dimensions) come with Phase 3.
+- [x] Split `core` into the `engine`, `cli`, and `py` workspace crates; gate the
+  scene `FromPyObject` derives behind the `python` feature. Done for `engine`
+  (`core/engine`, package `simulacra_engine`) and `py` (`core/py`, package
+  `simulacra_core`); `core/Cargo.toml` is the workspace root with the shared
+  release profile, lockfile and `clippy.toml`. The `cli` crate is created with
+  the first binary in Phase 3. Every derive is
+  `#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]`.
+  Native output was byte-identical before and after (all 48 styles at four
+  sizes, seeds, palettes and phases, plus `fbm` and `palette_color`).
+- [x] Move PyO3 extraction and Python exception conversion into the adapter.
+  `core/py/src/lib.rs` holds the module, the dispatch generated from the
+  engine's `for_each_style!` registry, and the conversion of `PaletteError`
+  and unknown styles to `ValueError`.
 - [ ] Put every transcendental call behind one engine math module, sorted by
-  where Python gets the function. Partly done: `core/src/math.rs` has the
+  where Python gets the function. Partly done: `core/engine/src/math.rs` has the
   `Libm` trait with both backends (the `portable` cargo feature), and
   `core/clippy.toml` rejects direct `f64` libm calls elsewhere, `f64::hypot`
-  included. `math::py_hypot` ports CPython's `hypot` (done; see below). Still
-  to do: moving the module into the engine crate.
+  included. `math::py_hypot` ports CPython's `hypot` (done; see below). The
+  module is in the engine crate (private to it).
   - Functions CPython implements itself get exact Rust ports that both
     backends use. `math.hypot` is CPython's own algorithm (`vector_norm`), not
     libm, but Rust's `f64::hypot` calls libm: on glibc 2.43 the two disagreed
@@ -294,7 +310,10 @@ Timing: while experimentation continues; preserve current visuals.
   that adapter.
 - [ ] Preserve arithmetic order and the existing Python numeric compatibility
   helpers during extraction.
-- [ ] Keep the Python extension and standalone engine build paths covered in CI.
+- [x] Keep the Python extension and standalone engine build paths covered in CI.
+  The Rust job tests and lints the workspace (engine with `python`, through
+  feature unification) and then the engine alone, checking that its
+  dependency tree has no PyO3.
 
 Acceptance: `cargo test -p engine` passes with the `python` feature off and
 no Python installed; the Python extension continues to match the reference
@@ -515,7 +534,7 @@ same seed. It now picks from a fixed table (see "Attractor parameter table").
 Measured on 2026-11-06 (Fedora, glibc 2.43, CPython 3.14, `libm` 0.2.16).
 The `portable` cargo feature of `core` sends `exp`, `sin`, `cos`, `tan`,
 `atan`, `atan2`, `powf` and `ln_1p` through the `libm` crate
-(`core/src/math.rs`, trait `Libm`); the default build is unchanged and still
+(`core/engine/src/math.rs`, trait `Libm`); the default build is unchanged and still
 byte-identical to Python. Renders compared: every style at 200 × 150
 (seed 3, lagoon), 150 × 200 (seed 17, thermal), 160 × 120 (seed -7, neon) and
 640 × 480 (seed 1, deep), each at phases 0, 0.37 and 0.81.
@@ -619,9 +638,10 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 4. Done: establish the stage-level performance baseline.
    Also done: `attractor` picks its parameters from a table, so the choice
    no longer depends on libm (see "Attractor parameter table").
-5. Next: extract the Python-independent Rust engine while retaining the
-   adapter, including the math module (the `system` and `portable` backends
-   and the CPython `hypot` port exist) and the `portable` fixtures.
+5. Next: finish the Python-independent Rust engine. Done: the workspace split
+   (`simulacra_engine` and the `simulacra_core` adapter), the math module with
+   both backends and the CPython `hypot` port. Still to do: scenes that can be
+   built without Python, and the `portable` fixtures.
 6. Port CPython's random generator.
 7. Prove standalone delivery with a small subset of styles.
 8. Continue Python style experimentation and migrate settled styles in batches.

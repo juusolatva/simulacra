@@ -3,7 +3,6 @@
 use crate::math::{Libm, py_hypot};
 use std::f64::consts::{PI, TAU};
 
-use pyo3::FromPyObject;
 use rayon::prelude::*;
 
 use super::{Style, center, gaussian, small_side, unit};
@@ -12,8 +11,7 @@ use crate::noise::{contrast, fbm, fbm_loop};
 use crate::palette::Palette;
 use crate::raster::{shade, shade_rgb};
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Blobs {
     phase: f64,
 }
@@ -30,8 +28,7 @@ impl Style for Blobs {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Waves {
     layers: Vec<(f64, f64, f64)>,
 }
@@ -52,8 +49,7 @@ impl Style for Waves {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Plasma {
     layers: Vec<(f64, f64, f64, f64)>,
 }
@@ -72,8 +68,7 @@ impl Style for Plasma {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Interference {
     layers: Vec<(f64, f64, f64, f64)>,
 }
@@ -93,8 +88,7 @@ impl Style for Interference {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Kaleidoscope {
     folds: i64,
     phase: f64,
@@ -119,8 +113,7 @@ impl Style for Kaleidoscope {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Pinwheel {
     n_arms: i64,
     twist: f64,
@@ -152,8 +145,7 @@ impl Style for Pinwheel {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Galaxy {
     bulge_r: f64,
     bulge_amp: f64,
@@ -184,8 +176,7 @@ impl Style for Galaxy {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Bloom {
     /// (x, y, radius, amp)
     blooms: Vec<(f64, f64, f64, f64)>,
@@ -207,8 +198,7 @@ impl Style for Bloom {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Nebula {
     /// (x, y, radius, amp)
     clouds: Vec<(f64, f64, f64, f64)>,
@@ -241,8 +231,7 @@ impl Style for Nebula {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Orbits {
     /// (x, y, radius)
     stars: Vec<(f64, f64, f64)>,
@@ -275,8 +264,7 @@ impl Style for Orbits {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Cosmic {
     /// (x, y, size, brightness)
     stars: Vec<(f64, f64, f64, f64)>,
@@ -314,8 +302,7 @@ impl Style for Cosmic {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Rings {
     /// (radius, phase)
     rings: Vec<(f64, f64)>,
@@ -340,8 +327,7 @@ impl Style for Rings {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Starburst {
     rays: f64,
     phase: f64,
@@ -363,8 +349,7 @@ impl Style for Starburst {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Spiral {
     /// (turns, phase, amp, width)
     arms: Vec<(f64, f64, f64, f64)>,
@@ -390,8 +375,7 @@ impl Style for Spiral {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Petals {
     count: f64,
     length: f64,
@@ -415,8 +399,7 @@ impl Style for Petals {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Aurora {
     /// (y0, amp, freq, phase, bw)
     ribbons: Vec<(f64, f64, f64, f64, f64)>,
@@ -439,8 +422,7 @@ impl Style for Aurora {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Gems {
     /// (cx, cy, radius, rotation)
     gems: Vec<(f64, f64, f64, f64)>,
@@ -466,8 +448,7 @@ impl Style for Gems {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Cosmos {
     /// (x, y, max_r, rings, phase, amp)
     centers: Vec<(f64, f64, f64, i64, f64, f64)>,
@@ -497,8 +478,7 @@ impl Style for Cosmos {
 }
 
 /// `render_mandelbrot`: Python gives the view (scale, centre) and iteration limit.
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Mandelbrot {
     scale: f64,
     center: (f64, f64),
@@ -529,8 +509,7 @@ impl Style for Mandelbrot {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Horizon {
     /// (ridge height fraction, noise offset, palette position) per layer
     layers: Vec<(f64, f64, f64)>,
@@ -569,8 +548,7 @@ impl Style for Horizon {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Voronoi {
     /// (x, y, brightness)
     sites: Vec<(f64, f64, f64)>,
@@ -601,8 +579,7 @@ impl Style for Voronoi {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Crystal {
     light: (f64, f64, f64),
     half: (f64, f64, f64),
@@ -662,8 +639,7 @@ impl Style for Crystal {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Cymatics {
     circular: bool,
     /// (n, m, weight, phase_a, phase_b)
@@ -697,8 +673,7 @@ impl Style for Cymatics {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Optics {
     /// (kx, ky, wave_phase)
     waves: Vec<(f64, f64, f64)>,
@@ -745,8 +720,7 @@ impl Style for Optics {
 
 const CONTOUR_LEVELS: f64 = 14.0;
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Contour {
     phase: f64,
 }
@@ -776,8 +750,7 @@ impl Style for Contour {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Opart {
     pattern: i64,
     angle: f64,
@@ -819,8 +792,7 @@ impl Style for Opart {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Marbling {
     /// (kind, a, b, c, d, e, f): kind 0 is a drop, kind 1 a comb.
     ops: Vec<(f64, f64, f64, f64, f64, f64, f64)>,

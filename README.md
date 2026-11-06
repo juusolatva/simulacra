@@ -341,7 +341,7 @@ The `core/` directory contains `simulacra_core`, a Rust extension module built w
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 
-Building with `--features portable` (`maturin develop --release -m core/Cargo.toml --features portable`) makes the core use the pure-Rust `libm` crate instead of the platform math library, so results are the same on every platform. Planned standalone releases will use it. Its output differs slightly from Python's in two styles: `cymatics` by at most one level in rare pixels, and `attractor`, whose chaotic orbit takes another path through the same curves. Development builds use the default so that native output stays byte-identical to Python. See [`PLAN.md`](PLAN.md) for the measurements.
+Building with `--features portable` (`maturin develop --release -m core/py/Cargo.toml --features portable`) makes the core use the pure-Rust `libm` crate instead of the platform math library, so results are the same on every platform. Planned standalone releases will use it. Its output differs slightly from Python's in two styles: `cymatics` by at most one level in rare pixels, and `attractor`, whose chaotic orbit takes another path through the same curves. Development builds use the default so that native output stays byte-identical to Python. See [`PLAN.md`](PLAN.md) for the measurements.
 
 Build it into a virtual environment (requires a Rust toolchain from [rustup.rs](https://rustup.rs)):
 
@@ -349,7 +349,7 @@ Build it into a virtual environment (requires a Rust toolchain from [rustup.rs](
 python3 -m venv .venv
 source .venv/bin/activate
 pip install maturin
-maturin develop --release -m core/Cargo.toml
+maturin develop --release -m core/py/Cargo.toml
 python simulacra.py --style quasar --width 3840 --height 2160 --out quasar-4k.png
 ```
 
@@ -413,7 +413,7 @@ To add a style:
 4. Register it in the `STYLES` dictionary. `render()`, the CLI's `--style` choices, and the tests all read from it.
 5. Add a description to this README and the module's style list.
 6. Run the tests, add a regression check for the new style's intended behavior, and inspect square, wide, and tall renders.
-7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/src/styles/` that reads it, add it to `extract_style()` and `STYLES` in `core/src/lib.rs`, and register the scene builder in `NATIVE_STYLES`. Port expressions operation for operation and call `exp`, `sin`, `cos` and the other libm functions through the `Libm` trait in `core/src/math.rs` (`x.m_sin()`); Clippy rejects the `f64` methods (`core/clippy.toml`). `test_native_styles_match_python_exactly` then checks it against the Python renderer.
+7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/engine/src/styles/` that reads it (with the `cfg_attr` line that derives `FromPyObject` under the `python` feature), add one line for it to the registry, `for_each_style!` in `core/engine/src/lib.rs`, which generates both `STYLES` and the adapter's dispatch, and register the scene builder in `NATIVE_STYLES`. Port expressions operation for operation and call `exp`, `sin`, `cos` and the other libm functions through the `Libm` trait in `core/engine/src/math.rs` (`x.m_sin()`); Clippy rejects the `f64` methods (`core/clippy.toml`). `test_native_styles_match_python_exactly` then checks it against the Python renderer.
 8. To make it move, add `_loop(phase, k)` or `_circle_offset()` terms in the scene builder (see `AGENTS.md`), give it an entry in `ANIMATED_STYLES`, and wrap the builder with `_animated_scene()` in `NATIVE_STYLES`. Phase 0 must give the same image as before.
 
 Pay particular attention to coordinate units: normalize positions when a shape should scale with the canvas, distinguish angles from pixel distances, and sample continuous paths densely enough to connect adjacent pixels. Test the saved image as well as the in-memory buffer.

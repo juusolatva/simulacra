@@ -1,7 +1,6 @@
 //! Polygon-, segment- and ring-based styles.
 
 use crate::math::{Libm, py_hypot};
-use pyo3::FromPyObject;
 
 use super::{Style, gaussian, small_side, unit};
 use crate::geometry::{Point, Segment, point_in_poly, poly_min_dist, py_sum, seg_hit};
@@ -12,8 +11,7 @@ use crate::noise::polar_noise;
 use crate::palette::Palette;
 use crate::raster::shade;
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Circuit {
     /// (node pads, segments) per trace
     traces: Vec<(Vec<Point>, Vec<Segment>)>,
@@ -46,8 +44,7 @@ impl Style for Circuit {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Geo {
     polygons: Vec<Vec<Point>>,
 }
@@ -67,8 +64,7 @@ impl Style for Geo {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Shard {
     /// (radius, polygon, cracks)
     shards: Vec<(f64, Vec<Point>, Vec<Segment>)>,
@@ -97,8 +93,7 @@ impl Style for Shard {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Prism {
     /// (cx, cy, radius, glow, layers)
     gems: Vec<(f64, f64, f64, f64, Vec<PrismLayer>)>,
@@ -125,8 +120,7 @@ impl Style for Prism {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Mandala {
     center: Point,
     medallion: f64,

@@ -4,8 +4,7 @@ use crate::noise::{contrast, fbm_loop};
 use crate::palette::Palette;
 use crate::raster::shade;
 
-#[derive(pyo3::FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Drift {
     phase: f64,
 }

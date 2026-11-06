@@ -7,7 +7,6 @@
 use crate::math::{Libm, py_hypot};
 use std::f64::consts::TAU;
 
-use pyo3::FromPyObject;
 
 use super::{Style, gaussian, unit};
 use crate::geometry::Point;
@@ -58,8 +57,7 @@ fn segment_box(
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Flowfield {
     starts: Vec<Point>,
 }
@@ -97,8 +95,7 @@ impl Style for Flowfield {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Comet {
     /// (x, y, angle, speed, brush radius)
     comets: Vec<(f64, f64, f64, f64, f64)>,
@@ -140,8 +137,7 @@ impl Style for Comet {
 /// (x0, y0, x1, y1, control x, control y, brush, alpha, steps)
 type Stroke = (f64, f64, f64, f64, f64, f64, f64, f64, i64);
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Ink {
     strokes: Vec<Stroke>,
 }
@@ -175,8 +171,7 @@ impl Style for Ink {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Ember {
     /// (x, y, rise, size, phase, flicker)
     embers: Vec<(f64, f64, f64, f64, f64, f64)>,
@@ -213,8 +208,7 @@ impl Style for Ember {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Torus {
     /// Polyline of the knot as (x, y, depth)
     points: Vec<(f64, f64, f64)>,
@@ -251,8 +245,7 @@ impl Style for Torus {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Lissajous {
     /// (polyline, reach, sigma, amp) per curve
     curves: Vec<(Vec<Point>, f64, f64, f64)>,
@@ -290,8 +283,7 @@ impl Style for Lissajous {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Constellations {
     /// (x, y, radius, brightness)
     stars: Vec<(f64, f64, f64, f64)>,
@@ -338,8 +330,7 @@ impl Style for Constellations {
     }
 }
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Attractor {
     params: (f64, f64, f64, f64),
     mid: (f64, f64),

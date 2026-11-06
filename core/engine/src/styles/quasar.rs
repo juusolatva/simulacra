@@ -4,15 +4,13 @@
 //! `_quasar_scene()` so both implementations share the same random layout.
 
 use crate::math::{Libm, py_hypot};
-use pyo3::FromPyObject;
 
 use super::Style;
 use crate::noise::{fbm, polar_noise};
 use crate::palette::Palette;
 use crate::raster::shade;
 
-#[derive(FromPyObject)]
-#[pyo3(from_item_all)]
+#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 pub struct Quasar {
     pub center: (f64, f64),
     pub beta: f64,
