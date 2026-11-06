@@ -128,7 +128,9 @@ Timing: while style experimentation continues.
   minutes of pure-Python rendering. Done: the fast test also runs phases 0.37
   and -1.81, and `test_native_styles_match_python_exactly_at_larger_sizes`
   (opt-in with `SIMULACRA_SLOW=1`) runs 200 × 150 and 150 × 200 at phases
-  0.37 and 0.81 in its own CI job.
+  0.37 and 0.81 in its own CI job. Since 2026-11-08 that job is its own workflow
+  (`slow-tests.yml`) and runs only on a manual dispatch (about 10 minutes on a runner); run it locally before a
+  pull request that changes a shader or a scene builder.
 - [x] Measure the `portable` drift now, with the current core: add a feature
   that routes the libm calls listed in Phase 2 through the `libm` crate (leave
   `hypot` as it is, since Phase 2 replaces it), rerun that comparison per

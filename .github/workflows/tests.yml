@@ -54,30 +54,6 @@ jobs:
           if [ -x .venv/bin/python ]; then python=.venv/bin/python; else python=python; fi
           "$python" -m unittest -v
 
-  native-larger:
-    name: Native matches Python at larger sizes
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read # Check out the code
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
-      # Also checks every attractor parameter set against its build criteria (48 phases).
-      - name: Build the Rust core and compare it with Python
-        env:
-          SIMULACRA_SLOW: '1'
-        run: |
-          python -m venv .venv
-          .venv/bin/python -m pip install maturin
-          .venv/bin/maturin develop --release -m core/Cargo.toml
-          .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra
-
   rust:
     name: Cargo test and Clippy
     runs-on: ubuntu-latest

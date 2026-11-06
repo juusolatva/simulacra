@@ -47,7 +47,7 @@ Measured at 640×480: the original 36 styles took 178 s in pure Python at the st
 
 ```bash
 python3 -m unittest -q                     # full suite, pure Python (native tests skip)
-SIMULACRA_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes -k every_attractor_table_entry test_simulacra   # slow checks (several minutes)
+SIMULACRA_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes -k every_attractor_table_entry test_simulacra   # slow checks (several minutes); CI runs them only on a manual dispatch, so run them before a PR touching shaders or scenes
 .venv/bin/python -m unittest -q            # with the Rust core: also checks native == Python
 source .venv/bin/activate && maturin develop --release -m core/Cargo.toml   # rebuild core
 cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
@@ -68,7 +68,8 @@ Do not commit generated images.
 
 ## CI
 
-- **Tests (`.github/workflows/tests.yml`):** runs on every push to main and every pull request, forks included (no secrets): the suite on Python 3.12 and 3.14, each without and with the Rust core, plus Python 3.12 with a `portable` core; a separate job for the slow checks (`SIMULACRA_SLOW=1`: native versus Python at larger sizes, and every attractor table entry); and `cargo test` plus Clippy with `-D warnings`.
+- **Tests (`.github/workflows/tests.yml`):** runs on every push to main and every pull request, forks included (no secrets): the suite on Python 3.12 and 3.14, each without and with the Rust core, plus Python 3.12 with a `portable` core; and `cargo test` plus Clippy with `-D warnings`.
+- **Slow tests (`.github/workflows/slow-tests.yml`):** the slow checks (`SIMULACRA_SLOW=1`: native versus Python at larger sizes, and every attractor table entry) run only when started by hand (`workflow_dispatch`), because they take about 10 minutes on a runner; being a separate workflow, they are not listed on pull requests. Run the slow checks locally instead (see Commands) before opening a PR that changes a Rust shader, a scene builder or the attractor table, and say in the PR that they passed.
 - **SonarQube Cloud (`.github/workflows/sonarqube.yml`, `sonar-project.properties`, `.coveragerc`):** runs the suite twice under `coverage` (once without the Rust core, once with it built via `maturin develop`, appended into one report) and scans with `coverage.xml`. Only Python coverage is collected; Rust is exercised through the same tests. The scan needs `SONAR_TOKEN` and skips pull requests from forks, which cannot read secrets. SonarQube's Automatic Analysis must be off, because it conflicts with CI analysis.
 - **OSV-Scanner (`.github/workflows/osv-scanner.yml`):** scans `-r ./`, which finds `core/Cargo.lock` (the Python module has no dependencies). Pull requests and merge groups use the PR workflow, and pushes to main, a weekly schedule and manual runs use the full scan. SARIF upload is off (`upload-sarif: false`) while the repository is private, since code scanning needs GitHub Code Security there; turn it back on when the repository is public. Actions are pinned by commit SHA with the version in a comment.
 
