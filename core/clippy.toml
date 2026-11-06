@@ -1,0 +1,20 @@
+# Transcendental f64 methods call the platform libm, whose last bit differs
+# between platforms. Call them through the `Libm` trait in src/math.rs
+# (`x.m_exp()` and so on), which the `portable` feature switches to the
+# pure-Rust libm crate. `sqrt` and `floor` are exact everywhere; `hypot` is not
+# routed yet (see src/math.rs).
+disallowed-methods = [
+    { path = "f64::exp", reason = "use Libm::m_exp (src/math.rs)" },
+    { path = "f64::exp_m1", reason = "add it to Libm (src/math.rs)" },
+    { path = "f64::sin", reason = "use Libm::m_sin (src/math.rs)" },
+    { path = "f64::cos", reason = "use Libm::m_cos (src/math.rs)" },
+    { path = "f64::sin_cos", reason = "use Libm::m_sin and m_cos (src/math.rs)" },
+    { path = "f64::tan", reason = "use Libm::m_tan (src/math.rs)" },
+    { path = "f64::tanh", reason = "add it to Libm (src/math.rs)" },
+    { path = "f64::atan", reason = "use Libm::m_atan (src/math.rs)" },
+    { path = "f64::atan2", reason = "use Libm::m_atan2 (src/math.rs)" },
+    { path = "f64::powf", reason = "use Libm::m_powf (src/math.rs)" },
+    { path = "f64::ln", reason = "add it to Libm (src/math.rs)" },
+    { path = "f64::ln_1p", reason = "use Libm::m_ln_1p (src/math.rs)" },
+    { path = "f64::log10", reason = "add it to Libm (src/math.rs)" },
+]

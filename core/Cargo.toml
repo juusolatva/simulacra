@@ -14,7 +14,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 pyo3 = "0.30"
 rayon = "1.12"
-libm = { version = "0.2.16", optional = true }
+# No default features: the `arch` feature would use platform intrinsics where they exist.
+libm = { version = "0.2.16", default-features = false, optional = true }
 
 [features]
 # Route libm calls through the pure-Rust libm crate (same results on every target).

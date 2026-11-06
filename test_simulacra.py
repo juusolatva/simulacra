@@ -569,15 +569,98 @@ class RenderingTests(unittest.TestCase):
         still = art.render_rgb(48, 36, 4, 'marbling', 'sepia')
         self.assertNotEqual(still, art.render_rgb(48, 36, 4, 'marbling', 'sepia', 0.3))
 
-    def test_attractor_scene_is_lively_and_frames_the_orbit(self):
-        for seed in (1, 2, 3):
-            for step in range(24):
-                params = art._attractor_scene(80, 60, seed, step / 24)['params']
-                with self.subTest(seed=seed, step=step):
-                    self.assertTrue(art._clifford_is_lively(params))
+    # The criteria _ATTRACTOR_TABLE was built with (see "Attractor parameter
+    # table" in PLAN.md), at the limits documented there. The table was built
+    # with some headroom over each, so a different libm on the test machine
+    # does not tip a borderline entry over.
+    _ATTRACTOR_STARTS = ((0.1, 0.1), (0.1 + 1e-9, 0.1), (0.1, 0.1 - 1e-9), (0.1 + 2e-9, 0.1 + 1e-9))
+
+    @staticmethod
+    def _clifford_orbit_stats(params, start):
+        """Spans and visited cells of 32 x 32 for a 3,000-point orbit after 100 warm-up steps."""
+        x, y = start
+        points = []
+        for i in range(3100):
+            x, y = art._clifford_step(x, y, *params)
+            if i >= 100:
+                points.append((x, y))
+        min_x, max_x = min(p[0] for p in points), max(p[0] for p in points)
+        min_y, max_y = min(p[1] for p in points), max(p[1] for p in points)
+        span_x, span_y = max_x - min_x, max_y - min_y
+        if span_x <= 0.0 or span_y <= 0.0:
+            return span_x, span_y, 0
+        cells = {(int((x - min_x) / span_x * 31.999), int((y - min_y) / span_y * 31.999))
+                 for x, y in points}
+        return span_x, span_y, len(cells)
+
+    def _assert_attractor_orbit_is_stable_and_lively(self, params):
+        """Lively from every start, and the same figure: rounding must not pick another one."""
+        stats = [self._clifford_orbit_stats(params, start) for start in self._ATTRACTOR_STARTS]
+        cells = [c for _, _, c in stats]
+        self.assertGreaterEqual(min(min(sx, sy) for sx, sy, _ in stats), 1.25)
+        self.assertGreaterEqual(min(cells), 200)
+        self.assertLessEqual(max(cells) / min(cells), 1.35)
+        for axis in (0, 1):
+            spans = [row[axis] for row in stats]
+            self.assertLessEqual(max(spans) / min(spans), 1.15)
+
+    @staticmethod
+    def _attractor_brightness(params, size=96):
+        """Mean log density over lit pixels of a ``size`` square render, from 0 to 1."""
+        min_x, max_x, min_y, max_y = art._clifford_bounds(params)
+        scale = 0.9 * size / max(max_x - min_x, max_y - min_y, 1e-6)
+        mid_x, mid_y = (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
+        centre = (size - 1) / 2.0
+        counts = [0] * (size * size)
+        x, y = 0.1, 0.1
+        for i in range(6 * size * size + 100):
+            x, y = art._clifford_step(x, y, *params)
+            if i >= 100:
+                ix = int(centre + (x - mid_x) * scale + 0.5)
+                iy = int(centre + (y - mid_y) * scale + 0.5)
+                if 0 <= ix < size and 0 <= iy < size:
+                    counts[iy * size + ix] += 1
+        norm = math.log1p(max(counts))
+        lit = [math.log1p(n) / norm for n in counts if n]
+        return sum(lit) / len(lit)
+
+    def _assert_attractor_entries_meet_the_table_criteria(self, entries, phases, bright_phases):
+        for a, b, c, d in entries:
+            for base in ((a, b, c, d), (b, a, d, c)):
+                for step in range(phases):
+                    with self.subTest(base=base, phase=step / phases):
+                        self._assert_attractor_orbit_is_stable_and_lively(
+                            art._attractor_params(base, step / phases))
+                for step in range(bright_phases):
+                    with self.subTest(base=base, bright_phase=step / bright_phases):
+                        params = art._attractor_params(base, step / bright_phases)
+                        self.assertGreaterEqual(self._attractor_brightness(params), 0.25)
+
+    def test_attractor_table_entries_meet_the_table_criteria(self):
+        self._assert_attractor_entries_meet_the_table_criteria(art._ATTRACTOR_TABLE[::32], 6, 1)
+
+    @unittest.skipUnless(os.environ.get('SIMULACRA_SLOW'),
+                         'set SIMULACRA_SLOW=1 to check every attractor table entry')
+    def test_every_attractor_table_entry_meets_the_table_criteria(self):
+        self._assert_attractor_entries_meet_the_table_criteria(art._ATTRACTOR_TABLE, 48, 8)
+
+    def test_attractor_choice_needs_no_floating_point_math(self):
+        # Only integer random draws pick the parameters, so no libm can change them.
+        # Seeds 0 to 511 (CPython seeds with abs(seed), so negatives would repeat).
+        with mock.patch.object(art, 'math', None):
+            bases = [art._attractor_base(seed) for seed in range(512)]
+        table = set(art._ATTRACTOR_TABLE)
+        mirrored = [(b, a, d, c) in table for a, b, c, d in bases]
+        for (a, b, c, d), mirror in zip(bases, mirrored):
+            self.assertIn((b, a, d, c) if mirror else (a, b, c, d), table)
+        self.assertGreater(sum(mirrored), 200)
+        self.assertLess(sum(mirrored), 312)
+        self.assertGreater(len(set(bases)), 290)  # about 324 expected of 512 figures
+
+    def test_attractor_scene_frames_the_orbit(self):
         for seed in range(8):
             scene = art._attractor_scene(80, 60, seed)
-            self.assertEqual(len(scene['params']), 4)
+            self.assertEqual(scene['params'], art._attractor_base(seed))
             self.assertEqual(scene['points'], 6 * 80 * 60)
         pixels = art.render(64, 64, 2, 'attractor', 'thermal')
         dark = sum(color == art.PALETTES['thermal'][0] for row in pixels for color in row)

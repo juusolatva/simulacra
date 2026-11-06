@@ -171,7 +171,7 @@ Every style accepts every built-in palette. The descriptions below describe the 
 | `optics` | Unified wave optics combining refractive caustic filaments, thin-film interference fringes, and multi-blade aperture diffraction spikes with Airy rings. |
 | `contour` | Topographic map: terraced fbm terrain with thin contour lines and a bold index line on every fifth level. Animates by evolving the terrain. |
 | `marbling` | Paper marbling: ink drops and comb strokes are applied in order and undone per pixel, so each pixel is traced back to striped base paint. Drops drift and the combs swing back and forth in a loop. |
-| `attractor` | A Clifford strange attractor drawn as a log-scaled density of about six orbit points per pixel (capped at 24 million). Seeds pick parameters that give a lively orbit; animation moves the four parameters on small circles. |
+| `attractor` | A Clifford strange attractor drawn as a log-scaled density of about six orbit points per pixel (capped at 24 million). Seeds pick one of 512 lively parameter sets (256 in a table, each also mirrored); animation moves the four parameters on small circles. |
 | `opart` | Op art: stripes, checkerboard or rings magnified by two or three moving lenses, so the pattern bulges without folding. |
 | `lunar` | Lunar surface: overlapping craters with raised rims and central peaks in the large ones, lit by a low sun that casts soft long shadows. Animation swings the sun across the sky. |
 | `asteroids` | A tilted asteroid belt: lumpy, tumbling rocks lit from one side, sorted near to far so close ones drift faster, over dust and stars. |

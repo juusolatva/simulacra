@@ -63,8 +63,10 @@ Since the earlier 37-style review, the project added `woodblock`, `cymatics`,
 Two additions increase the importance of native scene preparation:
 
 - `woodblock` constructs surface arrays for each layer across the image width.
-- `attractor` searches for parameters, checks orbit quality across animation
-  phases, caches chosen parameters, and calculates orbit bounds in Python.
+- `attractor` searched for parameters, checked orbit quality across animation
+  phases and cached the chosen parameters. It now picks from a fixed table
+  (see "Attractor parameter table"); it still calculates orbit bounds in
+  Python.
 
 ## Target architecture
 
@@ -130,7 +132,8 @@ Timing: while style experimentation continues.
 - [x] Measure first renders and repeated renders separately. Explicitly record
   whether the attractor parameter cache is cold or warm. The cache
   (`lru_cache(maxsize=64)` keyed by seed) lasts one process, so in the CLI a
-  still image or a first frame is cold and later frames are warm.
+  still image or a first frame is cold and later frames are warm. (The
+  attractor parameter table has since removed that cache.)
 - [x] Measure peak memory for still images and animations.
 - [ ] Cover preview sizes, 640 × 480, and selected 4K workloads, with several
   seeds, aspect ratios, palettes, and nonzero animation phases. Partly done:
@@ -180,8 +183,10 @@ all 48 native styles (best of 3, except the cold scene, which is one run):
 
 Notable per style:
 
-- `attractor`: the cold scene takes 0.50 s at any size (the parameter search
-  in `_attractor_base()`); warm, 0.003 s. Its shader is 0.16 s at 640 × 480
+- `attractor`: the cold scene took 0.50 s at any size (the parameter search
+  in `_attractor_base()`); warm, 0.003 s. The parameter table removed the
+  search: on 2026-11-06 the cold scene at 640 × 480 went from 0.10 s to
+  0.0007 s on another machine (`--stages --styles attractor`, default seed). Its shader is 0.16 s at 640 × 480
   and 2.5 s at 4K (the sequential orbit).
 - `mosaic`: its scene builder takes 0.18 s at 640 × 480 and 0.24 s at 4K on
   every frame, the only warm scene cost that matters.
@@ -330,7 +335,7 @@ Timing: migrate styles as their behavior settles.
 | Simple fields and small scenes | Establish common scene construction, dispatch, and phase handling. |
 | Geometry and object scenes | Port random layouts, stable ordering, sorting, and shape construction, including the space scenes and shared stars. |
 | Sampled and prepared scenes | Port torus/Lissajous sampling, woodblock surfaces, and mosaic tile patterns. |
-| Complex preparation | Port attractor parameter selection, caching, bounds, and phase updates; the selection must choose the same parameters for each seed. |
+| Complex preparation | Port attractor parameter selection (a table lookup with `choice()` and `getrandbits(1)`), bounds, and phase updates. |
 
 Ownership rule: once a style's builder is ported, any change to its Python
 builder must include the matching Rust change in the same PR. The
@@ -423,9 +428,9 @@ default `system` backend, because the differential tests need it; the
 `portable` feature is opt-in until the release pipeline sets it. Seeded artwork is otherwise preserved: the random generator, draw
 order and numeric behavior are ported exactly, and the `system` backend still
 proves each port against Python. Accepted consequences: `cymatics` may differ
-by one level in rare pixels, every `attractor` image carries different
-point-density noise, and about 9% of `attractor` seeds draw a different
-attractor than the Python version. Do not silently substitute a different
+by one level in rare pixels, and every `attractor` image carries different
+point-density noise. (About 9% of `attractor` seeds used to draw a different
+attractor too; the parameter table fixed that.) Do not silently substitute a different
 RNG and assume matching seed values produce matching scenes.
 
 Exact compatibility requires matching seed initialization, including negative
@@ -462,11 +467,11 @@ Beyond attractor, threshold and first-hit styles (contour lines, asteroids,
 marbling, voronoi ties) can change visibly from a one-ulp difference. In
 practice a one-ulp difference rarely changes an 8-bit sample: the `hypot`
 mismatch produced no differing bytes in any style at 200 × 150 (Phase 1).
-Attractor is the main risk. `_attractor_base()` accepts parameters through
+Attractor was the main risk. `_attractor_base()` accepted parameters through
 threshold tests on a chaotic orbit (spans of at least 1.0, at least 150
 occupied cells, 12 sampled phases, up to 300 attempts), so a different libm
-can choose a different parameter set and draw a different attractor for the
-same seed.
+could choose a different parameter set and draw a different attractor for the
+same seed. It now picks from a fixed table (see "Attractor parameter table").
 
 ### Measured `portable` drift
 
@@ -506,13 +511,52 @@ everywhere" cannot both hold, and this policy chooses the first.
 If preserving historical output becomes too restrictive, introduce an explicit
 generation-algorithm version as a separate product decision.
 
+### Attractor parameter table
+
+Decided on 2026-11-06: `attractor` should pick the same parameters for a seed
+under either libm, even if that changes which figure a seed draws now. This
+was a deliberate visual change.
+
+`_attractor_base()` now draws one of 256 parameter sets in `_ATTRACTOR_TABLE`
+with `choice()` and mirrors it (x and y swapped) on one `getrandbits(1)`. That
+gives 512 figures from integer draws alone, so no libm can change the choice.
+The table was searched offline (candidates from a seeded generator, rounded
+to three decimals). A figure counts as stable when the orbit from four start
+points within 2e-9 of (0.1, 0.1) gives nearly the same figure under both
+glibc's and the `libm` crate's `sin` and `cos`: the start points stand in for
+the rounding differences between libms. Each entry passes in both orientations
+at all 384 phases `i / 384` with spans of at least 1.25 and at least 200 of
+1,024 cells (the old search needed 1.0 and 150), cell counts within a ratio of
+1.35 and spans within 1.15 between runs. At the 48 phases the tests check it
+passes with headroom (1.3, 220, 1.2 and 1.1). Each also keeps a bright density
+image (mean log density over lit pixels of at least 0.27; the tests need
+0.25), and entries and their mirror images are at least 0.25 apart in every
+parameter. Since the choice uses no floating-point math, no libm changes which
+figure a seed picks (the old search: 46 of 500 seeds); the point-density noise
+along the orbit remains.
+
+The first version of the table checked only liveliness at 48 phases from one
+start point. Between those phases some entries were bistable (the orbit lands
+on a thin or a broad figure depending on rounding) or fell into a narrow
+periodic window (the figure collapses to a few cells for a frame): 86 of 256
+failed somewhere at the 48 midpoints. The current table was rebuilt with the
+stability check above. Out of sample, at 768 phases (half of them new), 213 of 786,432 checks fail
+(0.03%), all at new phases: periodic windows are dense in a chaotic map, so
+sampling cannot rule them all out. The orbit the renderer actually draws
+(start (0.1, 0.1), glibc) collapses in 13 of 196,608 new frames (0.007%), each
+window narrower than 1/768 of the loop, so roughly one 60-frame animation in
+250 may show one collapsed frame.
+
+The tests check a sample of the table at 6 phases, and with `SIMULACRA_SLOW`
+every entry at the 48 phases, both orientations, with the test limits.
+
 ## Performance investigations
 
 These are candidates for measurement, not established bottlenecks.
 
 | Target | Investigation |
 | --- | --- |
-| Attractor preparation | Cold parameter-search cost, cache behavior, and repeated bounds calculations. |
+| Attractor preparation | Repeated bounds calculations (the parameter search and its cache are gone). |
 | Attractor rendering | Sequential orbit recurrence; integer hit counts do not make successive orbit steps independently parallelizable. |
 | Woodblock | Native surface generation and avoiding transfer of per-column Python objects. |
 | Lunar | Repeated crater-height evaluation during shadow marching; investigate spatial filtering while preserving contribution order. |
@@ -536,6 +580,8 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 3. Done: measure `portable` drift and decide the compatibility policy
    (release builds use `portable`).
 4. Done: establish the stage-level performance baseline.
+   Also done: `attractor` picks its parameters from a table, so the choice
+   no longer depends on libm (see "Attractor parameter table").
 5. Extract the Python-independent Rust engine while retaining the adapter,
    including the math module (CPython's `hypot`, `system` and `portable`
    backends) and the `portable` fixtures.
