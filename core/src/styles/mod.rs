@@ -11,6 +11,7 @@ pub mod shapes;
 pub mod space;
 pub mod woodblock;
 
+use crate::math::Libm;
 use crate::palette::Palette;
 
 /// A style whose scene has been extracted from Python and can be shaded.
@@ -34,7 +35,7 @@ pub fn small_side(width: usize, height: usize) -> f64 {
 #[inline]
 pub fn gaussian(d: f64, sigma: f64) -> f64 {
     let q = d / sigma;
-    (-(q * q) / 2.0).exp()
+    (-(q * q) / 2.0).m_exp()
 }
 
 /// Python's `min(1.0, max(0.0, t))`.

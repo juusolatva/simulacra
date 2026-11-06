@@ -5,6 +5,7 @@
 use pyo3::FromPyObject;
 
 use super::{Style, center, unit};
+use crate::math::Libm;
 use crate::noise::{contrast, fbm, fbm_loop, polar_noise};
 use crate::palette::Palette;
 use crate::raster::shade;
@@ -30,7 +31,7 @@ fn star_glow(u: f64, v: f64, stars: &[Star]) -> f64 {
             continue;
         }
         let q = (dx * dx + dy * dy).sqrt() / sigma;
-        total += bright * (-(q * q) / 2.0).exp();
+        total += bright * (-(q * q) / 2.0).m_exp();
     }
     total
 }
@@ -74,7 +75,7 @@ impl Lunar {
             let hump = d / 0.15;
             height += radius
                 * depth
-                * (bowl + 0.35 * (-(rim * rim)).exp() + peak * 0.3 * (-(hump * hump)).exp());
+                * (bowl + 0.35 * (-(rim * rim)).m_exp() + peak * 0.3 * (-(hump * hump)).m_exp());
         }
         height
     }
@@ -102,7 +103,8 @@ impl Style for Lunar {
             let ground = self.height(u, v);
             let gx = (self.height(u + LUNAR_EPS, v) - ground) / LUNAR_EPS;
             let gy = (self.height(u, v + LUNAR_EPS) - ground) / LUNAR_EPS;
-            let diffuse = (light.5 - gx * light.3 - gy * light.4) / (gx * gx + gy * gy + 1.0).sqrt();
+            let diffuse =
+                (light.5 - gx * light.3 - gy * light.4) / (gx * gx + gy * gy + 1.0).sqrt();
             let lit = diffuse.max(0.0) / light.5;
             let sun = if lit > 0.0 {
                 self.shadow(u, v, ground)
@@ -130,22 +132,22 @@ pub struct Asteroids {
 impl Asteroids {
     fn shade_rock(&self, dx: f64, dy: f64, rock: &Rock) -> Option<f64> {
         let &(_, _, radius, spin, e2, q2, e3, q3, e4, q4, fade, tex) = rock;
-        let theta = dy.atan2(dx) - spin;
+        let theta = dy.m_atan2(dx) - spin;
         let edge = radius
             * (1.0
-                + e2 * (2.0 * theta + q2).cos()
-                + e3 * (3.0 * theta + q3).cos()
-                + e4 * (5.0 * theta + q4).cos());
+                + e2 * (2.0 * theta + q2).m_cos()
+                + e3 * (3.0 * theta + q3).m_cos()
+                + e4 * (5.0 * theta + q4).m_cos());
         if (dx * dx + dy * dy).sqrt() >= edge {
             return None;
         }
         let nx = dx / edge;
         let ny = dy / edge;
         let nz = (1.0 - (nx * nx + ny * ny)).max(0.0).sqrt();
-        let (sn, cs) = (spin.sin(), spin.cos());
+        let (sn, cs) = (spin.m_sin(), spin.m_cos());
         let lu = (dx * cs + dy * sn) / edge;
         let lv = (dy * cs - dx * sn) / edge;
-        let bump = 1.0 + 0.3 * (6.0 * lu + tex).sin() * (6.0 * lv + 1.7 * tex).sin();
+        let bump = 1.0 + 0.3 * (6.0 * lu + tex).m_sin() * (6.0 * lv + 1.7 * tex).m_sin();
         let lit = (nx * self.light.0 + ny * self.light.1 + nz * self.light.2).max(0.0);
         Some(fade * (0.1 + 0.8 * lit * bump))
     }
@@ -153,7 +155,7 @@ impl Asteroids {
     fn sky(&self, u: f64, v: f64, seed: u32) -> f64 {
         let (cos_t, sin_t) = self.belt;
         let q = (v * cos_t - u * sin_t) / 0.7;
-        let haze = (-(q * q)).exp();
+        let haze = (-(q * q)).m_exp();
         let dust = 0.03 + 0.2 * haze * contrast(fbm(u * 14.0, v * 14.0, seed, 3), 2.2).max(0.0);
         (dust + 0.8 * star_glow(u, v, &self.stars)).min(1.0)
     }
@@ -196,7 +198,7 @@ impl Blackhole {
         let x = u;
         let y = v / self.tilt;
         let big = (x * x + y * y).sqrt().max(1e-6);
-        let streak = 0.6 + 0.4 * (self.arms * y.atan2(x) + 4.0 * big + self.spin).sin();
+        let streak = 0.6 + 0.4 * (self.arms * y.m_atan2(x) + 4.0 * big + self.spin).m_sin();
         let beam = 1.0 + 0.55 * x / big;
         let seen = if y > 0.0 { 1.0 } else { edge };
         4.0 / (big * big)
@@ -211,10 +213,10 @@ impl Blackhole {
         let up = (-v / r).max(0.0);
         let ring = (r - 1.5) / 0.04;
         let arc = (r - (1.5 + 0.55 * up)) / (0.05 + 0.4 * up * up);
-        let shimmer = 0.8 + 0.2 * (self.arms * v.atan2(u) + 3.0 * r + self.spin).sin();
+        let shimmer = 0.8 + 0.2 * (self.arms * v.m_atan2(u) + 3.0 * r + self.spin).m_sin();
         let beam = 1.0 + 0.5 * u / r;
-        edge * (0.9 * (-(ring * ring)).exp()
-            + (0.4 + 0.9 * up) * (-(arc * arc)).exp() * shimmer)
+        edge * (0.9 * (-(ring * ring)).m_exp()
+            + (0.4 + 0.9 * up) * (-(arc * arc)).m_exp() * shimmer)
             * (beam * beam)
     }
 
@@ -238,7 +240,7 @@ impl Style for Blackhole {
             let lens = 1.0 - 1.6 / (r * r);
             let sky = self.sky(du * lens, dv * lens, seed) * edge;
             let energy = self.disk(a, b, edge) + self.halo(a, b, r, edge);
-            let glow = 1.0 - (-1.6 * energy).exp();
+            let glow = 1.0 - (-1.6 * energy).m_exp();
             unit(sky * (1.0 - glow) + glow)
         })
     }
@@ -261,8 +263,8 @@ impl Supernova {
         let b = v * self.spike.0 - u * self.spike.1;
         let across_b = b / 0.008;
         let across_a = a / 0.008;
-        (-(across_b * across_b)).exp() * (-a.abs() / 0.35).exp()
-            + (-(across_a * across_a)).exp() * (-b.abs() / 0.35).exp()
+        (-(across_b * across_b)).m_exp() * (-a.abs() / 0.35).m_exp()
+            + (-(across_a * across_a)).m_exp() * (-b.abs() / 0.35).m_exp()
     }
 }
 
@@ -274,10 +276,10 @@ impl Style for Supernova {
             let u = u - self.center.0;
             let v = v - self.center.1;
             let r = (u * u + v * v).sqrt();
-            let wobble = polar_noise(0.0, v.atan2(u), seed, 6.0, 3);
+            let wobble = polar_noise(0.0, v.m_atan2(u), seed, 6.0, 3);
             let shell_radius = radius * (1.0 + 0.5 * (wobble - 0.5));
             let band = (r - shell_radius) / (0.12 * radius);
-            let shell = (-(band * band)).exp();
+            let shell = (-(band * band)).m_exp();
             let n = fbm_loop(u * 40.0 + 31.0, v * 40.0, seed, 5, self.phase);
             let ridge = (1.0 - (2.0 * contrast(n, 2.5) - 1.0).abs()).max(0.0);
             let ridge2 = ridge * ridge;
@@ -285,11 +287,11 @@ impl Style for Supernova {
             let blast = (r - 1.14 * shell_radius) / (0.04 * radius);
             let core = r / 0.05;
             let energy = 1.6 * shell * (0.2 + ridge2 * ridge2 * 1.6)
-                + 0.7 * (-(inner * inner)).exp() * n * n
-                + 0.3 * (-(blast * blast)).exp()
+                + 0.7 * (-(inner * inner)).m_exp() * n * n
+                + 0.3 * (-(blast * blast)).m_exp()
                 + self.pulse * (2.0 * (1.0 / (1.0 + core * core)) + 0.9 * self.spikes(u, v))
                 + 0.8 * star_glow(u, v, &self.stars);
-            unit(1.0 - (-1.3 * energy).exp())
+            unit(1.0 - (-1.3 * energy).m_exp())
         })
     }
 }

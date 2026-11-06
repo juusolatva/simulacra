@@ -1,0 +1,17 @@
+# Shaders call libm functions through crate::math::Libm (`x.m_exp()`), so the
+# `portable` feature can swap the backend. Only src/math.rs calls these directly.
+disallowed-methods = [
+    { path = "f64::exp", reason = "use Libm::m_exp (crate::math)" },
+    { path = "f64::sin", reason = "use Libm::m_sin (crate::math)" },
+    { path = "f64::cos", reason = "use Libm::m_cos (crate::math)" },
+    { path = "f64::tan", reason = "use Libm::m_tan (crate::math)" },
+    { path = "f64::atan", reason = "use Libm::m_atan (crate::math)" },
+    { path = "f64::atan2", reason = "use Libm::m_atan2 (crate::math)" },
+    { path = "f64::powf", reason = "use Libm::m_powf (crate::math)" },
+    { path = "f64::ln_1p", reason = "use Libm::m_ln_1p (crate::math)" },
+    { path = "f64::sin_cos", reason = "use Libm::m_sin and Libm::m_cos (crate::math)" },
+    { path = "f64::ln", reason = "add it to crate::math::Libm first" },
+    { path = "f64::log10", reason = "add it to crate::math::Libm first" },
+    { path = "f64::tanh", reason = "add it to crate::math::Libm first" },
+    { path = "f64::exp_m1", reason = "add it to crate::math::Libm first" },
+]

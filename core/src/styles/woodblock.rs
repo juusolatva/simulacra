@@ -5,6 +5,7 @@ use rayon::prelude::*;
 
 use super::Style;
 use crate::geometry::py_mod;
+use crate::math::Libm;
 use crate::palette::Palette;
 
 #[derive(pyo3::FromPyObject)]
@@ -20,7 +21,7 @@ struct Layer {
 impl Layer {
     fn ink(&self, depth: f64, x: usize, scale: f64) -> f64 {
         let mut groove = depth / self.spacing;
-        groove += 0.16 * (x as f64 / scale * 18.0 + depth / scale * 12.0 + self.carve).sin();
+        groove += 0.16 * (x as f64 / scale * 18.0 + depth / scale * 12.0 + self.carve).m_sin();
         if depth < 0.007 * scale {
             return 0.04;
         }

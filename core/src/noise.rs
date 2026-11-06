@@ -5,6 +5,7 @@
 //! any differences in the platform math library.
 
 use crate::geometry::py_mod;
+use crate::math::Libm;
 
 /// Integer lattice hash in [0, 1]. Python ints are unbounded, but every step
 /// is masked to 32 bits, so wrapping 64-bit arithmetic gives the same result.
@@ -101,8 +102,8 @@ pub fn fbm_loop(x: f64, y: f64, seed: u32, octaves: u32, phase: f64) -> f64 {
 #[inline]
 pub fn polar_noise(r_coord: f64, theta: f64, seed: u32, around: f64, octaves: u32) -> f64 {
     fbm(
-        r_coord + around * theta.cos(),
-        around * theta.sin(),
+        r_coord + around * theta.m_cos(),
+        around * theta.m_sin(),
         seed,
         octaves,
     )

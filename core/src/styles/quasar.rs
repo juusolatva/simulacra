@@ -6,6 +6,7 @@
 use pyo3::FromPyObject;
 
 use super::Style;
+use crate::math::Libm;
 use crate::noise::{fbm, polar_noise};
 use crate::palette::Palette;
 use crate::raster::shade;
@@ -39,10 +40,10 @@ fn jet_glow(
     }
     let cone_width = (opening * (distance - shadow)).max(0.75);
     let q = perpendicular / cone_width;
-    let cross_section = (-0.5 * (q * q)).exp();
+    let cross_section = (-0.5 * (q * q)).m_exp();
     let launch = ((distance - shadow) / (shadow * 0.5).max(1.0)).min(1.0);
     let beaming = 0.35 + 0.65 * (if along > 0.0 { beta } else { 1.0 - beta });
-    3.0 * cross_section * launch * (-2.0 * distance / length).exp() * beaming
+    3.0 * cross_section * launch * (-2.0 * distance / length).m_exp() * beaming
 }
 
 impl Quasar {
@@ -51,28 +52,28 @@ impl Quasar {
         let dy = y as f64 - self.center.1;
         let (r_shadow, r_outer) = (self.r_shadow, self.r_outer);
         let r = dx.hypot(dy);
-        let theta = dy.atan2(dx);
+        let theta = dy.m_atan2(dx);
         let mut v = 0.0;
         // gravitational lensing glow ring around the shadow
         let lens_r = r_shadow * 2.4;
         let lens_wob = 0.7 + 0.6 * polar_noise(r * 0.35, theta, seed, 2.0, 2);
         let lens_w = ((r_shadow * 0.9).max(1.0) * lens_wob).max(0.4);
         let d = r - lens_r;
-        v += (-(d * d) / (2.0 * lens_w * lens_w)).exp() * 2.2;
+        v += (-(d * d) / (2.0 * lens_w * lens_w)).m_exp() * 2.2;
         // black hole shadow with a hot inner edge
         if r < r_shadow {
             let q = (r - r_shadow) / (r_shadow * 0.15).max(1.0);
-            v += (-(q * q) / 2.0).exp() * 2.5;
+            v += (-(q * q) / 2.0).m_exp() * 2.5;
         }
         // relativistic accretion disk: glowing orbit rings, hotter toward the hole
-        let doppler = 0.35 + 0.65 * (0.5 - 0.5 * theta.cos());
+        let doppler = 0.35 + 0.65 * (0.5 - 0.5 * theta.m_cos());
         let disk_t = (r - r_shadow) / (r_outer - r_shadow).max(1.0);
         let disk_level = 1.0 - 0.45 * (r / r_outer.max(1.0));
         for &(ro, orbit_seed) in &self.orbits {
             let w = ((ro - r_shadow * 1.2) * 0.06).max(0.4);
             let wob = 0.35 + 0.65 * polar_noise(r * 0.5, theta, orbit_seed, 3.0, 3);
             let d = r - (ro + w * (wob - 0.5));
-            let g = (-(d * d) / (2.0 * w * w)).exp() * doppler * disk_level;
+            let g = (-(d * d) / (2.0 * w * w)).m_exp() * doppler * disk_level;
             v += g * (1.5 - 0.6 * disk_t);
         }
         // relativistic jets along the spin axis, with cone and Doppler beaming
@@ -90,7 +91,7 @@ impl Quasar {
         // faint starfield backdrop
         let n = fbm(x as f64 * 0.004, y as f64 * 0.004, seed, 2);
         v += (n - 0.5).max(0.0) * 0.6;
-        1.0 - (-0.75 * v).exp()
+        1.0 - (-0.75 * v).m_exp()
     }
 }
 

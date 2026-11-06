@@ -1,6 +1,7 @@
 # Rust rewrite plan
 
-Status: proposed; implementation has not started.
+Status: Phase 1 in progress (test workflow, extended native test and the
+`portable` drift measurement done; see "Measured `portable` drift").
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -39,6 +40,8 @@ streaming animation frames (Phase 5) is possible in Python too:
 `_atomic_write()` already accepts lazy chunks. Before Phase 3, record why
 these routes are not enough (for example startup time, binary size, or one
 codebase), or ship one of them as an interim release while the port proceeds.
+
+Decision (2026-11-06): no interim release while the repository is private.
 
 ## Reviewed implementation
 
@@ -102,17 +105,17 @@ dispatch, animation capabilities, and CLI listings do not drift apart.
 
 Timing: while style experimentation continues.
 
-- [ ] Add a test workflow that runs on every pull request, including those
+- [x] Add a test workflow that runs on every pull request, including those
   from forks: the Python suite without and with the core, `cargo test`, and
   Clippy. Today the suite runs only inside the SonarQube job, which is skipped
   for fork pull requests, and no workflow runs `cargo test` or Clippy. The
   Phase 4 ownership rule depends on this workflow.
-- [ ] Extend `test_native_styles_match_python_exactly`, which covers sizes up
+- [x] Extend `test_native_styles_match_python_exactly`, which covers sizes up
   to 64 × 48 at phase 0 only: add a nonzero phase to the existing cases, and a
   larger case in a slower job. On 2026-11-04 all 48 styles were byte-identical
   at 200 × 150 and 150 × 200 at phases 0.37 and 0.81, which took about 2.5
   minutes of pure-Python rendering.
-- [ ] Measure the `portable` drift now, with the current core: add a feature
+- [x] Measure the `portable` drift now, with the current core: add a feature
   that routes the libm calls listed in Phase 2 through the `libm` crate (leave
   `hypot` as it is, since Phase 2 replaces it), rerun that comparison per
   style, and compare the attractor parameters chosen for each seed. Decide the
@@ -148,6 +151,41 @@ Timing: while style experimentation continues.
   architecture, and libm (glibc version).
 - [ ] Keep existing tests for determinism, phase-zero behavior, looping,
   palette range, scaling, and writer failure handling.
+
+Done so far (branch `ci/test-workflow`): `.github/workflows/test.yml` runs the
+Python suite on 3.12 and 3.14 without and with the core, `cargo test` and
+Clippy for both math backends, and the larger native comparison
+(`ABSTRACT_ART_SLOW=1`, 200 × 150 and 150 × 200 at phases 0.37 and 0.81,
+about 20 s). The fast native test now also covers phases 0.37, 0.81, -0.63
+and 2.25. `core/src/math.rs` routes every libm call through the `Libm` trait
+(`x.m_exp()`), with `portable` as a Cargo feature; `core/clippy.toml` forbids
+direct calls elsewhere. This is the Phase 2 math module except for `hypot`.
+
+### Measured `portable` drift
+
+Measured on 2026-11-06 (glibc 2.43, CPython 3.14.4, x86_64), with scenes from
+Python and shading by a `system` and a `portable` build of the core: 48 styles
+× 27 cases (200 × 150, 150 × 200 and 640 × 480; three seeds and palettes;
+phases 0, 0.37 and 0.81), 1,296 renders in all.
+
+| Styles | Result |
+| --- | --- |
+| 46 of 48 | Byte-identical in every case. |
+| `cymatics` | 3 of 27 cases differ, in about 1 byte per million, by ±1. |
+| `attractor` | Every case differs (19% of bytes, at most 100 levels, mean 2.7 per byte), but with the same parameters the drawings are visually indistinguishable: the orbit diverges and only the grain changes. |
+
+The scene builders are the larger risk. With Python's `sin` and `cos`
+replaced by the `libm` crate's (through `ctypes`), `_attractor_base()` picked
+different parameters, and so a different attractor, for 49 of 502 seeds
+(-50 to 449, 2**31 - 1 and 2**40 + 3). The two libraries disagree on about 3%
+of `sin` and `cos` inputs in [-8, 8]. Other builders were not measured;
+they make no long chaotic iterations, so they should behave like the shaders.
+
+Decision (2026-11-06): release builds use `portable`. Other styles keep their
+current output. `attractor` gets a parameter choice that does not hinge on
+threshold tests along a chaotic orbit, so the same seed picks the same
+parameters with either libm; this is a deliberate visual change and need not
+keep the figures Python's current search picks for each seed.
 
 Acceptance: reproducible measurements distinguish scene, shader, encoding,
 and memory costs, and the compatibility policy is decided from the measured
@@ -431,16 +469,17 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 
 ## Immediate next work
 
-1. Record why prebuilt wheels or a bundled Python application are not enough
-   (see "Alternatives considered"), or ship one as an interim release.
-2. Add the test workflow, and extend the native-versus-Python test to nonzero
-   phases and larger sizes.
-3. Measure `portable` drift with the current core and confirm the
-   compatibility policy.
-4. Establish the stage-level performance baseline.
-5. Extract the Python-independent Rust engine while retaining the adapter,
+Done: the test workflow, the extended native test, the `portable` drift
+measurement and the compatibility decision (Phase 1). No interim Python
+release: the repository is private, so nobody needs an install route before
+the Rust application exists.
+
+1. Make `attractor` choose its parameters robustly under either libm (see
+   "Measured `portable` drift").
+2. Establish the stage-level performance baseline.
+3. Extract the Python-independent Rust engine while retaining the adapter,
    including the math module (CPython's `hypot`, `system` and `portable`
    backends) and the `portable` fixtures.
-6. Port CPython's random generator.
-7. Prove standalone delivery with a small subset of styles.
-8. Continue Python style experimentation and migrate settled styles in batches.
+4. Port CPython's random generator.
+5. Prove standalone delivery with a small subset of styles.
+6. Continue Python style experimentation and migrate settled styles in batches.
