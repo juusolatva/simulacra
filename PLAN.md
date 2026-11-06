@@ -291,8 +291,8 @@ Prerequisite for any seeded scene builder, including the second style in
 Phase 3. The compatibility policy must be decided first (Phase 1).
 
 Scene builders call `uniform` (205 call sites), `randint` (44), `random` (11),
-`choice` (9), `randrange` (5) and `getrandbits(1)` (1, the attractor's mirror
-bit) on `random.Random(seed)`.
+`choice` (9), `randrange` (5) and `getrandbits` (1, the attractor's one-bit
+mirror draw) on `random.Random(seed)`.
 
 - [ ] Implement a `PyRandom` module in the engine: MT19937 seeded like CPython
   (`init_by_array` over 32-bit chunks of `abs(seed)`), `random()` from two

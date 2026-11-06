@@ -50,7 +50,7 @@ SIMULACRA_SLOW=1 .venv/bin/python -m unittest -q -k larger_sizes -k every_attrac
 .venv/bin/python -m unittest -q            # with the Rust core: also checks native == Python
 source .venv/bin/activate && maturin develop --release -m core/Cargo.toml   # rebuild core
 cargo test --manifest-path core/Cargo.toml && cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
-cargo clippy --manifest-path core/Cargo.toml --all-targets --features portable -- -D warnings   # CI checks both backends
+cargo test --manifest-path core/Cargo.toml --features portable && cargo clippy --manifest-path core/Cargo.toml --all-targets --features portable -- -D warnings   # CI checks both backends
 maturin develop --release -m core/Cargo.toml --features portable   # a portable core, in a separate venv: the suite then holds PORTABLE_DRIFT_STYLES to bounds
 python3 bench_simulacra.py --width 640 --height 480 --compare <saved.json>
 .venv/bin/python bench_simulacra.py --stages --width 640 --height 480 --phase 0.37 --repeat 3   # scene/shader/PNG per style
