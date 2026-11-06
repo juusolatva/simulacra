@@ -54,8 +54,12 @@ jobs:
           if [ -x .venv/bin/python ]; then python=.venv/bin/python; else python=python; fi
           "$python" -m unittest -v
 
+  # About 10 minutes on a runner, so it runs only when started by hand (Actions >
+  # Tests > Run workflow). Run it locally before opening a pull request that
+  # changes a shader or a scene builder (command in AGENTS.md).
   native-larger:
     name: Native matches Python at larger sizes
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read # Check out the code
