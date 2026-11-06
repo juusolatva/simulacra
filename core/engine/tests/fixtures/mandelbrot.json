@@ -1,0 +1,22 @@
+{
+ "style": "mandelbrot",
+ "width": 48,
+ "height": 36,
+ "seed": 3,
+ "core_seed": 3,
+ "phase": 0.37,
+ "palette": "ember",
+ "stops": [
+  [26, 12, 8],
+  [64, 28, 18],
+  [130, 56, 30],
+  [216, 102, 48],
+  [255, 178, 102]
+ ],
+ "sha256": "5b4f74bb92ffc3d67bbc3c5e078b03c1a29b127afe6ef8c266fea1649e2888a8",
+ "scene": {
+  "scale": 0.00024450299505740427,
+  "center": [-0.7432487717303755, 0.131463296135781],
+  "iterations": 226
+ }
+}

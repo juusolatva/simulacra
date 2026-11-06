@@ -90,9 +90,91 @@ macro_rules! style_names {
 
 for_each_style!(style_names);
 
+#[cfg(feature = "serde")]
+macro_rules! style_deserialize {
+    ($($name:literal => $scene:path),* $(,)?) => {
+        /// Reads the scene for `style` from any serde format. The fields are
+        /// those of the dict the Python `_<style>_scene()` builder returns;
+        /// unknown fields are ignored, as the Python adapter ignores them.
+        ///
+        /// # Errors
+        ///
+        /// Fails if `style` is not in [`STYLES`] or the data does not match its
+        /// scene.
+        pub fn deserialize_scene<'de, D>(style: &str, deserializer: D) -> Result<Box<dyn Style>, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::Deserialize as _;
+            Ok(match style {
+                $($name => Box::new(<$scene>::deserialize(deserializer)?),)*
+                _ => {
+                    return Err(serde::de::Error::custom(format_args!(
+                        "no native renderer for style {style:?}"
+                    )));
+                }
+            })
+        }
+    };
+}
+
+#[cfg(feature = "serde")]
+for_each_style!(style_deserialize);
+
+/// Reads the scene for `style` from JSON text; see [`deserialize_scene`].
+/// Floats are parsed exactly (`serde_json`'s `float_roundtrip`).
+///
+/// # Errors
+///
+/// Fails if the JSON is malformed, `style` is unknown or the data does not
+/// match its scene.
+#[cfg(feature = "json")]
+pub fn scene_from_json(style: &str, json: &str) -> Result<Box<dyn Style>, serde_json::Error> {
+    let mut deserializer = serde_json::Deserializer::from_str(json);
+    let scene = deserialize_scene(style, &mut deserializer)?;
+    deserializer.end()?;
+    Ok(scene)
+}
+
 #[cfg(test)]
 mod tests {
     use super::STYLES;
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn json_scenes_load_and_unknown_styles_fail() {
+        let scene = super::scene_from_json("drift", r#"{"phase": 0.25, "extra": [1, 2]}"#);
+        let palette = super::Palette::new(vec![(0, 0, 0), (255, 255, 255)]).unwrap();
+        let rgb = scene.expect("drift scene").render(4, 3, 7, &palette);
+        assert_eq!(rgb.len(), 4 * 3 * 3);
+        let err = super::scene_from_json("nosuchstyle", "{}")
+            .err()
+            .expect("unknown style");
+        assert!(err.to_string().contains("nosuchstyle"), "{err}");
+        let missing = super::scene_from_json("drift", "{}");
+        assert!(missing.is_err(), "missing field");
+        let trailing = super::scene_from_json("drift", r#"{"phase": 0.0} 1"#);
+        assert!(trailing.is_err(), "trailing data");
+    }
+
+    /// serde_json without `float_roundtrip` parses `significand / 10**k` with a
+    /// float division, which misrounds these shortest-repr floats (found by
+    /// simulating that path); scenes would then not load exactly.
+    #[test]
+    fn json_floats_parse_exactly() {
+        for (text, bits) in FLOAT_CASES {
+            let value: f64 = serde_json::from_str(text).expect("float");
+            assert_eq!(value.to_bits(), *bits, "{text}");
+        }
+    }
+
+    /// `(Python repr, bits)`; the comment gives the misrounded naive result.
+    const FLOAT_CASES: &[(&str, u64)] = &[
+        ("-1.5471761413874225", 0xbff8_c13b_c506_9136), // naive: -1.5471761413874223
+        ("-2042.3747258517706", 0xc09f_e97f_b822_3948), // naive: -2042.3747258517703
+        ("-1.4449303264043873", 0xbff7_1e6f_430e_7cb8), // naive: -1.4449303264043871
+        ("-1743.2617050292927", 0xc09b_3d0b_fc67_380b), // naive: -1743.261705029293
+    ];
 
     #[test]
     fn style_names_are_unique_and_lowercase() {

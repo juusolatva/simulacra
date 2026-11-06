@@ -12,6 +12,7 @@ use crate::palette::Palette;
 use crate::raster::{shade, shade_rgb};
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Blobs {
     phase: f64,
 }
@@ -29,6 +30,7 @@ impl Style for Blobs {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Waves {
     layers: Vec<(f64, f64, f64)>,
 }
@@ -50,6 +52,7 @@ impl Style for Waves {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Plasma {
     layers: Vec<(f64, f64, f64, f64)>,
 }
@@ -69,6 +72,7 @@ impl Style for Plasma {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Interference {
     layers: Vec<(f64, f64, f64, f64)>,
 }
@@ -89,6 +93,7 @@ impl Style for Interference {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Kaleidoscope {
     folds: i64,
     phase: f64,
@@ -114,6 +119,7 @@ impl Style for Kaleidoscope {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Pinwheel {
     n_arms: i64,
     twist: f64,
@@ -146,6 +152,7 @@ impl Style for Pinwheel {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Galaxy {
     bulge_r: f64,
     bulge_amp: f64,
@@ -177,6 +184,7 @@ impl Style for Galaxy {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Bloom {
     /// (x, y, radius, amp)
     blooms: Vec<(f64, f64, f64, f64)>,
@@ -199,6 +207,7 @@ impl Style for Bloom {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Nebula {
     /// (x, y, radius, amp)
     clouds: Vec<(f64, f64, f64, f64)>,
@@ -232,6 +241,7 @@ impl Style for Nebula {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Orbits {
     /// (x, y, radius)
     stars: Vec<(f64, f64, f64)>,
@@ -265,6 +275,7 @@ impl Style for Orbits {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Cosmic {
     /// (x, y, size, brightness)
     stars: Vec<(f64, f64, f64, f64)>,
@@ -303,6 +314,7 @@ impl Style for Cosmic {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Rings {
     /// (radius, phase)
     rings: Vec<(f64, f64)>,
@@ -328,6 +340,7 @@ impl Style for Rings {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Starburst {
     rays: f64,
     phase: f64,
@@ -350,6 +363,7 @@ impl Style for Starburst {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Spiral {
     /// (turns, phase, amp, width)
     arms: Vec<(f64, f64, f64, f64)>,
@@ -376,6 +390,7 @@ impl Style for Spiral {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Petals {
     count: f64,
     length: f64,
@@ -400,6 +415,7 @@ impl Style for Petals {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Aurora {
     /// (y0, amp, freq, phase, bw)
     ribbons: Vec<(f64, f64, f64, f64, f64)>,
@@ -423,6 +439,7 @@ impl Style for Aurora {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Gems {
     /// (cx, cy, radius, rotation)
     gems: Vec<(f64, f64, f64, f64)>,
@@ -449,6 +466,7 @@ impl Style for Gems {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Cosmos {
     /// (x, y, max_r, rings, phase, amp)
     centers: Vec<(f64, f64, f64, i64, f64, f64)>,
@@ -479,6 +497,7 @@ impl Style for Cosmos {
 
 /// `render_mandelbrot`: Python gives the view (scale, centre) and iteration limit.
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Mandelbrot {
     scale: f64,
     center: (f64, f64),
@@ -510,6 +529,7 @@ impl Style for Mandelbrot {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Horizon {
     /// (ridge height fraction, noise offset, palette position) per layer
     layers: Vec<(f64, f64, f64)>,
@@ -549,6 +569,7 @@ impl Style for Horizon {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Voronoi {
     /// (x, y, brightness)
     sites: Vec<(f64, f64, f64)>,
@@ -580,6 +601,7 @@ impl Style for Voronoi {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Crystal {
     light: (f64, f64, f64),
     half: (f64, f64, f64),
@@ -640,6 +662,7 @@ impl Style for Crystal {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Cymatics {
     circular: bool,
     /// (n, m, weight, phase_a, phase_b)
@@ -674,6 +697,7 @@ impl Style for Cymatics {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Optics {
     /// (kx, ky, wave_phase)
     waves: Vec<(f64, f64, f64)>,
@@ -721,6 +745,7 @@ impl Style for Optics {
 const CONTOUR_LEVELS: f64 = 14.0;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Contour {
     phase: f64,
 }
@@ -751,6 +776,7 @@ impl Style for Contour {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Opart {
     pattern: i64,
     angle: f64,
@@ -793,6 +819,7 @@ impl Style for Opart {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Marbling {
     /// (kind, a, b, c, d, e, f): kind 0 is a drop, kind 1 a comb.
     ops: Vec<(f64, f64, f64, f64, f64, f64, f64)>,

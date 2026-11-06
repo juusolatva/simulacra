@@ -1,0 +1,20 @@
+{
+ "style": "drift",
+ "width": 48,
+ "height": 36,
+ "seed": 3,
+ "core_seed": 3,
+ "phase": 0.37,
+ "palette": "risoprint",
+ "stops": [
+  [24, 16, 36],
+  [0, 130, 138],
+  [230, 50, 120],
+  [244, 180, 40],
+  [248, 242, 230]
+ ],
+ "sha256": "c3e9df4d9d092a4f0d9750fcf0284de2201c15b943d085013e116017cef069f6",
+ "scene": {
+  "phase": 0.37
+ }
+}

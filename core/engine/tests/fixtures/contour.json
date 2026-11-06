@@ -1,0 +1,20 @@
+{
+ "style": "contour",
+ "width": 48,
+ "height": 36,
+ "seed": 3,
+ "core_seed": 3,
+ "phase": 0.37,
+ "palette": "noir",
+ "stops": [
+  [8, 8, 10],
+  [37, 40, 48],
+  [88, 94, 106],
+  [168, 176, 188],
+  [244, 246, 250]
+ ],
+ "sha256": "6a75b478cfbc38edef9709e55ab48bd7907631d7366e75727fdd62ea6a00b81c",
+ "scene": {
+  "phase": 0.37
+ }
+}

@@ -1,0 +1,21 @@
+{
+ "style": "starburst",
+ "width": 48,
+ "height": 36,
+ "seed": 3,
+ "core_seed": 3,
+ "phase": 0.37,
+ "palette": "thermal",
+ "stops": [
+  [0, 0, 4],
+  [66, 10, 104],
+  [188, 55, 84],
+  [249, 142, 9],
+  [252, 255, 164]
+ ],
+ "sha256": "20de7ac4c4e2514f021665fbe9938c45c095ff75e2e91e45fcaa1fa251cf43c1",
+ "scene": {
+  "rays": 9,
+  "phase": 6.048451225742584
+ }
+}

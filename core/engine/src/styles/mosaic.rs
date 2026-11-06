@@ -7,6 +7,7 @@ use super::Style;
 use crate::palette::Palette;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Mosaic {
     cols: usize,
     rows: usize,
