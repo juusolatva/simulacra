@@ -363,17 +363,32 @@ class RenderingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 art.write_png(from_bytes, packed[:-1], 2, 2)
 
+    def _assert_native_matches_python(self, cases):
+        for style in art.NATIVE_STYLES:
+            for width, height, seed, palette, phase in cases:
+                with self.subTest(style=style, size=(width, height), seed=seed, phase=phase):
+                    native = art.render_rgb(width, height, seed, style, palette, phase)
+                    with mock.patch.object(art, '_core', None):
+                        python = art.render_rgb(width, height, seed, style, palette, phase)
+                    self.assertEqual(native, python)
+
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_styles_match_python_exactly(self):
-        cases = ((37, 23, 1, 'deep'), (64, 48, -7, 'neon'), (1, 1, 2 ** 40 + 3, 'gold'),
-                 (2, 5, 9, 'ocean'), (29, 61, 12345, 'sunset'))
-        for style in art.NATIVE_STYLES:
-            for width, height, seed, palette in cases:
-                with self.subTest(style=style, size=(width, height), seed=seed):
-                    native = art.render_rgb(width, height, seed, style, palette)
-                    with mock.patch.object(art, '_core', None):
-                        python = art.render_rgb(width, height, seed, style, palette)
-                    self.assertEqual(native, python)
+        # Phases beyond [0, 1) and below zero reach the scene builders unreduced
+        # through the API, so they are covered as well as ordinary ones.
+        self._assert_native_matches_python((
+            (37, 23, 1, 'deep', 0.0), (64, 48, -7, 'neon', 0.0),
+            (1, 1, 2 ** 40 + 3, 'gold', 0.0), (2, 5, 9, 'ocean', 0.0),
+            (29, 61, 12345, 'sunset', 0.0), (64, 48, -7, 'neon', 0.37),
+            (29, 61, 12345, 'sunset', 0.81), (37, 23, 1, 'deep', -0.63),
+            (23, 37, 4, 'vaporwave', 2.25)))
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    @unittest.skipUnless(os.environ.get('ABSTRACT_ART_SLOW'),
+                         'set ABSTRACT_ART_SLOW=1 for larger native comparisons')
+    def test_native_styles_match_python_exactly_at_larger_sizes(self):
+        self._assert_native_matches_python((
+            (200, 150, 3, 'lagoon', 0.37), (150, 200, -11, 'thermal', 0.81)))
 
     def test_woodblock_seeds_vary_paper_space_and_landforms(self):
         paper = art.PALETTES['watercolor'][-1]

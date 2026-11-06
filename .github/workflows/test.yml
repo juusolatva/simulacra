@@ -1,0 +1,107 @@
+name: Tests
+
+# Runs on every pull request, forks included: nothing here needs secrets, unlike the
+# SonarQube job. The native-versus-Python comparison in these jobs is what enforces
+# that ported Rust code stays byte-identical to the Python reference.
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }} without and with the Rust core
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.14']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Run the tests without the Rust core
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m unittest -v
+
+      - name: Build the Rust core and run the tests again
+        run: |
+          .venv/bin/python -m pip install maturin
+          .venv/bin/maturin develop --release -m core/Cargo.toml
+          .venv/bin/python -m unittest -v
+
+  rust:
+    name: cargo test and Clippy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # PyO3 links against the interpreter it finds, so give it a known one.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy --no-self-update && rustup default stable
+
+      - name: cargo test
+        run: cargo test --manifest-path core/Cargo.toml
+
+      - name: Clippy
+        run: cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
+
+      # The pure-Rust math backend that release builds are meant to use.
+      - name: cargo test and Clippy with the portable math backend
+        run: |
+          cargo test --manifest-path core/Cargo.toml --features portable
+          cargo clippy --manifest-path core/Cargo.toml --all-targets --features portable -- -D warnings
+
+  native-large:
+    name: Native matches Python at larger sizes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Build the Rust core
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install maturin
+          .venv/bin/maturin develop --release -m core/Cargo.toml
+
+      # Every style at 200 x 150 and 150 x 200 at nonzero phases, rendered in pure
+      # Python too (about 20 s on a fast machine).
+      - name: Compare native and Python output
+        env:
+          ABSTRACT_ART_SLOW: '1'
+        run: .venv/bin/python -m unittest -v test_abstract_art.RenderingTests.test_native_styles_match_python_exactly_at_larger_sizes
