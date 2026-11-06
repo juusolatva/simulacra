@@ -363,7 +363,7 @@ Run the test suite from the project directory:
 python3 -m unittest -v
 ```
 
-With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Slower checks, a comparison at 200 × 150 and 150 × 200 and a check of every attractor parameter set at 48 phases, run with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra` (several minutes). Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`, and Clippy with `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`.
+With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Slower checks, a comparison at 200 × 150 and 150 × 200 and a check of every attractor parameter set at 48 phases, run with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra` (several minutes). Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`; `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable` also renders the committed scenes in `core/engine/tests/fixtures/` without Python and checks the hash of each image, and Clippy with `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`.
 
 To run one regression test:
 

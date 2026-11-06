@@ -1,13 +1,16 @@
 # Rust rewrite plan
 
 Status (2026-11-08): Phase 1 is done except wider baseline coverage (more
-seeds, aspect ratios and palettes) and the `portable` fixtures. Phase 2 is
-under way: `core/` is a Cargo workspace with `simulacra_engine` (no PyO3
-unless its `python` feature is on) and the `simulacra_core` adapter, the math
-module has the `Libm` backends and the CPython `hypot` port, and one registry
-(`for_each_style!`) lists the styles. Next in Phase 2: make scenes
-constructible without Python (for example `serde` JSON), which the `portable`
-fixtures need. Phases 2b to 6 have not started.
+seeds, aspect ratios and palettes). Phase 2 meets its acceptance criterion:
+`core/` is a Cargo workspace with `simulacra_engine` (no PyO3 unless its
+`python` feature is on) and the `simulacra_core` adapter; the math module has
+the `Libm` backends and the CPython `hypot` port; one registry
+(`for_each_style!`) lists the styles; scenes load from JSON (`serde`), and the
+`portable` fixtures (one committed scene per style with the SHA-256 of its
+render) pass in `cargo test -p simulacra_engine --features json,portable`
+without Python. Open in Phase 2: render options (with Phase 3) and the scene
+builders' `tanh` and `pow` (with Phase 4). Next: Phase 2b, the random
+generator port. Phases 2b to 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -163,14 +166,21 @@ Timing: while style experimentation continues.
   the platform libm, and CI runs on `ubuntu-latest` with Python 3.12, so
   hashes or scene data committed from one environment would break when the
   runner image changes.
-- [ ] Commit fixtures only for output that does not depend on the
+- [x] Commit fixtures only for output that does not depend on the
   environment: SHA-256 hashes of packed RGB from the `portable` backend, tied
   to a source revision and generated once the Phase 2 math module exists
   (blocked on Phase 2).
   Store scene data as JSON at small sizes and as a hash at large ones
   (woodblock surfaces and sampled torus and Lissajous curves grow with the
   canvas). Do not commit raw buffers or images. Update fixtures deliberately
-  when visual changes are intended.
+  when visual changes are intended. Done on 2026-11-08:
+  `core/engine/tests/fixtures/<style>.json` holds one scene per style at
+  48 × 36 (seed 3, phase 0.37, palettes cycling through all 24) with the
+  SHA-256 of its `portable` render, about 190 KB in all. The scenes are
+  generated once by `core/engine/tests/make_fixtures.py` (which needs a
+  `portable` core) and committed, because Python's scene data depends on the
+  platform libm; the hashes do not. Large sizes are not stored, since a hash
+  alone cannot be rendered without its scene.
 - [x] Record the reference environment for measurements and live comparisons:
   CPython version (3.12 or later, since `sum()` is compensated from 3.12 and
   only `random()` is guaranteed stable across versions), operating system,
@@ -301,15 +311,25 @@ Timing: while experimentation continues; preserve current visuals.
     use `exp`, `sin`, `cos`, `atan2`, `powf`, `ln_1p`, `tan`, and `atan`; the
     scene builders add `tanh` (woodblock) and `**`, which is libm `pow`. See
     "Compatibility policy".
-- [ ] Generate the `portable` fixtures (Phase 1) and check them in
-  `cargo test -p engine`.
-- [ ] Build the `py` adapter with the `system` backend for differential tests,
+- [x] Generate the `portable` fixtures (Phase 1) and check them in
+  `cargo test -p engine`. Done: `tests/fixtures.rs` loads each scene through
+  serde (`scene_from_json`, `serde_json` with `float_roundtrip`, without which
+  floats can be off in the last bit; a unit test guards it) and compares the
+  hash under `portable`. The hashes were computed through the PyO3 adapter,
+  so a match also shows that both ways of loading a scene agree. With the
+  platform libm the fixtures only have to load and render. Scene structs
+  derive `serde::Deserialize` under the engine's `serde` feature, and
+  `deserialize_scene` takes any serde format, so a hand-edited format (TOML
+  or YAML, preferred over JSON for anything people edit) is one more feature.
+- [x] Build the `py` adapter with the `system` backend for differential tests,
   and provide a `portable` build of it, so styles designed in Python can be
-  previewed the way release binaries draw them.
-- [ ] Retain existing Python scene builders and differential tests through
+  previewed the way release binaries draw them. (`maturin develop -m
+  core/py/Cargo.toml`, with `--features portable` for the second.)
+- [x] Retain existing Python scene builders and differential tests through
   that adapter.
-- [ ] Preserve arithmetic order and the existing Python numeric compatibility
-  helpers during extraction.
+- [x] Preserve arithmetic order and the existing Python numeric compatibility
+  helpers during extraction. (Native output was byte-identical before and
+  after the split and the serde derives.)
 - [x] Keep the Python extension and standalone engine build paths covered in CI.
   The Rust job tests and lints the workspace (engine with `python`, through
   feature unification) and then the engine alone, checking that its
@@ -363,6 +383,18 @@ scene builders use, across the supported seed range.
   and static PNG output for the initial subset.
 - [ ] Validate dimensions and checked buffer-size arithmetic at the engine
   boundary, not only in CLI parsing.
+- [ ] Validate scenes at the engine boundary before any untrusted scene source
+  exists (at the latest with a CLI option that reads a scene file). The
+  shaders trust their scene: an index out of range (constellation pairs, an
+  `orbits` ring's palette stop through the unchecked `Palette::stop`), a
+  `mosaic` grid that does not match its `cols` and `rows`, `woodblock`
+  surfaces shorter than the canvas width, or a huge iteration count (`ink`
+  steps, `comet` speed and reach, constellation line steps) panics or stalls
+  rendering. Add a check per style against the canvas and palette (for
+  example a `validate(width, height, &palette)` on `Style`), limits on
+  scene-driven loop counts, and malformed-scene tests. Raised by Qodo on PR
+  #30; the same holds for scenes passed through the Python adapter, which so
+  far only come from our own builders.
 - [ ] Preserve safe temporary-file creation, destination replacement, and
   cleanup on failure. Create the temporary file with mode 0o666 so the umask
   applies, as `_create_temporary()` does: `tempfile::NamedTempFile` creates
@@ -638,10 +670,9 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 4. Done: establish the stage-level performance baseline.
    Also done: `attractor` picks its parameters from a table, so the choice
    no longer depends on libm (see "Attractor parameter table").
-5. Next: finish the Python-independent Rust engine. Done: the workspace split
-   (`simulacra_engine` and the `simulacra_core` adapter), the math module with
-   both backends and the CPython `hypot` port. Still to do: scenes that can be
-   built without Python, and the `portable` fixtures.
-6. Port CPython's random generator.
+5. Done: the Python-independent Rust engine (workspace split, math module
+   with both backends and the CPython `hypot` port, scenes from JSON, the
+   `portable` fixtures). Render options follow with Phase 3.
+6. Next: port CPython's random generator.
 7. Prove standalone delivery with a small subset of styles.
 8. Continue Python style experimentation and migrate settled styles in batches.

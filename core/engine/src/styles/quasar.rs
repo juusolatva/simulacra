@@ -11,6 +11,7 @@ use crate::palette::Palette;
 use crate::raster::shade;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Quasar {
     pub center: (f64, f64),
     pub beta: f64,

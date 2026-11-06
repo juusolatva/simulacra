@@ -1,0 +1,21 @@
+{
+ "style": "kaleidoscope",
+ "width": 48,
+ "height": 36,
+ "seed": 3,
+ "core_seed": 3,
+ "phase": 0.37,
+ "palette": "watercolor",
+ "stops": [
+  [36, 43, 63],
+  [91, 119, 153],
+  [164, 190, 202],
+  [204, 157, 159],
+  [246, 237, 219]
+ ],
+ "sha256": "cf0ad03f119df08a035b5dc21da0cdaceb0e71918c7e4f390e28809224e8e7af",
+ "scene": {
+  "folds": 5,
+  "phase": 6.048451225742584
+ }
+}

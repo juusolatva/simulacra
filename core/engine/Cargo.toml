@@ -10,9 +10,21 @@ publish.workspace = true
 rayon.workspace = true
 libm = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+sha2.workspace = true
 
 [features]
 # Route libm calls through the pure-Rust libm crate (same results on every target).
 portable = ["dep:libm"]
 # Derive pyo3::FromPyObject on the scene structs, for the `py` adapter crate.
 python = ["dep:pyo3"]
+# Derive serde::Deserialize on the scene structs; `deserialize_scene` reads a
+# scene from any serde format.
+serde = ["dep:serde"]
+# Scenes from JSON (`scene_from_json`), used by the portable fixtures in tests/.
+json = ["serde", "dep:serde_json"]

@@ -1,0 +1,20 @@
+{
+ "style": "blobs",
+ "width": 48,
+ "height": 36,
+ "seed": 3,
+ "core_seed": 3,
+ "phase": 0.37,
+ "palette": "forest",
+ "stops": [
+  [11, 31, 18],
+  [20, 61, 36],
+  [47, 107, 60],
+  [85, 160, 106],
+  [142, 201, 160]
+ ],
+ "sha256": "35e94af79943a0f0b8ca35cbcf3afbe3d0b710c46658d81a2456996054659e35",
+ "scene": {
+  "phase": 0.37
+ }
+}
