@@ -1,12 +1,11 @@
 # Rust rewrite plan
 
-Status (2026-11-06, after PR #25): Phase 1 is done except wider baseline
-coverage (more seeds, aspect ratios and palettes) and the `portable`
-fixtures, which wait for the Phase 2 math module. Phase 2 is next; part of its
-math module exists already (the `Libm` trait with `system` and `portable`
-backends, enforced by Clippy). Phases 2b to 6 have not started. Suggested
-order within Phase 2: port CPython's `hypot` first (small and
-self-contained), then split the crate.
+Status (2026-11-07): Phase 1 is done except wider baseline coverage (more
+seeds, aspect ratios and palettes) and the `portable` fixtures, which wait for
+the Phase 2 engine crate. Phase 2 has started: the math module has the `Libm`
+trait with `system` and `portable` backends and `py_hypot`, a port of
+CPython's `hypot`, all enforced by Clippy. Next in Phase 2: split the crate.
+Phases 2b to 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -252,8 +251,9 @@ Timing: while experimentation continues; preserve current visuals.
 - [ ] Put every transcendental call behind one engine math module, sorted by
   where Python gets the function. Partly done: `core/src/math.rs` has the
   `Libm` trait with both backends (the `portable` cargo feature), and
-  `core/clippy.toml` rejects direct `f64` libm calls elsewhere. Still to do:
-  the `hypot` port and moving the module into the engine crate.
+  `core/clippy.toml` rejects direct `f64` libm calls elsewhere, `f64::hypot`
+  included. `math::py_hypot` ports CPython's `hypot` (done; see below). Still
+  to do: moving the module into the engine crate.
   - Functions CPython implements itself get exact Rust ports that both
     backends use. `math.hypot` is CPython's own algorithm (`vector_norm`), not
     libm, but Rust's `f64::hypot` calls libm: on glibc 2.43 the two disagreed
@@ -261,7 +261,20 @@ Timing: while experimentation continues; preserve current visuals.
     the correctly rounded one in all 300 disagreements checked. Port
     `vector_norm` from the reference CPython version for two arguments. Its
     error-free products may use `mul_add`, because the fused product is exact
-    there, unlike the expression rewrites the porting rules forbid. `sum()`
+    there, unlike the expression rewrites the porting rules forbid. Done:
+    `math::py_hypot` (the algorithm is the same in CPython 3.12 and 3.14)
+    replaced all 26 `f64::hypot` calls in the shaders. It matched
+    `math.hypot` bit for bit on 3.5 million inputs (pixel-scale and
+    canvas-relative offsets, random bit patterns over the whole exponent
+    range, subnormals, values near overflow, infinities and NaN), under both
+    backends, including the 12,715 inputs where glibc 2.43's `hypot`
+    disagreed; a sample of those is in the Rust unit tests. The `portable`
+    drift did not change (`cymatics` drift comes from `cos`). The port costs
+    shader time where `hypot` sits in an inner loop: at 640 × 480 (best of
+    5, hardware FMA) `circuit` went from 17 to 25 ms and `cosmic` from 11 to
+    17 ms; most styles were within noise. The cost is the algorithm (a
+    second `sqrt`-and-divide step and compensated sums), not the call:
+    inlining it changed nothing. `sum()`
     and `%` already have ports (`py_sum`, `py_mod`), and `round()` maps to
     `round_ties_even`.
   - Functions Python takes from libm go through two backends: `system`
@@ -605,8 +618,8 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    Also done: `attractor` picks its parameters from a table, so the choice
    no longer depends on libm (see "Attractor parameter table").
 5. Next: extract the Python-independent Rust engine while retaining the
-   adapter, including the math module (CPython's `hypot` still to port; the
-   `system` and `portable` backends exist) and the `portable` fixtures.
+   adapter, including the math module (the `system` and `portable` backends
+   and the CPython `hypot` port exist) and the `portable` fixtures.
 6. Port CPython's random generator.
 7. Prove standalone delivery with a small subset of styles.
 8. Continue Python style experimentation and migrate settled styles in batches.

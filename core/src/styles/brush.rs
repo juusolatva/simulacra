@@ -4,7 +4,7 @@
 //! addition is not associative, so stamping runs sequentially in exactly the
 //! order `simulacra.py` uses. Only the final per-pixel shading is parallel.
 
-use crate::math::Libm;
+use crate::math::{Libm, py_hypot};
 use std::f64::consts::TAU;
 
 use pyo3::FromPyObject;
@@ -52,7 +52,7 @@ fn segment_box(
             } else {
                 (((fx - ax) * dx + (fy - ay) * dy) / len2).max(0.0).min(1.0)
             };
-            let d = (fx - (ax + t * dx)).hypot(fy - (ay + t * dy));
+            let d = py_hypot(fx - (ax + t * dx), fy - (ay + t * dy));
             visit(yy as usize, xx as usize, d, t);
         }
     }
@@ -330,7 +330,7 @@ impl Style for Constellations {
                 if (fy - sy).abs() > radius * zero + 1.0 {
                     continue;
                 }
-                v += gaussian((fx - sx).hypot(fy - sy), radius) * brightness;
+                v += gaussian(py_hypot(fx - sx, fy - sy), radius) * brightness;
             }
             v += lines[y * width + x];
             unit(1.0 - (-v).m_exp())
