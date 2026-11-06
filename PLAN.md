@@ -1,7 +1,12 @@
 # Rust rewrite plan
 
-Status: Phase 1 done except wider baseline coverage (more seeds, aspect
-ratios and palettes); Phase 2 next.
+Status (2026-11-06, after PR #25): Phase 1 is done except wider baseline
+coverage (more seeds, aspect ratios and palettes) and the `portable`
+fixtures, which wait for the Phase 2 math module. Phase 2 is next; part of its
+math module exists already (the `Libm` trait with `system` and `portable`
+backends, enforced by Clippy). Phases 2b to 6 have not started. Suggested
+order within Phase 2: port CPython's `hypot` first (small and
+self-contained), then split the crate.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -40,6 +45,8 @@ streaming animation frames (Phase 5) is possible in Python too:
 `_atomic_write()` already accepts lazy chunks. Before Phase 3, record why
 these routes are not enough (for example startup time, binary size, or one
 codebase), or ship one of them as an interim release while the port proceeds.
+Decided on 2026-11-06: skipped while the repository is private, so there is
+no interim release.
 
 ## Reviewed implementation
 
@@ -55,6 +62,11 @@ codebase), or ship one of them as an interim release while the port proceeds.
 | CI | The Python suite runs only inside the SonarQube job (skipped for fork pull requests, `ubuntu-latest`, Python 3.12). No workflow runs `cargo test` or Clippy | Add a dedicated test workflow before splitting the crate. |
 | Math | Python takes `sin`, `cos`, `exp`, `atan2`, `pow`, and others from libm but implements `hypot` itself; Rust calls libm for all of them | Port CPython's own algorithms exactly; route only libm functions through a backend. |
 | Benchmark | Times `render_rgb()`, excluding encoding and file writing | Add stage timing, cold/warm measurements, and peak memory. |
+
+This table records the reviewed revision. Phase 1 has since added the test
+workflow (every pull request, `cargo test` and Clippy), the native-versus-Python
+test at nonzero phases and larger sizes, the `portable` math feature and the
+stage benchmarks.
 
 Since the earlier 37-style review, the project added `woodblock`, `cymatics`,
 `optics`, `contour`, `marbling`, `attractor`, `opart`, `lunar`, `asteroids`,
@@ -123,8 +135,8 @@ Timing: while style experimentation continues.
   `hypot` as it is, since Phase 2 replaces it), rerun that comparison per
   style, and compare the attractor parameters chosen for each seed. Decide the
   compatibility policy from the result; it shapes the Phase 2 math module and
-  the fixtures. Done on 2026-11-07; see "Measured `portable` drift" below.
-  Policy decided on 2026-11-07: release builds use `portable` (see
+  the fixtures. Done on 2026-11-06; see "Measured `portable` drift" below.
+  Policy decided on 2026-11-06: release builds use `portable` (see
   "Compatibility policy").
 - [x] Record scene preparation, native rendering, encoding, and total runtime
   separately using release builds (`bench_simulacra.py --stages` and
@@ -141,25 +153,30 @@ Timing: while style experimentation continues.
   `--stages` takes any size, seed, palette and phase for more.
 - [x] Include fast fields, noise-heavy styles, brush styles, woodblock,
   attractor, lunar, and both GIF and APNG animations.
-- [ ] Keep comparisons against Python live, on the same machine, as the native
-  test does today: Python and Rust builders for scene data, Python and the
+- [x] Keep comparisons against Python live, on the same machine, as the native
+  test does today (in place: CI builds the core and compares on the runner):
+  Python and Rust builders for scene data, Python and the
   `system` backend for RGB. Python's output, scene data included, depends on
   the platform libm, and CI runs on `ubuntu-latest` with Python 3.12, so
   hashes or scene data committed from one environment would break when the
   runner image changes.
 - [ ] Commit fixtures only for output that does not depend on the
   environment: SHA-256 hashes of packed RGB from the `portable` backend, tied
-  to a source revision and generated once the Phase 2 math module exists.
+  to a source revision and generated once the Phase 2 math module exists
+  (blocked on Phase 2).
   Store scene data as JSON at small sizes and as a hash at large ones
   (woodblock surfaces and sampled torus and Lissajous curves grow with the
   canvas). Do not commit raw buffers or images. Update fixtures deliberately
   when visual changes are intended.
-- [ ] Record the reference environment for measurements and live comparisons:
+- [x] Record the reference environment for measurements and live comparisons:
   CPython version (3.12 or later, since `sum()` is compensated from 3.12 and
   only `random()` is guaranteed stable across versions), operating system,
-  architecture, and libm (glibc version).
-- [ ] Keep existing tests for determinism, phase-zero behavior, looping,
-  palette range, scaling, and writer failure handling.
+  architecture, and libm (glibc version). Recorded with each measurement below
+  (Fedora, x86_64, glibc 2.43, CPython 3.14); CI compares on `ubuntu-latest`
+  with CPython 3.12 and 3.14.
+- [x] Keep existing tests for determinism, phase-zero behavior, looping,
+  palette range, scaling, and writer failure handling (a standing rule for
+  every phase).
 
 Acceptance: reproducible measurements distinguish scene, shader, encoding,
 and memory costs, and the compatibility policy is decided from the measured
@@ -168,7 +185,7 @@ expanded style collection.
 
 ### Stage baseline
 
-Measured on 2026-11-07 on the reference machine (Fedora, x86_64, 8 CPUs,
+Measured on 2026-11-06 on the reference machine (Fedora, x86_64, 8 CPUs,
 glibc 2.43, CPython 3.14.10, release build of the core with the `system`
 backend), seed 1, palette `deep`. Single runs vary by about ±30%; rerun on the
 same machine before comparing.
@@ -220,7 +237,8 @@ as GIF (the pure-Python color mapping and LZW encoder) and 2.4 s as APNG, so
 GIF encoding is the largest single cost in animated output. Among the APNG
 runs, `attractor` is slow because its sequential orbit shader runs per frame.
 Peak memory grows with the retained frames (48 frames at 640 × 480 are
-42 MiB of packed RGB).
+42 MiB of packed RGB). The `attractor` rows predate the parameter table, so
+they include about 0.5 s of parameter search per process.
 
 ## Phase 2: Extract the Python-independent engine
 
@@ -232,7 +250,10 @@ Timing: while experimentation continues; preserve current visuals.
   scene `FromPyObject` derives behind the `python` feature.
 - [ ] Move PyO3 extraction and Python exception conversion into the adapter.
 - [ ] Put every transcendental call behind one engine math module, sorted by
-  where Python gets the function:
+  where Python gets the function. Partly done: `core/src/math.rs` has the
+  `Libm` trait with both backends (the `portable` cargo feature), and
+  `core/clippy.toml` rejects direct `f64` libm calls elsewhere. Still to do:
+  the `hypot` port and moving the module into the engine crate.
   - Functions CPython implements itself get exact Rust ports that both
     backends use. `math.hypot` is CPython's own algorithm (`vector_norm`), not
     libm, but Rust's `f64::hypot` calls libm: on glibc 2.43 the two disagreed
@@ -269,8 +290,9 @@ renderers.
 Prerequisite for any seeded scene builder, including the second style in
 Phase 3. The compatibility policy must be decided first (Phase 1).
 
-Scene builders call `uniform` (209 call sites), `randint` (44), `random` (11),
-`choice` (8), and `randrange` (5) on `random.Random(seed)`.
+Scene builders call `uniform` (205 call sites), `randint` (44), `random` (11),
+`choice` (9), `randrange` (5) and `getrandbits` (1, the attractor's one-bit
+mirror draw) on `random.Random(seed)`.
 
 - [ ] Implement a `PyRandom` module in the engine: MT19937 seeded like CPython
   (`init_by_array` over 32-bit chunks of `abs(seed)`), `random()` from two
@@ -420,7 +442,7 @@ on a machine without Python, with documented compatibility and performance.
 
 ## Compatibility policy
 
-Decided on 2026-11-07, from the measured drift below: the standalone release
+Decided on 2026-11-06, from the measured drift below: the standalone release
 binaries (Phase 3 onward) are built with `--features portable`, and the
 resulting drift from the Python reference is accepted. Development builds of
 the Python extension (`maturin develop`, with or without `--release`) keep the
@@ -475,7 +497,7 @@ same seed. It now picks from a fixed table (see "Attractor parameter table").
 
 ### Measured `portable` drift
 
-Measured on 2026-11-07 (Fedora, glibc 2.43, CPython 3.14, `libm` 0.2.16).
+Measured on 2026-11-06 (Fedora, glibc 2.43, CPython 3.14, `libm` 0.2.16).
 The `portable` cargo feature of `core` sends `exp`, `sin`, `cos`, `tan`,
 `atan`, `atan2`, `powf` and `ln_1p` through the `libm` crate
 (`core/src/math.rs`, trait `Libm`); the default build is unchanged and still
@@ -572,9 +594,9 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 
 ## Immediate next work
 
-1. Skipped while the repository is private: record why prebuilt wheels or a
-   bundled Python application are not enough, or ship one as an interim
-   release.
+1. Skipped while the repository is private (decided 2026-11-06): record why
+   prebuilt wheels or a bundled Python application are not enough, or ship
+   one as an interim release.
 2. Done: add the test workflow, and extend the native-versus-Python test to nonzero
    phases and larger sizes.
 3. Done: measure `portable` drift and decide the compatibility policy
@@ -582,9 +604,9 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 4. Done: establish the stage-level performance baseline.
    Also done: `attractor` picks its parameters from a table, so the choice
    no longer depends on libm (see "Attractor parameter table").
-5. Extract the Python-independent Rust engine while retaining the adapter,
-   including the math module (CPython's `hypot`, `system` and `portable`
-   backends) and the `portable` fixtures.
+5. Next: extract the Python-independent Rust engine while retaining the
+   adapter, including the math module (CPython's `hypot` still to port; the
+   `system` and `portable` backends exist) and the `portable` fixtures.
 6. Port CPython's random generator.
 7. Prove standalone delivery with a small subset of styles.
 8. Continue Python style experimentation and migrate settled styles in batches.
