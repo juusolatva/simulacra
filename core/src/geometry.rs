@@ -1,5 +1,7 @@
 //! Python-exact numeric helpers and 2D geometry shared by the styles.
 
+use crate::math::py_hypot;
+
 pub type Point = (f64, f64);
 pub type Segment = (Point, Point);
 
@@ -63,12 +65,12 @@ pub fn seg_hit(x: f64, y: f64, p1: Point, p2: Point) -> f64 {
     let (dx, dy) = (p2.0 - x1, p2.1 - y1);
     let seg_len2 = dx * dx + dy * dy;
     if seg_len2 < 1e-12 {
-        return (x - x1).hypot(y - y1);
+        return py_hypot(x - x1, y - y1);
     }
     let t = (((x - x1) * dx + (y - y1) * dy) / seg_len2)
         .min(1.0)
         .max(0.0);
-    (x - (x1 + t * dx)).hypot(y - (y1 + t * dy))
+    py_hypot(x - (x1 + t * dx), y - (y1 + t * dy))
 }
 
 /// Minimum distance from a point to a closed polygon's edges (`_poly_min_dist`).

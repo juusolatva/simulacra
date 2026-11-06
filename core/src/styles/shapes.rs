@@ -1,6 +1,6 @@
 //! Polygon-, segment- and ring-based styles.
 
-use crate::math::Libm;
+use crate::math::{Libm, py_hypot};
 use pyo3::FromPyObject;
 
 use super::{Style, gaussian, small_side, unit};
@@ -35,7 +35,7 @@ impl Style for Circuit {
                     .fold(f64::INFINITY, |best, d| if d < best { d } else { best });
                 v += gaussian(d, core) + 0.3 * gaussian(d, halo);
                 for &(px, py) in nodes {
-                    let dn = (x - px).hypot(y - py);
+                    let dn = py_hypot(x - px, y - py);
                     if dn < pad * 2.5 {
                         v += 1.5 * gaussian(dn, pad);
                     }
@@ -145,7 +145,7 @@ impl Style for Mandala {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
             let (dx, dy) = (x - cx, y - cy);
-            let r = dx.hypot(dy);
+            let r = py_hypot(dx, dy);
             let theta = dy.m_atan2(dx);
             let mut v = (-(r * r) / (2.0 * medallion * medallion)).m_exp() * 3.5;
             let noise = polar_noise(r * 0.05, theta, seed, 3.0, 2);
@@ -160,7 +160,7 @@ impl Style for Mandala {
                 }
             }
             for &(gx, gy, size) in &self.glyphs {
-                let d = (x - gx).hypot(y - gy);
+                let d = py_hypot(x - gx, y - gy);
                 if d < size * 0.9 {
                     v += (-(d * d) / (2.0 * size * size)).m_exp() * 2.2;
                 }

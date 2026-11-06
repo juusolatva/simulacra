@@ -3,7 +3,7 @@
 //! Mirrors `_quasar_value()` in `simulacra.py`; the scene comes from
 //! `_quasar_scene()` so both implementations share the same random layout.
 
-use crate::math::Libm;
+use crate::math::{Libm, py_hypot};
 use pyo3::FromPyObject;
 
 use super::Style;
@@ -51,7 +51,7 @@ impl Quasar {
         let dx = x as f64 - self.center.0;
         let dy = y as f64 - self.center.1;
         let (r_shadow, r_outer) = (self.r_shadow, self.r_outer);
-        let r = dx.hypot(dy);
+        let r = py_hypot(dx, dy);
         let theta = dy.m_atan2(dx);
         let mut v = 0.0;
         // gravitational lensing glow ring around the shadow

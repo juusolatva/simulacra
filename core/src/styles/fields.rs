@@ -1,6 +1,6 @@
 //! Noise- and wave-based styles that compute each pixel independently.
 
-use crate::math::Libm;
+use crate::math::{Libm, py_hypot};
 use std::f64::consts::{PI, TAU};
 
 use pyo3::FromPyObject;
@@ -109,7 +109,7 @@ impl Style for Kaleidoscope {
         shade(width, height, palette, |x, y| {
             let dx = (x as f64 - cx) / scale;
             let dy = (y as f64 - cy) / scale;
-            let r = dx.hypot(dy);
+            let r = py_hypot(dx, dy);
             let angle = (py_mod(dy.m_atan2(dx) + sector / 2.0, sector) - sector / 2.0).abs();
             let (u, v) = (r * angle.m_cos(), r * angle.m_sin());
             let n = fbm(u * 32.0, v * 32.0, seed, 3);
@@ -164,7 +164,7 @@ pub struct Galaxy {
 impl Style for Galaxy {
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
-        let max_r = cx.hypot(cy).max(1.0);
+        let max_r = py_hypot(cx, cy).max(1.0);
         shade(width, height, palette, |x, y| {
             let dx = x as f64 - cx;
             let dy = y as f64 - cy;
@@ -199,7 +199,7 @@ impl Style for Bloom {
             let mut v = 0.0;
             let n = fbm_loop(x * 0.006, y * 0.006, seed, 3, self.phase);
             for &(bx, by, br, amp) in &self.blooms {
-                v += gaussian((x - bx).hypot(y - by), br) * amp;
+                v += gaussian(py_hypot(x - bx, y - by), br) * amp;
             }
             v *= 0.4 + 1.2 * n;
             1.0 - (-1.4 * v).m_exp()
@@ -232,7 +232,7 @@ impl Style for Nebula {
             if self
                 .stars
                 .iter()
-                .any(|&(sx, sy, sr)| (x - sx).hypot(y - sy) < sr)
+                .any(|&(sx, sy, sr)| py_hypot(x - sx, y - sy) < sr)
             {
                 v += 1.2;
             }
@@ -266,7 +266,7 @@ impl Style for Orbits {
             if self
                 .stars
                 .iter()
-                .any(|&(sx, sy, sr)| (x - sx).hypot(y - sy) < sr * 1.2)
+                .any(|&(sx, sy, sr)| py_hypot(x - sx, y - sy) < sr * 1.2)
             {
                 color = [255, 255, 255];
             }
@@ -296,15 +296,15 @@ impl Style for Cosmic {
             (self.arm_ang.m_cos(), self.arm_ang.m_sin(), self.arm_w.m_tan());
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
-            let rad = (x - ox).hypot(y - oy);
+            let rad = py_hypot(x - ox, y - oy);
             let mut v = gaussian(rad, glow_sigma) * 0.6;
             let ang = (y - oy).m_atan2(x - ox);
             let ang_diff = py_mod(ang - self.arm_ang + PI, 2.0 * PI) - PI;
             let dist_along = rad * arm_tan + self.arm_r * (ang_diff / self.arm_w).m_cos();
-            let d2 = (x - (ox + dist_along * arm_cos)).hypot(y - (oy + dist_along * arm_sin));
+            let d2 = py_hypot(x - (ox + dist_along * arm_cos), y - (oy + dist_along * arm_sin));
             v += gaussian(d2, arm_sigma) * 1.2;
             for &(sx, sy, size, brightness) in &self.stars {
-                let ds = (x - sx).hypot(y - sy);
+                let ds = py_hypot(x - sx, y - sy);
                 if ds < star_sigma * 3.0 {
                     v += size * brightness * gaussian(ds, star_sigma);
                 }
@@ -353,7 +353,7 @@ impl Style for Starburst {
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
         shade(width, height, palette, |x, y| {
             let (dx, dy) = ((x as f64 - cx) / scale, (y as f64 - cy) / scale);
-            let r = dx.hypot(dy);
+            let r = py_hypot(dx, dy);
             let theta = dy.m_atan2(dx);
             let ray = (0.5 + 0.5 * (theta * self.rays + self.phase).m_cos()).m_powf(12.0);
             let q = r / 0.18;
@@ -373,7 +373,7 @@ pub struct Spiral {
 impl Style for Spiral {
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
-        let max_r = cx.hypot(cy).max(1.0);
+        let max_r = py_hypot(cx, cy).max(1.0);
         shade(width, height, palette, |x, y| {
             let (dx, dy) = (x as f64 - cx, y as f64 - cy);
             let r = (dx * dx + dy * dy).sqrt() / max_r;
@@ -404,7 +404,7 @@ impl Style for Petals {
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
         shade(width, height, palette, |x, y| {
             let (dx, dy) = ((x as f64 - cx) / scale, (y as f64 - cy) / scale);
-            let r = dx.hypot(dy);
+            let r = py_hypot(dx, dy);
             let theta = dy.m_atan2(dx);
             let angular = (0.5 + 0.5 * (self.count * theta + self.phase).m_cos()).m_powf(3.0);
             let q = (r - self.length * 0.52) / (self.length * 0.3);
@@ -586,7 +586,7 @@ impl Style for Voronoi {
             let mut nearest = (f64::INFINITY, f64::INFINITY);
             let mut second = f64::INFINITY;
             for &(sx, sy, color) in &self.sites {
-                let d = (x - sx).hypot(y - sy);
+                let d = py_hypot(x - sx, y - sy);
                 if d < nearest.0 || (d == nearest.0 && color < nearest.1) {
                     second = nearest.0;
                     nearest = (d, color);
@@ -646,7 +646,7 @@ impl Style for Crystal {
                 0.0
             };
             // Python's round() is half-to-even.
-            let tilt = ((gx.hypot(gy) * relief).m_atan() / tilt_step).round_ties_even() * tilt_step;
+            let tilt = ((py_hypot(gx, gy) * relief).m_atan() / tilt_step).round_ties_even() * tilt_step;
             let azimuth = (gy.m_atan2(gx) / az_step).round_ties_even() * az_step;
             let n = (
                 -tilt.m_sin() * azimuth.m_cos(),
@@ -679,7 +679,7 @@ impl Style for Cymatics {
             let v = (y as f64 - cy) / scale;
             let mut w = 0.0;
             if self.circular {
-                let r = u.hypot(v);
+                let r = py_hypot(u, v);
                 let theta = v.m_atan2(u);
                 for &(n, m, weight, phase_a, phase_b) in &self.modes {
                     let radial = (n * PI * r + phase_a).m_cos() / (1.0 + 0.4 * n * r).sqrt();
@@ -729,7 +729,7 @@ impl Style for Optics {
             for &(fx, fy, radius, amp) in &self.flares {
                 let dx = u - fx;
                 let dy = v - fy;
-                let d = dx.hypot(dy);
+                let d = py_hypot(dx, dy);
                 let spike = 0.5 + 0.5 * (self.blades * dy.m_atan2(dx) + self.spin).m_cos();
                 let spike2 = spike * spike;
                 let airy = 0.5 + 0.5 * (d * 26.0 - fphase).m_cos();
@@ -762,7 +762,7 @@ impl Style for Contour {
             let hx = terrain((x + 1) as f64, fy);
             let hy = terrain(fx, (y + 1) as f64);
             let s = h0 * CONTOUR_LEVELS;
-            let step = (hx * CONTOUR_LEVELS - s).hypot(hy * CONTOUR_LEVELS - s) + 1e-9;
+            let step = py_hypot(hx * CONTOUR_LEVELS - s, hy * CONTOUR_LEVELS - s) + 1e-9;
             let level = s.floor();
             let frac = s - level;
             let nearest = if frac < 0.5 { level } else { level + 1.0 };
@@ -796,7 +796,7 @@ impl Style for Opart {
             let mut v = (y as f64 - cy) / scale;
             let mut glow = 0.0;
             for &(bx, by, radius, strength) in &self.bulges {
-                let q = (u - bx).hypot(v - by) / radius;
+                let q = py_hypot(u - bx, v - by) / radius;
                 let f = strength * (-(q * q)).m_exp();
                 u = bx + (u - bx) * (1.0 - f);
                 v = by + (v - by) * (1.0 - f);
@@ -810,7 +810,7 @@ impl Style for Opart {
                     (TAU * self.freq * 0.5 * along + self.shift).m_sin()
                         * (TAU * self.freq * 0.5 * across - self.shift).m_sin()
                 }
-                _ => (TAU * self.freq * u.hypot(v) + self.shift).m_sin(),
+                _ => (TAU * self.freq * py_hypot(u, v) + self.shift).m_sin(),
             };
             let steep = if self.pattern == 1 { 8.0 } else { 5.0 };
             let sharp = 1.0 / (1.0 + ((-steep) * wave).m_exp());
