@@ -9,8 +9,10 @@ the `Libm` backends and the CPython `hypot` port; one registry
 `portable` fixtures (one committed scene per style with the SHA-256 of its
 render) pass in `cargo test -p simulacra_engine --features json,portable`
 without Python. Open in Phase 2: render options (with Phase 3) and the scene
-builders' `tanh` and `pow` (with Phase 4). Next: Phase 2b, the random
-generator port. Phases 2b to 6 have not started.
+builders' `tanh` and `pow` (with Phase 4). Phase 2b is done:
+`simulacra_engine::PyRandom` reproduces CPython's `random.Random` for every
+helper the scene builders use. Next: Phase 3, a small standalone binary.
+Phases 3 to 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -348,19 +350,37 @@ Scene builders call `uniform` (205 call sites), `randint` (44), `random` (11),
 `choice` (9), `randrange` (5) and `getrandbits` (1, the attractor's one-bit
 mirror draw) on `random.Random(seed)`.
 
-- [ ] Implement a `PyRandom` module in the engine: MT19937 seeded like CPython
+- [x] Implement a `PyRandom` module in the engine: MT19937 seeded like CPython
   (`init_by_array` over 32-bit chunks of `abs(seed)`), `random()` from two
   draws, `getrandbits()`, and `_randbelow()` with rejection sampling, plus
   `uniform`, `randint`, `randrange`, and `choice` built on them exactly as
-  CPython does.
-- [ ] Test it differentially against the pinned CPython over millions of draws
+  CPython does. Done in `core/engine/src/random.rs`, ported from
+  `Modules/_randommodule.c` and `Lib/random.py`; the two make the same draws
+  in CPython 3.12.0 and 3.14.4 (the differences are error handling, a lazy
+  import for string seeds, and `randint` calling `_randbelow` directly where
+  3.12 went through `randrange`). The builders call only `random.Random(seed)`
+  with a plain integer seed and single-argument `randrange`, so that is the
+  API.
+- [x] Test it differentially against the pinned CPython over millions of draws
   per helper, including seed 0, negative seeds, `i64::MIN` and `i64::MAX`,
   and seeds on both sides of 2**32 (one-word and two-word keys). Test seeds
-  above 2**64 only if the engine API accepts them.
-- [ ] Implement `getrandbits()` for more than 32 bits only if a builder needs
+  above 2**64 only if the engine API accepts them. Done: about a million calls
+  per helper (300 seeds across the `i64` range, random arguments including
+  ranges just above a power of two, where rejection sampling repeats most)
+  matched CPython 3.14 with no mismatch under both math backends. The
+  committed check is `core/engine/tests/random_reference.json`: 14 seeds
+  (the edge cases above) with 400 interleaved calls each, enough to refill
+  the 624-word state mid-sequence, replayed by `tests/py_random.rs`. CPython's
+  generator is platform-independent, so unlike scene data this can be
+  committed; CPython 3.12.13 and 3.14.4 write identical files
+  (`make_random_reference.py`). Seeds above 2**64 are not accepted.
+- [x] Implement `getrandbits()` for more than 32 bits only if a builder needs
   it: the current `randint` and `randrange` bounds are small literals, list
-  lengths, and tile counts.
-- [ ] Decide the seed range the standalone CLI accepts and document it.
+  lengths, and tile counts. Done anyway, up to 128 bits: `randint` over the
+  whole `i64` range has a width of up to 2**64, which needs 65 bits.
+- [x] Decide the seed range the standalone CLI accepts and document it.
+  Decided: `i64`. `PyRandom::new(seed: i64)` matches `random.Random(seed)` for
+  every `i64`.
   Python accepts any integer, and `--random-seed` draws below 2**31; `i64` is
   a reasonable bound.
   - Take `abs(seed)` with `unsigned_abs()`, since `i64::MIN.abs()` overflows.
@@ -673,6 +693,6 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 5. Done: the Python-independent Rust engine (workspace split, math module
    with both backends and the CPython `hypot` port, scenes from JSON, the
    `portable` fixtures). Render options follow with Phase 3.
-6. Next: port CPython's random generator.
-7. Prove standalone delivery with a small subset of styles.
+6. Done: port CPython's random generator (`PyRandom`).
+7. Next: prove standalone delivery with a small subset of styles.
 8. Continue Python style experimentation and migrate settled styles in batches.
