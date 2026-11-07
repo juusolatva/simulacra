@@ -8,14 +8,15 @@ the `Libm` backends and the CPython `hypot` port; one registry
 (`for_each_style!`) lists the styles; scenes load from JSON (`serde`), and the
 `portable` fixtures (one committed scene per style with the SHA-256 of its
 render) pass in `cargo test -p simulacra_engine --features json,portable`
-without Python. Open in Phase 2: render options (with Phase 3) and the scene
-builders' `tanh` and `pow` (with Phase 4). Phase 2b is done:
+without Python. Open in Phase 2: the scene builders' `tanh` and `pow` (with
+Phase 4). Phase 2b is done:
 `simulacra_engine::PyRandom` reproduces CPython's `random.Random` for every
 helper the scene builders use. Phase 3 has started: the `simulacra` binary
 (`core/cli`) renders `blobs`, `mandelbrot` and `waves` to PNG without Python,
-with scene builders ported to the engine, pixel-identical to `simulacra.py`.
-Next in Phase 3: scene validation, release binaries and distribution.
-Phases 4 to 6 have not started.
+with scene builders ported to the engine, pixel-identical to `simulacra.py`
+(PR #32). Next in Phase 3: scene validation, release binaries and
+distribution. Phase 4's ownership rule already applies to those three
+builders. Phases 4 to 6 have not started otherwise.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -262,12 +263,12 @@ they include about 0.5 s of parameter search per process.
 
 Timing: while experimentation continues; preserve current visuals.
 
-- [ ] Expose ordinary Rust types and APIs for render options, palettes, scenes,
-  and packed RGB buffers. Partly done: `Palette` with a typed `PaletteError`,
-  the `Style` trait returning packed RGB, the `STYLES` registry and `PORTABLE`
-  are public engine API. Scene structs are public but their fields are not,
-  so only the adapter can build them so far; render options (validated
-  dimensions) come with Phase 3.
+- [x] Expose ordinary Rust types and APIs for render options, palettes, scenes,
+  and packed RGB buffers. Done: `Palette` with a typed `PaletteError` and the
+  built-in `PALETTES` table, the `Style` trait returning packed RGB, the
+  checked `render()` with `RenderError` (Phase 3), `seed32`, the `STYLES`
+  registry and `PORTABLE`. Scenes come from serde (`deserialize_scene`) or,
+  for ported styles, from `build_scene`; their fields stay private.
 - [x] Split `core` into the `engine`, `cli`, and `py` workspace crates; gate the
   scene `FromPyObject` derives behind the `python` feature. Done for `engine`
   (`core/engine`, package `simulacra_engine`) and `py` (`core/py`, package
@@ -469,7 +470,11 @@ Timing: migrate styles as their behavior settles.
 
 Ownership rule: once a style's builder is ported, any change to its Python
 builder must include the matching Rust change in the same PR. The
-differential test in the Phase 1 test workflow enforces this.
+differential test in the Phase 1 test workflow enforces this. It applies
+already: Phase 3 ported the `blobs`, `mandelbrot` and `waves` builders
+(`SCENE_BUILDERS`), and `StandaloneCliTests` (binary against Python, in the
+default-core CI jobs) and `ported_scene_builders_render_the_fixture_hash`
+catch a mismatch.
 
 Before the first batch, decide when a ported style's Python renderer and
 builder are frozen and replaced by its fixtures. Until then each ported style
@@ -515,6 +520,9 @@ before application cutover.
   letting it quantize.
 - [ ] Write PNG and APNG with the `png` crate. Matching the size of zlib
   level 9 output is not a goal; record size and time tradeoffs instead.
+  Phase 3's still-image writer (`core/cli/src/png.rs`) uses `flate2` directly
+  instead (filter None, level 9, as Python); decide here whether APNG
+  extends it or both move to the `png` crate.
 - [ ] Preserve atomic output replacement and cleanup on encoding failures.
 - [ ] Review resource limits for the streaming design: bounded frame retention
   does not by itself bound total render work or output size.
@@ -532,6 +540,8 @@ grows, with existing output behavior preserved.
   `--frames`, slideshow, FPS behavior, resource limits and `--no-limits`,
   validation, and useful error messages.
 - [ ] Add version reporting and platform-specific installation instructions.
+  (`simulacra --version` exists, from the crate version 0.1.0; nothing sets
+  release versions yet.)
 - [ ] Automate release builds and packaged-executable smoke tests for supported
   operating systems and architectures.
 - [ ] Run Rust unit tests, Clippy, compatibility checks, writer failure tests,

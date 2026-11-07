@@ -1,6 +1,6 @@
 # Simulacra
 
-Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. The script runs on the Python standard library alone, and an optional Rust core makes supported styles hundreds of times faster. It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
+Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. The script runs on the Python standard library alone, and an optional Rust core makes every style hundreds of times faster. A standalone binary that needs no Python is in preview for three styles (see [Standalone binary](#standalone-binary-preview)). It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -307,7 +307,7 @@ pixels = art.render(256, 256, 4, "geo", "ice")
 art.write_png("ice.png", pixels, 256, 256)
 ```
 
-Palette entries should be a nonempty list of RGB tuples with channels in the range 0–255. The built-ins have five stops, except `rainbow` with seven; any count of two or more works. Adding an entry at runtime affects that Python process. To make a palette available in subsequent CLI runs, add it to `PALETTES` in `simulacra.py`; CLI palette choices are derived from that dictionary.
+Palette entries should be a nonempty list of RGB tuples with channels in the range 0–255. The built-ins have five stops, except `rainbow` with seven; any count of two or more works. Adding an entry at runtime affects that Python process. To make a palette available in subsequent CLI runs, add it to `PALETTES` in `simulacra.py`; CLI palette choices are derived from that dictionary. Add a new built-in palette to the Rust table in `core/engine/src/palettes.rs` as well (the standalone binary reads it); with the Rust core built, `test_native_palettes_match_python` fails until the two match.
 
 ## How rendering works
 
@@ -338,11 +338,11 @@ Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no 
 
 ## Optional Rust core
 
-The `core/` directory contains `simulacra_core`, a Rust extension module built with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). When it is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 48). When the module is missing, the pure-Python renderers produce the same images.
+The `core/` directory is a Cargo workspace: `engine` is the renderer, `py` builds `simulacra_core`, a Python extension module made with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs), and `cli` builds the [standalone binary](#standalone-binary-preview). When the extension is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 48). When the module is missing, the pure-Python renderers produce the same images.
 
 Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
 
-Building with `--features portable` (`maturin develop --release -m core/py/Cargo.toml --features portable`) makes the core use the pure-Rust `libm` crate instead of the platform math library, so results are the same on every platform. Planned standalone releases will use it. Its output differs slightly from Python's in two styles: `cymatics` by at most one level in rare pixels, and `attractor`, whose chaotic orbit takes another path through the same curves. Development builds use the default so that native output stays byte-identical to Python. See [`PLAN.md`](PLAN.md) for the measurements.
+Building with `--features portable` (`maturin develop --release -m core/py/Cargo.toml --features portable`) makes the core use the pure-Rust `libm` crate instead of the platform math library, so results are the same on every platform. Released standalone binaries will use it. Its output differs slightly from Python's in two styles: `cymatics` by at most one level in rare pixels, and `attractor`, whose chaotic orbit takes another path through the same curves. Development builds use the default so that native output stays byte-identical to Python. See [`PLAN.md`](PLAN.md) for the measurements.
 
 Build it into a virtual environment (requires a Rust toolchain from [rustup.rs](https://rustup.rs)):
 
@@ -375,7 +375,7 @@ Run the test suite from the project directory:
 python3 -m unittest -v
 ```
 
-With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Slower checks, a comparison at 200 × 150 and 150 × 200 and a check of every attractor parameter set at 48 phases, run with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra` (several minutes). Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`; `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable` also renders the committed scenes in `core/engine/tests/fixtures/` without Python and checks the hash of each image. With the standalone binary built, `SIMULACRA_CLI=core/target/release/simulacra .venv/bin/python -m unittest -v` also checks that it draws the same pixels and prints the same messages as `simulacra.py`, and Clippy with `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`.
+With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Slower checks, a comparison at 200 × 150 and 150 × 200 and a check of every attractor parameter set at 48 phases, run with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra` (several minutes). Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`; `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable` also renders the committed scenes in `core/engine/tests/fixtures/` without Python and checks the hash of each image. With the standalone binary built, `SIMULACRA_CLI=core/target/release/simulacra .venv/bin/python -m unittest -v` also checks that it draws the same pixels and prints the same messages as `simulacra.py`. Run Clippy with `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`.
 
 To run one regression test:
 
@@ -383,7 +383,7 @@ To run one regression test:
 python3 -m unittest -v test_simulacra.RenderingTests.test_large_flowfield_trails_are_connected
 ```
 
-The suite currently contains 85 tests covering:
+The Python suite currently contains 89 tests covering:
 
 - Valid dimensions and RGB channels across all registered styles.
 - Every style using a wide part of its palette, unaliased wave styles, and shapes that scale with the canvas.
@@ -402,7 +402,10 @@ The suite currently contains 85 tests covering:
 - Animation: every style moves with `phase`, loops after one turn, matches its still image at phase 0 and renders identically in Rust and Python at any phase.
 - The `mosaic` style: flat tiles, even grout at fractional tile sizes, and native-equals-Python.
 - The `attractor` parameter table: entries stay lively and stable at sampled phases, and a seed's choice uses no floating-point math.
+- The Rust engine's palette table matching `PALETTES`, and, when `SIMULACRA_CLI` names a built binary, the standalone binary's pixels, messages, list options and errors matching `simulacra.py`.
 - Preservation of existing animation output and temporary-file cleanup on failures.
+
+The Rust tests (`cargo test`) add the CPython `hypot` and random-generator ports checked against CPython's own results, the committed `portable` fixtures (one scene per style with the hash of its image, also rendered from the Rust scene builders), the PNG writer and the safe file replacement.
 
 These checks catch structural and selected visual regressions; they do not establish that every style looks good for every seed, palette, and size. Inspect rendered images when changing drawing algorithms.
 
@@ -425,7 +428,7 @@ To add a style:
 4. Register it in the `STYLES` dictionary. `render()`, the CLI's `--style` choices, and the tests all read from it.
 5. Add a description to this README and the module's style list.
 6. Run the tests, add a regression check for the new style's intended behavior, and inspect square, wide, and tall renders.
-7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/engine/src/styles/` that reads it (with the `cfg_attr` line that derives `FromPyObject` under the `python` feature), add one line for it to the registry, `for_each_style!` in `core/engine/src/lib.rs`, which generates both `STYLES` and the adapter's dispatch, and register the scene builder in `NATIVE_STYLES`. Port expressions operation for operation and call `exp`, `sin`, `cos` and the other libm functions through the `Libm` trait in `core/engine/src/math.rs` (`x.m_sin()`); Clippy rejects the `f64` methods (`core/clippy.toml`). `test_native_styles_match_python_exactly` then checks it against the Python renderer.
+7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/engine/src/styles/` that reads it (with the `cfg_attr` line that derives `FromPyObject` under the `python` feature), add one line for it to the registry, `for_each_style!` in `core/engine/src/lib.rs`, which generates both `STYLES` and the adapter's dispatch, and register the scene builder in `NATIVE_STYLES`. Port expressions operation for operation and call `exp`, `sin`, `cos` and the other libm functions through the `Libm` trait in `core/engine/src/math.rs` (`x.m_sin()`); Clippy rejects the `f64` methods (`core/clippy.toml`). `test_native_styles_match_python_exactly` then checks it against the Python renderer. A native style also needs a `portable` fixture: rerun `core/engine/tests/make_fixtures.py` with a `portable` core (see its docstring), or `every_style_has_exactly_one_fixture` fails. For the standalone binary, port the scene builder too, as a `build` function on the scene struct listed in `build_scene` (`core/engine/src/scenes.rs`), drawing through `PyRandom` with only the random methods it supports (see `AGENTS.md`).
 8. To make it move, add `_loop(phase, k)` or `_circle_offset()` terms in the scene builder (see `AGENTS.md`), give it an entry in `ANIMATED_STYLES`, and wrap the builder with `_animated_scene()` in `NATIVE_STYLES`. Phase 0 must give the same image as before.
 
 Pay particular attention to coordinate units: normalize positions when a shape should scale with the canvas, distinguish angles from pixel distances, and sample continuous paths densely enough to connect adjacent pixels. Test the saved image as well as the in-memory buffer.

@@ -5,7 +5,9 @@ representations of real phenomena.
 
 Pure Python (stdlib only) generative art engine. An optional Rust core (core/)
 renders every style natively with identical output; every style moves with a
-loop ``phase`` and can be written as PNG, APNG or GIF.
+loop ``phase`` and can be written as PNG, APNG or GIF. This module is the
+reference implementation for the Rust rewrite (see PLAN.md), whose standalone
+binary already renders a few styles without Python.
 
 Styles:
     waves    - layered sine waves over a palette gradient
