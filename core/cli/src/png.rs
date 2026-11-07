@@ -46,7 +46,8 @@ pub fn encode(rgb: &[u8], width: usize, height: usize) -> Result<Vec<u8>, PngErr
     let (Ok(w), Ok(h)) = (u32::try_from(width), u32::try_from(height)) else {
         return Err(PngError::TooWide);
     };
-    let stride = width * 3;
+    // On a 32-bit target width * 3 can overflow even when width fits in a u32.
+    let stride = width.checked_mul(3).ok_or(PngError::TooWide)?;
     if Some(rgb.len()) != stride.checked_mul(height) {
         return Err(PngError::WrongLength);
     }

@@ -1201,6 +1201,7 @@ class StandaloneCliTests(unittest.TestCase):
         self.assertEqual(self.run_cli('--list-palettes').stdout.split(), sorted(art.PALETTES))
         for args, message in ((['--width', '0'], 'width and height must be positive'),
                               (['--width', '10001', '--height', '10000'], 'the limit is 100000000'),
+                              (['--no-limits', '--width', str(2 ** 32), '--height', '1'], 'cannot exceed 4294967295'),
                               (['--phase', 'inf'], 'phase must be a finite number'),
                               (['--palette-stops', 'ff0000'], 'at least two colors'),
                               (['--out', 'image.gif'], 'GIF output'),

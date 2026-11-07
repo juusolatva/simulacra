@@ -52,7 +52,7 @@ mod simulacra_core {
     /// The engine's built-in palettes as `(name, stops)` pairs; a Python test
     /// keeps them equal to `simulacra.PALETTES`.
     #[pyfunction]
-    fn palettes() -> Vec<(&'static str, Vec<(i64, i64, i64)>)> {
+    fn palettes() -> Vec<(&'static str, Vec<simulacra_engine::palettes::Stop>)> {
         simulacra_engine::PALETTES
             .iter()
             .map(|&(name, stops)| (name, stops.to_vec()))

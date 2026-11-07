@@ -44,13 +44,11 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let absolute = std::path::absolute(path)?;
     let directory = absolute.parent().unwrap_or(Path::new("."));
     let (temporary, mut file) = create_temporary(directory)?;
-    let result = file
-        .write_all(bytes)
-        .and_then(|()| file.flush())
-        .and_then(|()| {
-            drop(file);
-            fs::rename(&temporary, &absolute)
-        });
+    let written = file.write_all(bytes).and_then(|()| file.flush());
+    // Close the file before renaming or removing it: Windows refuses both while
+    // a handle is open, which would leak the temporary file after a failure.
+    drop(file);
+    let result = written.and_then(|()| fs::rename(&temporary, &absolute));
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
     }

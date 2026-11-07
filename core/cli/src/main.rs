@@ -163,6 +163,10 @@ fn dimensions(args: &Args) -> Result<(usize, usize), String> {
             "GIF output is not available in the standalone binary yet; use a .png --out".into(),
         );
     }
+    if u32::try_from(width).is_err() || u32::try_from(height).is_err() {
+        // PNG stores each side as a 32-bit integer; refuse before rendering.
+        return Err(format!("PNG width and height cannot exceed {}", u32::MAX));
+    }
     if !args.no_limits {
         check_limits(width, height)?;
     }

@@ -32,7 +32,8 @@ pub const PORTABLE: bool = cfg!(feature = "portable");
 pub enum RenderError {
     /// Width or height is zero.
     EmptyCanvas { width: usize, height: usize },
-    /// `width * height * 3` bytes do not fit in memory addresses.
+    /// `width * height * 3` bytes exceed the largest possible allocation
+    /// (`isize::MAX` bytes).
     TooLarge { width: usize, height: usize },
 }
 
@@ -40,7 +41,10 @@ impl std::fmt::Display for RenderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Self::EmptyCanvas { width, height } => {
-                write!(f, "width and height must be positive, not {width} x {height}")
+                write!(
+                    f,
+                    "width and height must be positive, not {width} x {height}"
+                )
             }
             Self::TooLarge { width, height } => {
                 write!(f, "{width} x {height} pixels do not fit in memory")
@@ -52,7 +56,10 @@ impl std::fmt::Display for RenderError {
 impl std::error::Error for RenderError {}
 
 /// Renders `scene` as packed RGB (`width * height * 3` bytes, row-major) after
-/// checking the canvas: both sides positive and the buffer size representable.
+/// checking the canvas: both sides positive and the buffer no larger than Rust
+/// can allocate (`isize::MAX` bytes). A buffer below that can still exhaust
+/// memory; callers that take sizes from users should also apply a limit, as
+/// the CLI does.
 /// `seed` is the shaders' 32-bit seed; see [`seed32`].
 ///
 /// # Errors
@@ -68,7 +75,8 @@ pub fn render(
     if width == 0 || height == 0 {
         return Err(RenderError::EmptyCanvas { width, height });
     }
-    if width.checked_mul(height).and_then(|n| n.checked_mul(3)).is_none() {
+    let bytes = width.checked_mul(height).and_then(|n| n.checked_mul(3));
+    if bytes.is_none_or(|n| n > isize::MAX as usize) {
         return Err(RenderError::TooLarge { width, height });
     }
     Ok(scene.render(width, height, seed, palette))
@@ -217,9 +225,28 @@ mod tests {
         let scene = build_scene("blobs", 4, 3, 1, &palette, 0.0).unwrap();
         assert_eq!(render(scene.as_ref(), 4, 3, 1, &palette).unwrap().len(), 36);
         let empty = render(scene.as_ref(), 0, 3, 1, &palette);
-        assert_eq!(empty, Err(RenderError::EmptyCanvas { width: 0, height: 3 }));
+        assert_eq!(
+            empty,
+            Err(RenderError::EmptyCanvas {
+                width: 0,
+                height: 3
+            })
+        );
         let huge = render(scene.as_ref(), usize::MAX, 2, 1, &palette);
-        assert_eq!(huge, Err(RenderError::TooLarge { width: usize::MAX, height: 2 }));
+        assert_eq!(
+            huge,
+            Err(RenderError::TooLarge {
+                width: usize::MAX,
+                height: 2
+            })
+        );
+        // Fits in a usize but not in an allocation (above isize::MAX bytes).
+        let width = isize::MAX as usize / 3 + 1;
+        let unallocatable = render(scene.as_ref(), width, 1, 1, &palette);
+        assert_eq!(
+            unallocatable,
+            Err(RenderError::TooLarge { width, height: 1 })
+        );
     }
 
     #[test]
