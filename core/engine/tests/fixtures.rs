@@ -14,13 +14,15 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use simulacra_engine::{Palette, STYLES, scene_from_json};
+use simulacra_engine::{Palette, SCENE_BUILDERS, STYLES, build_scene, scene_from_json, seed32};
 
 #[derive(Deserialize)]
 struct Fixture {
     style: String,
     width: usize,
     height: usize,
+    seed: i64,
+    phase: f64,
     core_seed: u32,
     stops: Vec<(i64, i64, i64)>,
     sha256: String,
@@ -81,5 +83,33 @@ fn fixtures_render_their_recorded_hash() {
             "portable renders differ from the fixtures for {mismatched:?}; if the change is \
              intended, rerun core/engine/tests/make_fixtures.py with a portable core"
         );
+    }
+}
+
+/// Scenes built by the Rust ports of the Python builders must render the
+/// fixture's hash too: the same scene, so the same image, without Python.
+#[test]
+fn ported_scene_builders_render_the_fixture_hash() {
+    for style in SCENE_BUILDERS {
+        let fixture = load(style);
+        assert_eq!(seed32(fixture.seed), fixture.core_seed);
+        let palette = Palette::new(fixture.stops).expect("palette");
+        let scene = build_scene(
+            style,
+            fixture.width,
+            fixture.height,
+            fixture.seed,
+            &palette,
+            fixture.phase,
+        )
+        .expect("ported builder");
+        let rgb = scene.render(fixture.width, fixture.height, fixture.core_seed, &palette);
+        let digest = hex(&Sha256::digest(&rgb));
+        if cfg!(feature = "portable") {
+            assert_eq!(
+                digest, fixture.sha256,
+                "{style}: the Rust-built scene renders differently"
+            );
+        }
     }
 }

@@ -18,6 +18,7 @@ See the [glossary](GLOSSARY.md) for the project's visual concepts and terminolog
 - [How rendering works](#how-rendering-works)
 - [Performance and limitations](#performance-and-limitations)
 - [Optional Rust core](#optional-rust-core)
+- [Standalone binary (preview)](#standalone-binary-preview)
 - [Testing](#testing)
 - [Extending the script](#extending-the-script)
 - [Troubleshooting](#troubleshooting)
@@ -355,6 +356,17 @@ python simulacra.py --style quasar --width 3840 --height 2160 --out quasar-4k.pn
 
 Rebuild with the same `maturin develop` command after changing Rust code. On an 8-core machine at 640 × 480, native styles take a few milliseconds to about 0.15 s each to shade, against up to 43 s in Python; PNG encoding adds 5–75 ms. `bench_simulacra.py --stages` and `--cli` measure scene building, shading, encoding and peak memory, and the latest baseline is in [`PLAN.md`](PLAN.md).
 
+## Standalone binary (preview)
+
+`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py` for still images and draws the same pixels, but so far only for the styles whose scene generation has been ported to Rust: `blobs`, `mandelbrot` and `waves` (`--list-styles`). Animation and GIF output are not available yet.
+
+```bash
+cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli
+core/target/release/simulacra --style waves --palette lagoon --seed 17 --width 1280 --height 720 --out waves.png
+```
+
+Building with `--features portable` gives the same image on every platform, as planned for released binaries; such a build can differ slightly from Python (see [Optional Rust core](#optional-rust-core)). See [`PLAN.md`](PLAN.md), Phase 3, for what comes next.
+
 ## Testing
 
 Run the test suite from the project directory:
@@ -363,7 +375,7 @@ Run the test suite from the project directory:
 python3 -m unittest -v
 ```
 
-With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Slower checks, a comparison at 200 × 150 and 150 × 200 and a check of every attractor parameter set at 48 phases, run with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra` (several minutes). Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`; `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable` also renders the committed scenes in `core/engine/tests/fixtures/` without Python and checks the hash of each image, and Clippy with `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`.
+With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Slower checks, a comparison at 200 × 150 and 150 × 200 and a check of every attractor parameter set at 48 phases, run with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra` (several minutes). Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`; `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable` also renders the committed scenes in `core/engine/tests/fixtures/` without Python and checks the hash of each image. With the standalone binary built, `SIMULACRA_CLI=core/target/release/simulacra .venv/bin/python -m unittest -v` also checks that it draws the same pixels and prints the same messages as `simulacra.py`, and Clippy with `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`.
 
 To run one regression test:
 
@@ -439,7 +451,7 @@ Pay particular attention to coordinate units: normalize positions when a shape s
 | [`simulacra.py`](simulacra.py) | Palettes, noise and geometry helpers, all renderers, PNG/APNG/GIF writers, and CLI. |
 | [`test_simulacra.py`](test_simulacra.py) | Regression tests (standard library only). |
 | [`bench_simulacra.py`](bench_simulacra.py) | Per-style render benchmark with save/compare; `--stages` splits scene, shader and PNG time, and `--cli` times whole CLI runs with peak memory. |
-| [`core/`](core) | Optional Rust extension module `simulacra_core` (PyO3, rayon); `clippy.toml` keeps libm calls in `src/math.rs`. |
+| [`core/`](core) | Cargo workspace: `engine` (the renderer, no Python; rayon), `py` (the optional extension module `simulacra_core`, PyO3) and `cli` (the standalone `simulacra` binary). `clippy.toml` keeps libm calls in `engine/src/math.rs`. |
 | [`GLOSSARY.md`](GLOSSARY.md) | The project's visual vocabulary: style, palette, seed, scene, frame, phase, animation. |
 | [`.github/workflows/`](.github/workflows) | CI: tests on Python 3.12 and 3.14 with and without the Rust core (default and portable math), `cargo test` and Clippy; SonarQube Cloud analysis with test coverage; OSV-Scanner. |
 | `sonar-project.properties`, `.coveragerc` | SonarQube Cloud project settings and the coverage configuration the CI uses. |

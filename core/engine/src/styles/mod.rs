@@ -12,12 +12,20 @@ pub mod shapes;
 pub mod space;
 pub mod woodblock;
 
+use crate::geometry::py_mod;
 use crate::math::Libm;
 use crate::palette::Palette;
 
 /// A style's scene, ready to shade.
 pub trait Style: Send + Sync {
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8>;
+}
+
+/// Python's `_loop(phase, cycles)`: `tau * cycles * (phase % 1.0)`, an angle that
+/// makes `cycles` whole turns as `phase` runs from 0 to 1 (exactly 0.0 at phase 0).
+#[inline]
+pub(crate) fn loop_angle(phase: f64, cycles: i32) -> f64 {
+    std::f64::consts::TAU * f64::from(cycles) * py_mod(phase, 1.0)
 }
 
 /// `(width - 1) / 2.0`, the pixel-center origin most styles use.

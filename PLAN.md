@@ -11,8 +11,11 @@ render) pass in `cargo test -p simulacra_engine --features json,portable`
 without Python. Open in Phase 2: render options (with Phase 3) and the scene
 builders' `tanh` and `pow` (with Phase 4). Phase 2b is done:
 `simulacra_engine::PyRandom` reproduces CPython's `random.Random` for every
-helper the scene builders use. Next: Phase 3, a small standalone binary.
-Phases 3 to 6 have not started.
+helper the scene builders use. Phase 3 has started: the `simulacra` binary
+(`core/cli`) renders `blobs`, `mandelbrot` and `waves` to PNG without Python,
+with scene builders ported to the engine, pixel-identical to `simulacra.py`.
+Next in Phase 3: scene validation, release binaries and distribution.
+Phases 4 to 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -396,13 +399,30 @@ scene builders use, across the supported seed range.
 
 ## Phase 3: Prove standalone delivery with a small application
 
-- [ ] Start with `blobs` or `mandelbrot`, whose scenes make no random draws
+- [x] Start with `blobs` or `mandelbrot`, whose scenes make no random draws
   (`blobs` uses the seed only for noise), then add a seeded style such as
-  `waves` once Phase 2b is done.
-- [ ] Support dimensions, style, palette, seed, phase, custom palette stops,
-  and static PNG output for the initial subset.
-- [ ] Validate dimensions and checked buffer-size arithmetic at the engine
-  boundary, not only in CLI parsing.
+  `waves` once Phase 2b is done. Done: all three. The engine's
+  `build_scene` (`scenes.rs`, listed in `SCENE_BUILDERS`) ports
+  `_blobs_scene`, `_mandelbrot_scene` (its `cos` and `exp` through `Libm`)
+  and `_waves_scene` (through `PyRandom`); other styles return `None`.
+  Rust-built scenes render the `portable` fixture hashes
+  (`ported_scene_builders_render_the_fixture_hash`).
+- [x] Support dimensions, style, palette, seed, phase, custom palette stops,
+  and static PNG output for the initial subset. Done in `core/cli` (binary
+  `simulacra`, clap): the options, defaults, limits and messages of
+  `simulacra.py` for still images, plus `--random-seed`, `--no-limits`,
+  `--list-styles` and `--list-palettes`. `--frames` and GIF output come with
+  Phase 5. The 24 built-in palettes are an engine table (`palettes.rs`) that
+  a Python test keeps equal to `PALETTES` through `_core.palettes()`. PNG
+  encoding (`flate2`, level 9, filter None) gives the same decoded scanlines
+  as Python, not the same compressed bytes. `StandaloneCliTests` (when
+  `SIMULACRA_CLI` names a binary; CI builds one in the default-core jobs)
+  requires identical pixels and messages; 84 offline cases over the three
+  styles, sizes, negative and large seeds, phases and custom stops matched.
+- [x] Validate dimensions and checked buffer-size arithmetic at the engine
+  boundary, not only in CLI parsing. Done: `simulacra_engine::render` rejects
+  an empty canvas and a `width * height * 3` that overflows (`RenderError`);
+  the PNG writer rejects sides above 2**32 - 1.
 - [ ] Validate scenes at the engine boundary before any untrusted scene source
   exists (at the latest with a CLI option that reads a scene file). The
   shaders trust their scene: an index out of range (constellation pairs, an
@@ -415,12 +435,14 @@ scene builders use, across the supported seed range.
   scene-driven loop counts, and malformed-scene tests. Raised by Qodo on PR
   #30; the same holds for scenes passed through the Python adapter, which so
   far only come from our own builders.
-- [ ] Preserve safe temporary-file creation, destination replacement, and
+- [x] Preserve safe temporary-file creation, destination replacement, and
   cleanup on failure. Create the temporary file with mode 0o666 so the umask
   applies, as `_create_temporary()` does: `tempfile::NamedTempFile` creates
   files with mode 0600 and `persist()` keeps it, which would leave outputs
   readable only by their owner. On Unix, use `OpenOptions` with
-  `create_new(true)` and `mode(0o666)`.
+  `create_new(true)` and `mode(0o666)`. Done (`core/cli/src/output.rs`):
+  `.simulacra-<hex>.tmp` next to the destination, created exclusively with
+  mode 0o666, renamed over the destination, removed on failure; tested.
 - [ ] Produce test release binaries for Windows (x86_64), macOS (arm64 and
   x86_64), and Linux (x86_64 and aarch64), built with the `portable` math
   backend, and check the `portable` fixtures on each target.
@@ -694,5 +716,7 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    with both backends and the CPython `hypot` port, scenes from JSON, the
    `portable` fixtures). Render options follow with Phase 3.
 6. Done: port CPython's random generator (`PyRandom`).
-7. Next: prove standalone delivery with a small subset of styles.
+7. In progress: prove standalone delivery with a small subset of styles. Done:
+   the `simulacra` binary for `blobs`, `mandelbrot` and `waves`. Next: scene
+   validation, release binaries and distribution.
 8. Continue Python style experimentation and migrate settled styles in batches.

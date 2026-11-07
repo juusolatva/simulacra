@@ -49,6 +49,16 @@ mod simulacra_core {
     #[pymodule_export]
     const STYLES: [&str; simulacra_engine::STYLES.len()] = simulacra_engine::STYLES;
 
+    /// The engine's built-in palettes as `(name, stops)` pairs; a Python test
+    /// keeps them equal to `simulacra.PALETTES`.
+    #[pyfunction]
+    fn palettes() -> Vec<(&'static str, Vec<(i64, i64, i64)>)> {
+        simulacra_engine::PALETTES
+            .iter()
+            .map(|&(name, stops)| (name, stops.to_vec()))
+            .collect()
+    }
+
     /// Render `style` from a scene dict built by the matching Python
     /// `_<style>_scene()`; returns packed RGB bytes.
     #[pyfunction]

@@ -1,9 +1,9 @@
 # Workspace for the native side of Simulacra (see PLAN.md, "Target architecture").
 # engine: the renderer, with no Python dependency unless its `python` feature is on.
 # py:     the `simulacra_core` Python extension, a thin adapter over the engine.
-# A `cli` crate joins in Phase 3.
+# cli:    the standalone `simulacra` binary (Phase 3).
 [workspace]
-members = ["engine", "py"]
+members = ["cli", "engine", "py"]
 resolver = "3"
 
 [workspace.package]
@@ -22,6 +22,10 @@ serde = { version = "1.0.229", features = ["derive"] }
 # multiply or divide that can be off in the last bit; scenes must load exactly.
 serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
 sha2 = "0.11.1"
+clap = { version = "4.6.7", features = ["derive"] }
+# zlib streams for PNG (pure-Rust miniz_oxide backend) and the chunk CRCs.
+flate2 = "1.1.10"
+crc32fast = "1.5.3"
 
 [profile.release]
 lto = "fat"

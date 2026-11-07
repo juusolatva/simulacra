@@ -8,6 +8,7 @@ import pathlib
 import re
 import stat
 import struct
+import subprocess
 import tempfile
 import unittest
 import zlib
@@ -789,6 +790,12 @@ class RenderingTests(unittest.TestCase):
         self.assertLessEqual(set(art.NATIVE_STYLES), set(art.STYLES))
 
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_palettes_match_python(self):
+        # The engine's own palette table (used by the standalone binary).
+        native = {name: [tuple(stop) for stop in stops] for name, stops in art._core.palettes()}
+        self.assertEqual(native, {name: list(stops) for name, stops in art.PALETTES.items()})
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_noise_and_palette_match_python(self):
         for x, y, seed, octaves in ((-3.7, 12.25, 77, 4), (1e6, -1e6, 0, 3), (0.5, 0.5, 2 ** 32 - 1, 1)):
             self.assertEqual(art._core.fbm(x, y, seed, octaves), art.fbm(x, y, seed, octaves))
@@ -1135,6 +1142,74 @@ class RenderingTests(unittest.TestCase):
             expected = pathlib.Path(directory) / 'expected.png'
             art.write_png(expected, art.render_rgb(10, 8, 1, 'rings', 'deep', 0.3), 10, 8)
             self.assertEqual(out.read_bytes(), expected.read_bytes())
+
+
+STANDALONE_CLI = os.environ.get('SIMULACRA_CLI')
+
+
+@unittest.skipUnless(STANDALONE_CLI, 'set SIMULACRA_CLI to a built core/target/*/simulacra binary')
+class StandaloneCliTests(unittest.TestCase):
+    """The Rust ``simulacra`` binary against the Python renderer and CLI.
+
+    Built without ``portable`` the binary uses the platform libm like Python, so
+    its pixels must be identical; the PNG compression may differ, so the tests
+    compare decoded scanlines.
+    """
+
+    def run_cli(self, *args, check=True):
+        return subprocess.run([STANDALONE_CLI, *args], capture_output=True, text=True, check=check)
+
+    def scanlines(self, path):
+        return zlib.decompress(dict(chunks(path))[b'IDAT'])
+
+    def test_images_match_the_python_renderer(self):
+        cases = [(style, width, height, seed, phase)
+                 for style in ('blobs', 'mandelbrot', 'waves')
+                 for width, height in ((48, 36), (29, 37))
+                 for seed in (1, -7, 2 ** 40 + 3)
+                 for phase in (0.0, 0.37)]
+        with tempfile.TemporaryDirectory() as directory:
+            out = pathlib.Path(directory) / 'image.png'
+            for style, width, height, seed, phase in cases:
+                with self.subTest(style=style, size=(width, height), seed=seed, phase=phase):
+                    result = self.run_cli('--style', style, '--width', str(width), '--height', str(height),
+                                          '--seed', str(seed), '--phase', repr(phase),
+                                          '--palette', 'lagoon', '--out', str(out))
+                    self.assertEqual(result.stdout,
+                                     'wrote %s (%s, seed=%d, palette=lagoon)\n' % (out, style, seed))
+                    rgb = art.render_rgb(width, height, seed, style, 'lagoon', phase)
+                    stride = width * 3
+                    expected = b''.join(b'\x00' + rgb[i:i + stride] for i in range(0, len(rgb), stride))
+                    self.assertEqual(self.scanlines(out), expected)
+
+    def test_custom_stops_and_defaults_match_python(self):
+        with tempfile.TemporaryDirectory() as directory:
+            rust, python = pathlib.Path(directory) / 'rust.png', pathlib.Path(directory) / 'python.png'
+            for extra in ([], ['--palette-stops', '#0c061c,5814a8,f80', '--style', 'blobs']):
+                with self.subTest(extra=extra):
+                    result = self.run_cli('--width', '40', '--height', '30', *extra, '--out', str(rust))
+                    with mock.patch('sys.argv', ['simulacra.py', '--width', '40', '--height', '30',
+                                                 *extra, '--out', str(python)]), \
+                            mock.patch('sys.stdout', new_callable=io.StringIO) as printed:
+                        art.main()
+                    self.assertEqual(result.stdout, printed.getvalue().replace(str(python), str(rust)))
+                    self.assertEqual(self.scanlines(rust), self.scanlines(python))
+                    self.assertEqual(dict(chunks(rust))[b'IHDR'], dict(chunks(python))[b'IHDR'])
+
+    def test_lists_and_errors(self):
+        self.assertEqual(self.run_cli('--list-styles').stdout.split(), ['blobs', 'mandelbrot', 'waves'])
+        self.assertEqual(self.run_cli('--list-palettes').stdout.split(), sorted(art.PALETTES))
+        for args, message in ((['--width', '0'], 'width and height must be positive'),
+                              (['--width', '10001', '--height', '10000'], 'the limit is 100000000'),
+                              (['--phase', 'inf'], 'phase must be a finite number'),
+                              (['--palette-stops', 'ff0000'], 'at least two colors'),
+                              (['--out', 'image.gif'], 'GIF output'),
+                              (['--style', 'ink'], 'ink'),
+                              (['--seed', '3', '--random-seed'], 'cannot be used with')):
+            with self.subTest(args=args):
+                result = self.run_cli(*args, check=False)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(message, result.stderr)
 
 
 if __name__ == '__main__':

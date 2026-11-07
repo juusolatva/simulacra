@@ -11,17 +11,76 @@ mod geometry;
 mod math;
 pub mod noise;
 pub mod palette;
+pub mod palettes;
 pub mod random;
 mod raster;
+pub mod scenes;
 pub mod styles;
 
 pub use palette::{Palette, PaletteError};
+pub use palettes::{PALETTES, palette_stops};
 pub use random::PyRandom;
+pub use scenes::{SCENE_BUILDERS, build_scene};
 pub use styles::Style;
 
 /// True when built with the `portable` feature (the pure-Rust `libm` crate),
 /// whose output can differ from Python's; see `PORTABLE_DRIFT_STYLES` in Python.
 pub const PORTABLE: bool = cfg!(feature = "portable");
+
+/// Why [`render`] refused a canvas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderError {
+    /// Width or height is zero.
+    EmptyCanvas { width: usize, height: usize },
+    /// `width * height * 3` bytes do not fit in memory addresses.
+    TooLarge { width: usize, height: usize },
+}
+
+impl std::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::EmptyCanvas { width, height } => {
+                write!(f, "width and height must be positive, not {width} x {height}")
+            }
+            Self::TooLarge { width, height } => {
+                write!(f, "{width} x {height} pixels do not fit in memory")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RenderError {}
+
+/// Renders `scene` as packed RGB (`width * height * 3` bytes, row-major) after
+/// checking the canvas: both sides positive and the buffer size representable.
+/// `seed` is the shaders' 32-bit seed; see [`seed32`].
+///
+/// # Errors
+///
+/// [`RenderError`] if the canvas is empty or too large to address.
+pub fn render(
+    scene: &dyn Style,
+    width: usize,
+    height: usize,
+    seed: u32,
+    palette: &Palette,
+) -> Result<Vec<u8>, RenderError> {
+    if width == 0 || height == 0 {
+        return Err(RenderError::EmptyCanvas { width, height });
+    }
+    if width.checked_mul(height).and_then(|n| n.checked_mul(3)).is_none() {
+        return Err(RenderError::TooLarge { width, height });
+    }
+    Ok(scene.render(width, height, seed, palette))
+}
+
+/// Python's `_seed32(seed)`, `seed & 0xFFFFFFFF`: the noise hash sees a seed
+/// modulo 2**32. For a negative `seed` that is its two's complement low word,
+/// which is what the truncating cast gives.
+#[must_use]
+pub fn seed32(seed: i64) -> u32 {
+    seed as u32
+}
 
 /// The style registry: calls `$callback! { "name" => SceneType, ... }` with
 /// every style the engine renders, in the order of [`STYLES`]. This is the only
@@ -150,6 +209,28 @@ pub fn scene_from_json(style: &str, json: &str) -> Result<Box<dyn Style>, serde_
 #[cfg(test)]
 mod tests {
     use super::STYLES;
+
+    #[test]
+    fn render_checks_the_canvas() {
+        use super::{RenderError, render, scenes::build_scene};
+        let palette = super::Palette::new(vec![(0, 0, 0), (255, 255, 255)]).unwrap();
+        let scene = build_scene("blobs", 4, 3, 1, &palette, 0.0).unwrap();
+        assert_eq!(render(scene.as_ref(), 4, 3, 1, &palette).unwrap().len(), 36);
+        let empty = render(scene.as_ref(), 0, 3, 1, &palette);
+        assert_eq!(empty, Err(RenderError::EmptyCanvas { width: 0, height: 3 }));
+        let huge = render(scene.as_ref(), usize::MAX, 2, 1, &palette);
+        assert_eq!(huge, Err(RenderError::TooLarge { width: usize::MAX, height: 2 }));
+    }
+
+    #[test]
+    fn seed32_matches_python() {
+        // seed & 0xFFFFFFFF in Python
+        assert_eq!(super::seed32(3), 3);
+        assert_eq!(super::seed32(-1), 0xffff_ffff);
+        assert_eq!(super::seed32(1 << 32), 0);
+        assert_eq!(super::seed32(-7), 4_294_967_289);
+        assert_eq!(super::seed32(i64::MIN), 0);
+    }
 
     #[cfg(feature = "json")]
     #[test]

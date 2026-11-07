@@ -1,0 +1,22 @@
+[package]
+name = "simulacra_cli"
+description = "The standalone Simulacra command-line tool (no Python needed)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "simulacra"
+path = "src/main.rs"
+
+[dependencies]
+simulacra_engine = { path = "../engine" }
+clap = { workspace = true }
+flate2 = { workspace = true }
+crc32fast = { workspace = true }
+
+[features]
+# Build the engine with the pure-Rust libm crate, as release binaries will be:
+# the same image on every platform (see PLAN.md, "Compatibility policy").
+portable = ["simulacra_engine/portable"]
