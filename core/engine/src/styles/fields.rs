@@ -5,16 +5,25 @@ use std::f64::consts::{PI, TAU};
 
 use rayon::prelude::*;
 
-use super::{Style, center, gaussian, small_side, unit};
+use super::{Style, center, gaussian, loop_angle, small_side, unit};
 use crate::geometry::py_mod;
 use crate::noise::{contrast, fbm, fbm_loop};
 use crate::palette::Palette;
+use crate::random::PyRandom;
 use crate::raster::{shade, shade_rgb};
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Blobs {
     phase: f64,
+}
+
+impl Blobs {
+    /// `_blobs_scene`: the noise only needs the phase.
+    #[must_use]
+    pub fn build(phase: f64) -> Self {
+        Self { phase }
+    }
 }
 
 impl Style for Blobs {
@@ -33,6 +42,26 @@ impl Style for Blobs {
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Waves {
     layers: Vec<(f64, f64, f64)>,
+}
+
+impl Waves {
+    /// `_waves_scene`: four layers of (amplitude, frequency, phase), the phases
+    /// drawn from `random.Random(seed)` and turned by the animation phase.
+    #[must_use]
+    #[allow(
+        clippy::approx_constant,
+        reason = "Python draws uniform(0, 6.28), not tau; the scene must match it"
+    )]
+    pub fn build(seed: i64, phase: f64) -> Self {
+        let mut rng = PyRandom::new(seed);
+        let layers = vec![
+            (30.0, 2.0, rng.uniform(0.0, 6.28) + loop_angle(phase, 1)),
+            (18.0, 3.5, rng.uniform(0.0, 6.28) + loop_angle(phase, -1)),
+            (12.0, 5.0, rng.uniform(0.0, 6.28) + loop_angle(phase, 2)),
+            (7.0, 7.0, rng.uniform(0.0, 6.28) + loop_angle(phase, -2)),
+        ];
+        Self { layers }
+    }
 }
 
 impl Style for Waves {
@@ -502,6 +531,32 @@ pub struct Mandelbrot {
     scale: f64,
     center: (f64, f64),
     iterations: u32,
+}
+
+/// `_MANDELBROT_HOME`, `_MANDELBROT_TARGET` and `_MANDELBROT_DEPTH` in Python.
+const MANDELBROT_HOME: (f64, f64) = (-0.6, 0.0);
+const MANDELBROT_TARGET: (f64, f64) = (-0.743_643_887_037_151, 0.131_825_904_205_330);
+const MANDELBROT_DEPTH: f64 = 7.0;
+
+impl Mandelbrot {
+    /// `_mandelbrot_scene`: a zoom toward `MANDELBROT_TARGET` and back over a
+    /// loop, eased at both ends; phase 0 is the whole set.
+    #[must_use]
+    pub fn build(width: usize, height: usize, phase: f64) -> Self {
+        let ease = 0.5 - 0.5 * loop_angle(phase, 1).m_cos();
+        let closing = (-MANDELBROT_DEPTH * ease).m_exp();
+        let (home_x, home_y) = MANDELBROT_HOME;
+        let (target_x, target_y) = MANDELBROT_TARGET;
+        Self {
+            scale: 3.2 / width.min(height) as f64 * closing,
+            center: (
+                home_x + (target_x - home_x) * (1.0 - closing),
+                home_y + (target_y - home_y) * (1.0 - closing),
+            ),
+            // Python's int() truncates; 150 * ease is in [0, 150].
+            iterations: 100 + (150.0 * ease) as u32,
+        }
+    }
 }
 
 impl Style for Mandelbrot {

@@ -49,6 +49,14 @@ jobs:
         env:
           MATRIX_FEATURES: ${{ matrix.core == 'portable' && 'portable' || '' }}
 
+      # The standalone binary uses the platform libm here, like Python, so
+      # StandaloneCliTests can require identical pixels (not with portable math).
+      - name: Build the standalone binary
+        if: ${{ matrix.core == true }}
+        run: |
+          cargo build --locked --release --manifest-path core/Cargo.toml -p simulacra_cli
+          echo "SIMULACRA_CLI=$PWD/core/target/release/simulacra" >> "$GITHUB_ENV"
+
       - name: Run the tests
         run: |
           if [ -x .venv/bin/python ]; then python=.venv/bin/python; else python=python; fi
