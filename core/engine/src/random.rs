@@ -22,6 +22,15 @@ pub struct PyRandom {
     index: usize,
 }
 
+/// Shows the position in the state, not all 624 state words.
+impl std::fmt::Debug for PyRandom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PyRandom")
+            .field("index", &self.index)
+            .finish_non_exhaustive()
+    }
+}
+
 impl PyRandom {
     /// `random.Random(seed)`. CPython seeds with `abs(seed)` split into 32-bit
     /// words from the least significant end (one word for 0), so `seed` and
@@ -100,7 +109,8 @@ impl PyRandom {
     /// Generates the next `N` words at once, as `genrand_uint32` does.
     fn twist(&mut self) {
         let mt = &mut self.state;
-        let mag = |y: u32| if y & 1 == 0 { 0 } else { MATRIX_A };
+        // CPython's mag01[y & 1]: 0 or MATRIX_A, without a branch.
+        let mag = |y: u32| (y & 1).wrapping_neg() & MATRIX_A;
         for kk in 0..N - M {
             let y = (mt[kk] & UPPER_MASK) | (mt[kk + 1] & LOWER_MASK);
             mt[kk] = mt[kk + M] ^ (y >> 1) ^ mag(y);
@@ -225,6 +235,13 @@ mod tests {
                 assert_eq!(pos.next_u32(), neg.next_u32(), "seed {seed}");
             }
         }
+    }
+
+    #[test]
+    fn debug_shows_the_position_only() {
+        let mut rng = PyRandom::new(5);
+        let _ = rng.next_u32();
+        assert_eq!(format!("{rng:?}"), "PyRandom { index: 1, .. }");
     }
 
     #[test]

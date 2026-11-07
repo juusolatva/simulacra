@@ -7,6 +7,27 @@ use std::path::Path;
 use serde::Deserialize;
 use simulacra_engine::PyRandom;
 
+/// The seeds and sequence length `make_random_reference.py` writes; checked so
+/// that a truncated reference cannot pass. Keep in sync with `SEEDS` and
+/// `CALLS_PER_SEED` there.
+const SEEDS: [i64; 14] = [
+    0,
+    1,
+    -1,
+    3,
+    42,
+    123_456_789,
+    (1 << 32) - 1,
+    1 << 32,
+    -(1 << 32),
+    (1 << 32) + 1,
+    (1 << 53) + 7,
+    i64::MAX,
+    i64::MIN,
+    -1_234_567_890_123,
+];
+const CALLS_PER_SEED: usize = 400;
+
 #[derive(Deserialize)]
 struct Reference {
     sequences: Vec<Sequence>,
@@ -54,7 +75,16 @@ fn replays_cpython_sequences() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/random_reference.json");
     let text = std::fs::read_to_string(&path).expect("random_reference.json");
     let reference: Reference = serde_json::from_str(&text).expect("valid reference");
-    assert!(reference.sequences.len() >= 10);
+    let seeds: Vec<i64> = reference.sequences.iter().map(|s| int(&s.seed)).collect();
+    assert_eq!(seeds, SEEDS, "rerun make_random_reference.py");
+    for sequence in &reference.sequences {
+        assert_eq!(
+            sequence.calls.len(),
+            CALLS_PER_SEED,
+            "seed {}",
+            sequence.seed
+        );
+    }
     let mut kinds = std::collections::BTreeSet::new();
     for sequence in &reference.sequences {
         let mut rng = PyRandom::new(int(&sequence.seed));

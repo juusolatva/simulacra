@@ -22,6 +22,8 @@ OUT = pathlib.Path(__file__).resolve().parent / 'random_reference.json'
 I64_MIN, I64_MAX = -(2 ** 63), 2 ** 63 - 1
 # 0, small and negative seeds, both sides of 2**32 (one or two seed words)
 # and the i64 extremes; abs(i64::MIN) needs two full words.
+# tests/py_random.rs checks the file has exactly these seeds and CALLS_PER_SEED
+# calls each, so a truncated file fails; change both together.
 SEEDS = [0, 1, -1, 3, 42, 123456789, 2 ** 32 - 1, 2 ** 32, -(2 ** 32), 2 ** 32 + 1,
          2 ** 53 + 7, I64_MAX, I64_MIN, -1234567890123]
 CALLS_PER_SEED = 400
