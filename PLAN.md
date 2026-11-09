@@ -55,8 +55,9 @@ streaming animation frames (Phase 5) is possible in Python too:
 `_atomic_write()` already accepts lazy chunks. Before Phase 3, record why
 these routes are not enough (for example startup time, binary size, or one
 codebase), or ship one of them as an interim release while the port proceeds.
-Decided on 2026-11-06: skipped while the repository is private, so there is
-no interim release.
+Decided on 2026-11-06 and confirmed on 2026-11-10, after the repository went
+public: there is no interim release. The first release comes when the Rust
+rewrite is complete.
 
 ## Reviewed implementation
 
@@ -712,9 +713,9 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 
 ## Immediate next work
 
-1. Skipped while the repository is private (decided 2026-11-06): record why
-   prebuilt wheels or a bundled Python application are not enough, or ship
-   one as an interim release.
+1. Decided: no interim release (prebuilt wheels or a bundled Python
+   application). The first release comes when the Rust rewrite is complete
+   (decided 2026-11-06, confirmed 2026-11-10 after the repository went public).
 2. Done: add the test workflow, and extend the native-versus-Python test to nonzero
    phases and larger sizes.
 3. Done: measure `portable` drift and decide the compatibility policy
