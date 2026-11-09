@@ -19,7 +19,7 @@ distribution. Phase 4's ownership rule already applies to those three
 builders. Phases 4 to 6 have not started otherwise.
 
 Prepared on 2026-11-04 from the GitHub source review of
-[`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/abstract-art/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
+[`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
 Revised the same day after a local review of that revision. The review ran no
 performance benchmarks. The two measurements it cites (`hypot` agreement and a
 larger native-versus-Python comparison) were run on Fedora with glibc 2.43
