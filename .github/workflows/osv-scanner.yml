@@ -17,12 +17,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Results are not uploaded to GitHub code scanning (upload-sarif: false) because the
-# repository is private and code scanning needs GitHub Code Security there. The scan
-# still fails the check on a vulnerability and prints its findings in the job log.
-# Set upload-sarif back to true (the PR job's original expression is in the git
-# history) once the repository is public. The called workflows still declare
-# security-events: write, so the permission blocks below must keep granting it.
+# Results go to GitHub code scanning (Security > Code scanning). Pull requests from
+# forks get a read-only token, so they scan without uploading. Merge groups do not
+# upload either: the PR workflow compares against $GITHUB_BASE_REF, which GitHub sets
+# only for pull_request events, so a merge group's scan compares the commit with
+# itself and would upload an empty diff (no merge queue is in use at the moment).
 #
 # This repository's only lockfile is core/Cargo.lock (the Python module has no
 # dependencies), and -r finds it and any lockfile added later.
@@ -35,7 +34,6 @@ jobs:
     if: ${{ github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     with:
-      upload-sarif: false
       scan-args: |-
         -r
         ./
@@ -48,7 +46,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     with:
-      upload-sarif: false
+      upload-sarif: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
       scan-args: |-
         -r
         ./
