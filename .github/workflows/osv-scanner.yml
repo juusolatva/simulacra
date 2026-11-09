@@ -18,7 +18,10 @@ concurrency:
   cancel-in-progress: true
 
 # Results go to GitHub code scanning (Security > Code scanning). Pull requests from
-# forks get a read-only token, so they scan without uploading.
+# forks get a read-only token, so they scan without uploading. Merge groups do not
+# upload either: the PR workflow compares against $GITHUB_BASE_REF, which GitHub sets
+# only for pull_request events, so a merge group's scan compares the commit with
+# itself and would upload an empty diff (no merge queue is in use at the moment).
 #
 # This repository's only lockfile is core/Cargo.lock (the Python module has no
 # dependencies), and -r finds it and any lockfile added later.
@@ -43,7 +46,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     with:
-      upload-sarif: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      upload-sarif: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
       scan-args: |-
         -r
         ./
