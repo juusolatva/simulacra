@@ -1196,6 +1196,13 @@ class RenderingTests(unittest.TestCase):
 # most 1.8e-15 of max(1, |value|), from orbits) while every rendered pixel stays
 # the same. See "Measured portable drift" in PLAN.md.
 PORTABLE_SCENE_TOLERANCE = 1e-12
+# The attractor frames its figure by the bounds of a short chaotic orbit, so on
+# a portable core (the libm crate's sin and cos against Python's) its `mid` and
+# `scale` drift: at most 0.070 and 2.3% over 24,000 scenes (4,000 seeds at 6
+# phases; the figures span about 2 to 4 units). These bounds are about twice
+# that; its parameters must still match.
+PORTABLE_ATTRACTOR_MID = 0.15
+PORTABLE_ATTRACTOR_SCALE = 0.05
 
 
 def _scene_differences(rust, python, path='scene', tolerance=0.0):
@@ -1243,18 +1250,24 @@ class RustSceneBuilderTests(unittest.TestCase):
     def assert_same_scene(self, style, width, height, seed, stops, phase):
         rust = art._core.build_scene(style, width, height, seed, stops, phase)
         self.assertIsNotNone(rust)
+        rust = json.loads(rust)
         python = art.NATIVE_STYLES[style](width, height, seed, stops, phase)
         tolerance = PORTABLE_SCENE_TOLERANCE if art._core.PORTABLE else 0.0
-        differences = _scene_differences(json.loads(rust), python, tolerance=tolerance)
+        if art._core.PORTABLE and style == 'attractor':
+            python = dict(python)
+            rust_mid, python_mid = rust.pop('mid'), python.pop('mid')
+            for a, b in zip(rust_mid, python_mid, strict=True):
+                self.assertLessEqual(abs(a - b), PORTABLE_ATTRACTOR_MID * max(1.0, abs(b)))
+            rust_scale, python_scale = rust.pop('scale'), python.pop('scale')
+            self.assertLessEqual(abs(rust_scale - python_scale), PORTABLE_ATTRACTOR_SCALE * python_scale)
+        differences = _scene_differences(rust, python, tolerance=tolerance)
         self.assertEqual(differences, [])
 
     def test_ported_builders_are_native_styles(self):
         self.assertEqual(list(art._core.SCENE_BUILDERS), sorted(art._core.SCENE_BUILDERS))
-        self.assertLessEqual(set(art._core.SCENE_BUILDERS), set(art.NATIVE_STYLES))
-        stops = art.PALETTES['deep']
-        for style in set(art.NATIVE_STYLES) - set(art._core.SCENE_BUILDERS):
-            with self.subTest(style=style):
-                self.assertIsNone(art._core.build_scene(style, 8, 6, 1, stops, 0.0))
+        # Every style is ported: the standalone binary renders all of them.
+        self.assertEqual(set(art._core.SCENE_BUILDERS), set(art.NATIVE_STYLES))
+        self.assertIsNone(art._core.build_scene('no-such-style', 8, 6, 1, art.PALETTES['deep'], 0.0))
 
     def test_rust_scenes_match_python_exactly(self):
         # Palettes with 2, 5 and 7 stops: orbits draws randrange(len(stops)).
@@ -1281,6 +1294,23 @@ class RustSceneBuilderTests(unittest.TestCase):
             for width, height in ((2 ** 33, 2 ** 33 + 1), (2 ** 63 - 1, 3), (2 ** 64 - 1, 2 ** 64 - 1)):
                 with self.subTest(style=style, size=(width, height)):
                     self.assert_same_scene(style, width, height, 5, art.PALETTES['deep'], 0.3)
+
+    def test_rust_attractor_table_matches_python_in_both_orientations(self):
+        # The Rust builder keeps its own copy of _ATTRACTOR_TABLE. Find a seed for
+        # every entry in each orientation (about 3,500 seeds) and compare the
+        # parameters it picks at phase 0, where they are the table entry itself.
+        import random
+        seeds = {}
+        seed = 0
+        while len(seeds) < 2 * len(art._ATTRACTOR_TABLE):
+            rng = random.Random(seed)  # the draws _attractor_base makes
+            seeds.setdefault((rng.choice(art._ATTRACTOR_TABLE), rng.getrandbits(1)), seed)
+            seed += 1
+        stops = art.PALETTES['deep']
+        for seed in sorted(seeds.values()):
+            with self.subTest(seed=seed):
+                rust = json.loads(art._core.build_scene('attractor', 8, 6, seed, stops, 0.0))
+                self.assertEqual(rust['params'], list(art._attractor_base(seed)))
 
     def test_rust_scene_rejects_a_non_finite_phase(self):
         for phase in (math.nan, math.inf, -math.inf):
@@ -1379,7 +1409,7 @@ class StandaloneCliTests(unittest.TestCase):
                               (['--phase', 'inf'], 'phase must be a finite number'),
                               (['--palette-stops', 'ff0000'], 'at least two colors'),
                               (['--out', 'image.gif'], 'GIF output'),
-                              (['--style', 'marbling'], 'marbling'),
+                              (['--style', 'no-such-style'], 'no-such-style'),
                               (['--seed', '3', '--random-seed'], 'cannot be used with')):
             with self.subTest(args=args):
                 result = self.run_cli(*args, check=False)

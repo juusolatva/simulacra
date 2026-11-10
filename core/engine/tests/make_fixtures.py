@@ -1,7 +1,7 @@
 """Regenerate the portable fixtures in fixtures/: one JSON file per native style.
 
-Each file holds a scene built by the Python scene builder, the render
-parameters, and the SHA-256 of the packed RGB that a core built with the
+Each file holds a scene built by the Python scene builder (the Rust one for
+the styles in RUST_BUILT, see below), the render parameters, and the SHA-256 of the packed RGB that a core built with the
 `portable` feature renders from it. `cargo test -p simulacra_engine --features
 json,portable` (tests/fixtures.rs) loads the scene through serde, renders it
 and compares the hash, with no Python involved. Because the hash comes from the
@@ -33,6 +33,22 @@ FIXTURES = pathlib.Path(__file__).resolve().parent / 'fixtures'
 # nonzero so the animated scene paths are covered, and the palette cycles
 # through every built-in palette across the styles.
 WIDTH, HEIGHT, SEED, PHASE = 48, 36, 3, 0.37
+# Styles whose fixture scene comes from the Rust builder (on this portable
+# core) instead of the Python one. The attractor frames its figure by the
+# bounds of a short chaotic orbit, so a scene built with glibc's sin and cos
+# and one built with the libm crate's differ in `mid` and `scale` by up to a
+# few percent. Release binaries build their scenes in Rust with the libm
+# crate, the same on every target, so their scene is the one to record.
+RUST_BUILT = frozenset({'attractor'})
+
+
+def _tuples(value):
+    """JSON lists as tuples, which the adapter reads into scene tuple fields."""
+    if isinstance(value, list):
+        return tuple(_tuples(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _tuples(item) for key, item in value.items()}
+    return value
 
 
 def _scalar(value):
@@ -57,7 +73,10 @@ def _fixture(index, style):
     palettes = sorted(art.PALETTES)
     palette = palettes[index % len(palettes)]
     stops = art.PALETTES[palette]
-    scene = art.NATIVE_STYLES[style](WIDTH, HEIGHT, SEED, stops, PHASE)
+    if style in RUST_BUILT:
+        scene = _tuples(json.loads(art._core.build_scene(style, WIDTH, HEIGHT, SEED, stops, PHASE)))
+    else:
+        scene = art.NATIVE_STYLES[style](WIDTH, HEIGHT, SEED, stops, PHASE)
     core_seed = art._seed32(SEED)
     rgb = art._core.render(style, WIDTH, HEIGHT, core_seed, stops, scene)
     return {
