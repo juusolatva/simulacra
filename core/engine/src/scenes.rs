@@ -92,21 +92,29 @@ scene_builders! {
     "blobs" => fields::Blobs,
     "bloom" => fields::Bloom,
     "circuit" => shapes::Circuit,
+    "comet" => brush::Comet,
     "constellations" => brush::Constellations,
+    "contour" => fields::Contour,
     "cosmic" => fields::Cosmic,
     "cosmos" => fields::Cosmos,
     "crystal" => fields::Crystal,
+    "cymatics" => fields::Cymatics,
     "drift" => drift::Drift,
+    "ember" => brush::Ember,
+    "flowfield" => brush::Flowfield,
     "galaxy" => fields::Galaxy,
     "gems" => fields::Gems,
     "geo" => shapes::Geo,
     "horizon" => fields::Horizon,
+    "ink" => brush::Ink,
     "interference" => fields::Interference,
     "kaleidoscope" => fields::Kaleidoscope,
     "lunar" => space::Lunar,
     "mandala" => shapes::Mandala,
     "mandelbrot" => fields::Mandelbrot,
     "nebula" => fields::Nebula,
+    "opart" => fields::Opart,
+    "optics" => fields::Optics,
     "orbits" => fields::Orbits,
     "petals" => fields::Petals,
     "pinwheel" => fields::Pinwheel,
@@ -183,7 +191,7 @@ mod tests {
             );
         }
         assert!(
-            super::build_scene_json("ink", 30, 20, 11, &palette, 0.4)
+            super::build_scene_json("torus", 30, 20, 11, &palette, 0.4)
                 .unwrap()
                 .is_none()
         );

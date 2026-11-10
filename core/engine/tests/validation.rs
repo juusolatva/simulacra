@@ -307,9 +307,25 @@ fn polygons_need_points_and_counts_need_a_range() {
 }
 
 #[test]
+fn ink_steps_must_be_a_whole_number_of_at_least_one() {
+    let fixture = load("ink");
+    for steps in [json!(0), json!(-3), json!(2.5)] {
+        assert_range(
+            fixture.validate_edited(|s| s["strokes"][0][8] = steps.clone()),
+            "strokes",
+        );
+    }
+    assert!(
+        fixture
+            .validate_edited(|s| s["strokes"][0][8] = json!(1))
+            .is_ok()
+    );
+}
+
+#[test]
 fn scenes_that_would_stall_are_rejected() {
     let fixture = load("ink");
-    assert_too_much_work(fixture.validate_edited(|s| s["strokes"][0][8] = json!(i64::MAX)));
+    assert_too_much_work(fixture.validate_edited(|s| s["strokes"][0][8] = json!(1_u64 << 40)));
     let fixture = load("comet");
     assert_too_much_work(fixture.validate_edited(|s| s["comets"][0][3] = json!(1e12)));
     assert_too_much_work(fixture.validate_edited(|s| s["comets"][0][4] = json!(1e9)));
