@@ -8,7 +8,7 @@
 //! [`build_scene`] and (with the `json` feature) [`build_scene_json`].
 
 use crate::palette::Palette;
-use crate::styles::{Style, drift, fields};
+use crate::styles::{Style, brush, drift, fields, quasar, shapes, space};
 #[cfg(feature = "json")]
 use crate::validate::{SceneError, check_loop_phase};
 
@@ -86,26 +86,38 @@ macro_rules! scene_builders {
 }
 
 scene_builders! {
+    "asteroids" => space::Asteroids,
     "aurora" => fields::Aurora,
+    "blackhole" => space::Blackhole,
     "blobs" => fields::Blobs,
     "bloom" => fields::Bloom,
+    "circuit" => shapes::Circuit,
+    "constellations" => brush::Constellations,
+    "cosmic" => fields::Cosmic,
     "cosmos" => fields::Cosmos,
     "crystal" => fields::Crystal,
     "drift" => drift::Drift,
     "galaxy" => fields::Galaxy,
     "gems" => fields::Gems,
+    "geo" => shapes::Geo,
     "horizon" => fields::Horizon,
     "interference" => fields::Interference,
     "kaleidoscope" => fields::Kaleidoscope,
+    "lunar" => space::Lunar,
+    "mandala" => shapes::Mandala,
     "mandelbrot" => fields::Mandelbrot,
     "nebula" => fields::Nebula,
     "orbits" => fields::Orbits,
     "petals" => fields::Petals,
     "pinwheel" => fields::Pinwheel,
     "plasma" => fields::Plasma,
+    "prism" => shapes::Prism,
+    "quasar" => quasar::Quasar,
     "rings" => fields::Rings,
+    "shard" => shapes::Shard,
     "spiral" => fields::Spiral,
     "starburst" => fields::Starburst,
+    "supernova" => space::Supernova,
     "voronoi" => fields::Voronoi,
     "waves" => fields::Waves,
 }

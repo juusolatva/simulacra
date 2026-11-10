@@ -7,15 +7,17 @@
 use crate::math::{Libm, py_hypot};
 use std::f64::consts::TAU;
 
-
-use super::{Style, gaussian, unit};
+use super::fields::diagonal;
+use super::{Style, drift_stars, gaussian, last_index, unit};
 use crate::geometry::Point;
 use crate::noise::{contrast, fbm};
 use crate::palette::Palette;
+use crate::random::PyRandom;
+use crate::raster::shade;
+use crate::scenes::{BuildScene, SceneParams};
 use crate::validate::{
     Canvas, SEQUENTIAL_WEIGHT, SceneError, check_index, check_numbers, clipped_span,
 };
-use crate::raster::shade;
 
 /// Maps an intensity buffer through `1 - exp(-max(0, v))`, as `_glow_pixels` does.
 fn glow_pixels(width: usize, height: usize, palette: &Palette, glow: &[f64]) -> Vec<u8> {
@@ -466,7 +468,10 @@ impl Style for Attractor {
         let mut counts = vec![0u32; width * height];
         let (mut x, mut y) = (0.1_f64, 0.1_f64);
         for i in 0..self.points.saturating_add(100) {
-            (x, y) = ((a * y).m_sin() + c * (a * x).m_cos(), (b * x).m_sin() + d * (b * y).m_cos());
+            (x, y) = (
+                (a * y).m_sin() + c * (a * x).m_cos(),
+                (b * x).m_sin() + d * (b * y).m_cos(),
+            );
             if i >= 100 {
                 let ix = (cx + (x - self.mid.0) * self.scale + 0.5) as i64;
                 let iy = (cy + (y - self.mid.1) * self.scale + 0.5) as i64;
@@ -480,5 +485,48 @@ impl Style for Attractor {
         shade(width, height, palette, |px, py| {
             f64::from(counts[py * width + px]).m_ln_1p() / norm
         })
+    }
+}
+
+impl BuildScene for Constellations {
+    /// `_constellation_scene`: 28 to 48 stars, pairs chosen from the starting
+    /// positions, then the stars drift and each line is measured where its
+    /// stars now are.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let count = rng.randint(28, 48);
+        let (last_x, last_y) = (last_index(width), last_index(height));
+        let stars: Vec<(f64, f64, f64, f64)> = (0..count)
+            .map(|_| {
+                (
+                    rng.uniform(0.0, last_x),
+                    rng.uniform(0.0, last_y),
+                    rng.uniform(0.7, 2.2),
+                    rng.uniform(0.45, 1.0),
+                )
+            })
+            .collect();
+        let max_dist = diagonal(width, height) * 0.32;
+        let mut pairs = Vec::new();
+        for (i, &(xi, yi, _, _)) in stars.iter().enumerate() {
+            for (j, star) in stars.iter().enumerate().skip(i + 1) {
+                if py_hypot(star.0 - xi, star.1 - yi) <= max_dist {
+                    pairs.push((i, j));
+                }
+            }
+        }
+        let stars = drift_stars(stars, 0.025 * width.min(height) as f64, params.phase);
+        let pairs = pairs
+            .into_iter()
+            .map(|(i, j)| {
+                (
+                    i,
+                    j,
+                    py_hypot(stars[j].0 - stars[i].0, stars[j].1 - stars[i].1),
+                )
+            })
+            .collect();
+        Self { stars, pairs }
     }
 }

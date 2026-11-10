@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-`simulacra.py` is a generative art tool (Simulacra, formerly Abstract Art) that draws abstract patterns and stylized representations of real phenomena: 48 styles, 24 palettes, PNG, APNG and GIF writers and a CLI. `test_simulacra.py` holds the `unittest` suite and `bench_simulacra.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is a Cargo workspace: `engine` (the renderer, usable without Python), `py` (the optional `simulacra_core` extension, which renders all 48 styles natively for `simulacra.py`) and `cli` (the standalone `simulacra` binary, in preview for the 22 styles whose scene builders are ported to Rust, `SCENE_BUILDERS`). The Rust rewrite toward a Python-free application is tracked in `PLAN.md`: Phases 1, 2 and 2b are done, Phase 3 waits only on release work, and Phase 4 (porting scene builders) is in progress. Style experimentation has stopped: the Python code of a ported style is frozen (see Conventions). Third-party dependencies are allowed; the standard-library-only rule has been dropped.
+`simulacra.py` is a generative art tool (Simulacra, formerly Abstract Art) that draws abstract patterns and stylized representations of real phenomena: 48 styles, 24 palettes, PNG, APNG and GIF writers and a CLI. `test_simulacra.py` holds the `unittest` suite and `bench_simulacra.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is a Cargo workspace: `engine` (the renderer, usable without Python), `py` (the optional `simulacra_core` extension, which renders all 48 styles natively for `simulacra.py`) and `cli` (the standalone `simulacra` binary, in preview for the 34 styles whose scene builders are ported to Rust, `SCENE_BUILDERS`). The Rust rewrite toward a Python-free application is tracked in `PLAN.md`: Phases 1, 2 and 2b are done, Phase 3 waits only on release work, and Phase 4 (porting scene builders) is in progress. Style experimentation has stopped: the Python code of a ported style is frozen (see Conventions). Third-party dependencies are allowed; the standard-library-only rule has been dropped.
 
 ## Progress
 
@@ -45,6 +45,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Rust rewrite, Phase 3: test release binaries for Linux x86_64 and aarch64 and Windows x86_64 (`portable`), checked against the fixtures on each target (on Linux in a container without Python) and compared across targets | Done | PR #36 |
 | Rust rewrite, Phase 3: scene validation in the engine (`validate.rs`): finite, bounded numbers, indices and lengths that fit, and a work limit per canvas; the checked `render()` and the Python adapter validate every scene | Done | PR #37 |
 | Rust rewrite, Phase 4 batch 1: freeze policy for ported styles; `BuildScene` and one `scene_builders!` list; Rust scenes compared with Python field by field (`_core.build_scene`, `RustSceneBuilderTests`); 19 builders ported (the per-pixel fields and `orbits`), 22 of 48 in all | Done | PR #38 |
+| Rust rewrite, Phase 4 batch 2: the geometry and object builders (12): the space styles with a shared `sky_stars`, `circuit`, `geo`, `mandala`, `prism`, `shard`, `quasar`, `cosmic`, `constellations` (`drift_stars`, `last_index`); 34 of 48 in all | Done | — |
 | Rust rewrite, Phase 3 onward: distribution (route, signing), the remaining scene builders, streaming encoders | In progress. `PLAN.md` holds the status and the checklists | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
@@ -139,7 +140,7 @@ Project key: `juusolatva_abstract-art`.
 
 ## Known issues and follow-ups
 
-In progress: port the remaining scene builders so the standalone binary covers every style (PLAN.md Phase 4; 22 of 48 are ported, still images only, and no animation or GIF output until Phase 5; the geometry and object batch is next). Open ideas, none started: stream animation frames to the writers instead of holding them all in memory (PLAN.md Phase 5); collect Rust coverage (PLAN.md Phase 6); animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
+In progress: port the remaining scene builders so the standalone binary covers every style (PLAN.md Phase 4; 34 of 48 are ported, still images only, and no animation or GIF output until Phase 5; the remaining per-pixel fields and the brush builders are next). Open ideas, none started: stream animation frames to the writers instead of holding them all in memory (PLAN.md Phase 5); collect Rust coverage (PLAN.md Phase 6); animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
 
 ### Performance
 

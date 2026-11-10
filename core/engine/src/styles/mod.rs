@@ -104,3 +104,30 @@ pub fn gaussian(d: f64, sigma: f64) -> f64 {
 pub fn unit(t: f64) -> f64 {
     t.max(0.0).min(1.0)
 }
+
+/// Python's `_drift_stars(stars, reach, phase)`: each `(x, y, radius,
+/// brightness)` star circles with [`circle_offset`] and twinkles once per
+/// loop; phase 0 changes nothing.
+pub(crate) fn drift_stars(
+    stars: Vec<(f64, f64, f64, f64)>,
+    reach: f64,
+    phase: f64,
+) -> Vec<(f64, f64, f64, f64)> {
+    stars
+        .into_iter()
+        .enumerate()
+        .map(|(index, (x, y, radius, brightness))| {
+            let (dx, dy) = circle_offset(index, reach, phase);
+            let start = golden_start(index);
+            let twinkle = 1.0 + 0.25 * ((start + loop_angle(phase, 1)).m_sin() - start.m_sin());
+            (x + dx, y + dy, radius, brightness * twinkle)
+        })
+        .collect()
+}
+
+/// Python's `(width - 1)` converted to a float: the subtraction is exact
+/// before the single rounding, as with Python's unbounded ints.
+#[inline]
+pub(crate) fn last_index(side: usize) -> f64 {
+    (side as i128 - 1) as f64
+}
