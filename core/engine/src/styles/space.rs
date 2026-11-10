@@ -48,7 +48,7 @@ const LUNAR_STEP: f64 = 0.04;
 const LUNAR_EPS: f64 = 0.004;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Lunar {
     /// (x, y, radius, depth, peak)
     craters: Vec<(f64, f64, f64, f64, f64)>,
@@ -127,7 +127,7 @@ impl Style for Lunar {
 type Rock = (f64, f64, f64, f64, f64, f64, f64, f64, f64, f64, f64, f64);
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Asteroids {
     rocks: Vec<Rock>,
     stars: Vec<Star>,
@@ -193,7 +193,7 @@ impl Style for Asteroids {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Blackhole {
     center: (f64, f64),
     radius: f64,
@@ -263,7 +263,7 @@ impl Style for Blackhole {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Supernova {
     center: (f64, f64),
     radius: f64,

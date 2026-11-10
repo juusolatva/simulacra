@@ -17,8 +17,10 @@ with scene builders ported to the engine, pixel-identical to `simulacra.py`
 (PR #32), and test release binaries for Linux and Windows render the `portable`
 fixtures on each target (`release-binaries.yml`), and the engine validates
 every scene before rendering it. Phase 3 has the distribution route, Windows
-signing and clean-machine smoke tests left, which wait for the first release. Phase 4's ownership rule already applies to those three
-builders. Phases 4 to 6 have not started otherwise.
+signing and clean-machine smoke tests left, which wait for the first release.
+Phase 4 has started: style experimentation has stopped, ported styles are
+frozen in Python (see "Freeze policy"), and batch 1 ported 19 more builders,
+so the binary renders 22 styles. Phases 5 and 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -511,19 +513,65 @@ Timing: migrate styles as their behavior settles.
 | Sampled and prepared scenes | Port torus/Lissajous sampling, woodblock surfaces, and mosaic tile patterns. |
 | Complex preparation | Port attractor parameter selection (a table lookup with `choice()` and `getrandbits(1)`), bounds, and phase updates. |
 
-Ownership rule: once a style's builder is ported, any change to its Python
-builder must include the matching Rust change in the same PR. The
-differential test in the Phase 1 test workflow enforces this. It applies
-already: Phase 3 ported the `blobs`, `mandelbrot` and `waves` builders
-(`SCENE_BUILDERS`), and `StandaloneCliTests` (binary against Python, in the
-default-core CI jobs) and `ported_scene_builders_render_the_fixture_hash`
-catch a mismatch.
+Freeze policy (decided 2026-11-10): style experimentation has stopped and the
+rewrite to Rust has priority, so a ported style's Python renderer and builder
+are frozen from the PR that ports its builder. They stay in `simulacra.py` as
+the reference the tests compare against (native against Python, Rust scenes
+against Python scenes, the binary against Python) until Phase 6 retires
+Python, but they are not edited. A deliberate change to a frozen style (a new
+look or a bug fix) is made in Rust only, and that PR also takes the style out
+of the Python comparisons and regenerates its fixture from the Rust builder.
+The first such change has to add that path: `make_fixtures.py` builds its
+scenes in Python, and the comparisons cover every style in `NATIVE_STYLES` or
+`SCENE_BUILDERS`. This replaces the earlier ownership rule, which required
+every change to a ported Python builder to be mirrored in Rust in the same
+PR. A frozen style no longer has four places to keep in step. Any change that
+reaches Python anyway still fails `RustSceneBuilderTests`, `StandaloneCliTests`
+and `ported_scene_builders_render_the_fixture_hash`. The authoring decision in
+Phase 6 covers styles added after cutover.
 
-Before the first batch, decide when a ported style's Python renderer and
-builder are frozen and replaced by its fixtures. Until then each ported style
-lives in four places (Python renderer, Python builder, Rust builder, Rust
-shader), which slows the experimentation this plan keeps in Python. The
-authoring decision in Phase 6 covers styles added after cutover.
+Batch 1 (2026-11-10): the 18 per-pixel fields with short builders (`aurora`,
+`bloom`, `cosmos`, `crystal`, `drift`, `galaxy`, `gems`, `horizon`,
+`interference`, `kaleidoscope`, `nebula`, `petals`, `pinwheel`, `plasma`,
+`rings`, `spiral`, `starburst`, `voronoi`), plus `orbits`, the first builder
+that depends on the palette (`randrange(n_stops)`). With `blobs`,
+`mandelbrot` and `waves` from Phase 3, 22 of the 48 builders are ported.
+
+- Common construction: a ported scene struct implements `BuildScene`
+  (`build(&SceneParams)`, the arguments of `NATIVE_STYLES[style]`), and one
+  `scene_builders!` list in `scenes.rs` generates `SCENE_BUILDERS`,
+  `build_scene` and `build_scene_json`. Shared pieces: `circle_offset` and
+  `golden_start` (Python's `_circle_offset` and its golden-angle starts) and
+  `ROUGH_TAU` (the `6.28` many builders draw phases up to) in
+  `styles/mod.rs`.
+- Scene comparison: scene structs also derive `serde::Serialize`, and the
+  adapter's `_core.build_scene(style, width, height, seed, stops, phase)`
+  returns the Rust-built scene as JSON. `RustSceneBuilderTests` compares it
+  with the Python builder field by field, with floats bit for bit: six sizes
+  from 1 × 1 to 3840 × 2160, seeds including negative ones, 2**40 + 3 and
+  both ends of `i64`, palettes of 2, 5 and 7 stops, and phases 0, 0.37, 1,
+  -1.81, 2.5, 1e9 + 0.125 and 1e300 (which cover phase zero and loop
+  closure, since Python's own tests hold its scenes to the still image and
+  to the loop), plus 200 seeds at assorted sizes and phases. With a
+  `portable` core the floats only need to agree within 1e-12 of
+  max(1, |value|) (see "Measured `portable` drift").
+- Rust-only checks: every ported builder's scene passes validation at sizes
+  from 1 × 1 to 300 × 2 with negative and huge phases
+  (`built_scenes_are_valid`), and the portable fixtures render their hashes
+  from Rust-built scenes.
+- The binary: `StandaloneCliTests` now takes its styles from
+  `--list-styles` (which must equal `SCENE_BUILDERS`): 264 runs over 22
+  styles, 2 sizes, 3 seeds and 2 phases gave the same pixels as Python.
+- Ordering: builders draw in Python's order, which is left to right within
+  a tuple or dict display; `voronoi` draws every site before moving any.
+  `crystal` normalises its light with `py_sum`, matching Python's
+  compensated `sum()`.
+- Performance at 640 × 480 (seed 3, phase 0.37), end to end: the binary took
+  0.00 to 0.02 s per style with a peak of 4.4 to 7.0 MB; `simulacra.py` with
+  the core took 0.05 to 0.08 s and about 36 MB, mostly interpreter start-up.
+  Scene building is not measurable at this scale (about 25 µs for `orbits`
+  in Python).
+- No intentional visual change, so no contact sheet was needed.
 
 For each batch:
 
@@ -684,6 +732,19 @@ byte-identical to Python. Renders compared: every style at 200 × 150
   1280 × 960 took about 12% longer (5.8 s against 6.5 s, including Python
   scene time); `lunar` was about 20% slower.
 
+Scene builders in Rust (measured 2026-11-10, Phase 4 batch 1): with
+`portable` math, the ported builders' `sin`, `cos`, `exp` and `pow` come from
+the `libm` crate, so their scenes can differ from Python's in the last bits:
+circle offsets (`cos(angle) - cos(start)`), plane-wave directions in
+`interference` and `plasma`, and the ring breathing in `orbits`. The largest
+difference over the test grid was 1.8e-15 of max(1, |value|), in `orbits`. Rendering
+Rust-built against Python-built scenes on a `portable` core over 200 cases
+per style (5 sizes up to 640 × 480, 5 seeds, 2 palettes, 4 phases) changed no
+pixel in any of the 22 ported styles, and every Rust-built fixture scene
+renders the recorded hash. `RustSceneBuilderTests` therefore compares scenes
+exactly on the default core and within 1e-12 of max(1, |value|) on a
+portable one.
+
 Resolution: the `system` math backend proves the port against Python on the
 same machine; release builds use the `portable` backend, so a given seed
 gives the same image on every platform, which the `portable` fixtures check
@@ -773,5 +834,10 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    the `simulacra` binary for `blobs`, `mandelbrot` and `waves`, and test
    release binaries for Linux and Windows checked against the fixtures, and
    scene validation in the engine. The distribution route and signing wait
-   for the release; Phase 4 (porting scene builders) is next.
-8. Continue Python style experimentation and migrate settled styles in batches.
+   for the release.
+8. In progress: Phase 4, porting the scene builders. Style experimentation
+   has stopped and ported styles are frozen in Python (decided 2026-11-10,
+   see "Freeze policy"). Batch 1 is done (22 of 48 builders ported). Next is
+   the geometry and object batch (`geo`, `prism`, `shard`, `circuit`,
+   `cosmic`, `constellations`, the space styles and their shared stars), then
+   the sampled and prepared scenes, then `attractor`.

@@ -21,7 +21,9 @@ pub mod validate;
 pub use palette::{Palette, PaletteError};
 pub use palettes::{PALETTES, palette_stops};
 pub use random::PyRandom;
-pub use scenes::{SCENE_BUILDERS, build_scene};
+#[cfg(feature = "json")]
+pub use scenes::build_scene_json;
+pub use scenes::{BuildScene, SCENE_BUILDERS, SceneParams, build_scene};
 pub use styles::Style;
 pub use validate::{SceneError, scene_work, validate_scene, work_limit};
 

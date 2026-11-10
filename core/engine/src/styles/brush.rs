@@ -61,7 +61,7 @@ fn segment_box(
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Flowfield {
     starts: Vec<Point>,
 }
@@ -115,7 +115,7 @@ impl Style for Flowfield {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Comet {
     /// (x, y, angle, speed, brush radius)
     comets: Vec<(f64, f64, f64, f64, f64)>,
@@ -172,7 +172,7 @@ impl Style for Comet {
 type Stroke = (f64, f64, f64, f64, f64, f64, f64, f64, i64);
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Ink {
     strokes: Vec<Stroke>,
 }
@@ -221,7 +221,7 @@ impl Style for Ink {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Ember {
     /// (x, y, rise, size, phase, flicker)
     embers: Vec<(f64, f64, f64, f64, f64, f64)>,
@@ -270,7 +270,7 @@ impl Style for Ember {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Torus {
     /// Polyline of the knot as (x, y, depth)
     points: Vec<(f64, f64, f64)>,
@@ -323,7 +323,7 @@ impl Style for Torus {
 const LISSAJOUS_MAX_CURVES: usize = 8;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Lissajous {
     /// (polyline, reach, sigma, amp) per curve
     curves: Vec<(Vec<Point>, f64, f64, f64)>,
@@ -382,7 +382,7 @@ impl Style for Lissajous {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Constellations {
     /// (x, y, radius, brightness)
     stars: Vec<(f64, f64, f64, f64)>,
@@ -446,7 +446,7 @@ impl Style for Constellations {
 const ATTRACTOR_STEP_WORK: f64 = 16.0 * SEQUENTIAL_WEIGHT;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Attractor {
     params: (f64, f64, f64, f64),
     mid: (f64, f64),

@@ -5,25 +5,30 @@ use std::f64::consts::{PI, TAU};
 
 use rayon::prelude::*;
 
-use super::{Style, center, gaussian, loop_angle, small_side, unit};
+use super::{
+    ROUGH_TAU, Style, center, circle_offset, gaussian, golden_start, loop_angle, small_side, unit,
+};
 use crate::geometry::py_mod;
+use crate::geometry::py_sum;
 use crate::noise::{contrast, fbm, fbm_loop};
 use crate::palette::Palette;
-use crate::validate::{Canvas, SceneError, check_index, check_loop_phase, check_numbers};
 use crate::random::PyRandom;
 use crate::raster::{shade, shade_rgb};
+use crate::scenes::{BuildScene, SceneParams};
+use crate::validate::{Canvas, SceneError, check_index, check_loop_phase, check_numbers};
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Blobs {
     phase: f64,
 }
 
-impl Blobs {
+impl BuildScene for Blobs {
     /// `_blobs_scene`: the noise only needs the phase.
-    #[must_use]
-    pub fn build(phase: f64) -> Self {
-        Self { phase }
+    fn build(params: &SceneParams<'_>) -> Self {
+        Self {
+            phase: params.phase,
+        }
     }
 }
 
@@ -45,26 +50,38 @@ impl Style for Blobs {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Waves {
     layers: Vec<(f64, f64, f64)>,
 }
 
-impl Waves {
+impl BuildScene for Waves {
     /// `_waves_scene`: four layers of (amplitude, frequency, phase), the phases
     /// drawn from `random.Random(seed)` and turned by the animation phase.
-    #[must_use]
-    #[allow(
-        clippy::approx_constant,
-        reason = "Python draws uniform(0, 6.28), not tau; the scene must match it"
-    )]
-    pub fn build(seed: i64, phase: f64) -> Self {
-        let mut rng = PyRandom::new(seed);
+    fn build(params: &SceneParams<'_>) -> Self {
+        let phase = params.phase;
+        let mut rng = PyRandom::new(params.seed);
         let layers = vec![
-            (30.0, 2.0, rng.uniform(0.0, 6.28) + loop_angle(phase, 1)),
-            (18.0, 3.5, rng.uniform(0.0, 6.28) + loop_angle(phase, -1)),
-            (12.0, 5.0, rng.uniform(0.0, 6.28) + loop_angle(phase, 2)),
-            (7.0, 7.0, rng.uniform(0.0, 6.28) + loop_angle(phase, -2)),
+            (
+                30.0,
+                2.0,
+                rng.uniform(0.0, ROUGH_TAU) + loop_angle(phase, 1),
+            ),
+            (
+                18.0,
+                3.5,
+                rng.uniform(0.0, ROUGH_TAU) + loop_angle(phase, -1),
+            ),
+            (
+                12.0,
+                5.0,
+                rng.uniform(0.0, ROUGH_TAU) + loop_angle(phase, 2),
+            ),
+            (
+                7.0,
+                7.0,
+                rng.uniform(0.0, ROUGH_TAU) + loop_angle(phase, -2),
+            ),
         ];
         Self { layers }
     }
@@ -92,9 +109,33 @@ impl Style for Waves {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Plasma {
     layers: Vec<(f64, f64, f64, f64)>,
+}
+
+impl BuildScene for Plasma {
+    /// `_plasma_scene`: four plane waves in random directions, well below Nyquist.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let size = params.width.max(params.height) as f64;
+        // (amplitude, cycles across the canvas, turns per loop)
+        let layers = [
+            (1.0, 1.5, 1),
+            (0.8, 2.5, -1),
+            (0.6, 4.0, 2),
+            (0.45, 6.5, -1),
+        ]
+        .into_iter()
+        .map(|(amp, cycles, turns)| {
+            let direction = rng.uniform(0.0, TAU);
+            let k = cycles * TAU / size;
+            let phase = rng.uniform(0.0, ROUGH_TAU) + loop_angle(params.phase, turns);
+            (amp, k * direction.m_cos(), k * direction.m_sin(), phase)
+        })
+        .collect();
+        Self { layers }
+    }
 }
 
 impl Style for Plasma {
@@ -117,9 +158,29 @@ impl Style for Plasma {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Interference {
     layers: Vec<(f64, f64, f64, f64)>,
+}
+
+impl BuildScene for Interference {
+    /// `_interference_scene`: three plane waves, each in a random direction.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let size = params.width.max(params.height) as f64;
+        let layers = [1, -1, 2]
+            .into_iter()
+            .map(|turns| {
+                let direction = rng.uniform(0.0, PI);
+                // Spatial frequency in cycles across the canvas, far below Nyquist.
+                let k = rng.uniform(4.0, 18.0) * TAU / size;
+                let phase = rng.uniform(0.0, ROUGH_TAU) + loop_angle(params.phase, turns);
+                let amp = rng.uniform(1.0, 4.0);
+                (phase, k * direction.m_cos(), k * direction.m_sin(), amp)
+            })
+            .collect();
+        Self { layers }
+    }
 }
 
 impl Style for Interference {
@@ -143,10 +204,20 @@ impl Style for Interference {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Kaleidoscope {
     folds: i64,
     phase: f64,
+}
+
+impl BuildScene for Kaleidoscope {
+    /// `_kaleidoscope_scene`: the fold count and a turning phase.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let folds = rng.randint(4, 8);
+        let phase = rng.uniform(0.0, TAU) + loop_angle(params.phase, 1);
+        Self { folds, phase }
+    }
 }
 
 impl Style for Kaleidoscope {
@@ -174,12 +245,27 @@ impl Style for Kaleidoscope {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Pinwheel {
     n_arms: i64,
     twist: f64,
     spin: f64,
     phase: f64,
+}
+
+impl BuildScene for Pinwheel {
+    /// `_pinwheel_scene`: arm count and twist; the arms spin once per loop.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let n_arms = rng.randint(3, 5);
+        let twist = rng.uniform(2.0, 7.0);
+        Self {
+            n_arms,
+            twist,
+            spin: loop_angle(params.phase, 1),
+            phase: params.phase,
+        }
+    }
 }
 
 impl Style for Pinwheel {
@@ -213,12 +299,39 @@ impl Style for Pinwheel {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Galaxy {
     bulge_r: f64,
     bulge_amp: f64,
     /// (r0, width, phase, pitch, amp)
     arms: Vec<(f64, f64, f64, f64, f64)>,
+}
+
+impl BuildScene for Galaxy {
+    /// `_galaxy_scene`: a bulge and two or three log-spiral arms that turn.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let (cx, cy) = center(params.width, params.height);
+        let max_r = py_hypot(cx, cy).max(1.0);
+        let bulge_r = max_r * rng.uniform(0.10, 0.26);
+        let bulge_amp = rng.uniform(0.9, 1.5);
+        let count = rng.randint(2, 3);
+        let arms = (0..count)
+            .map(|_| {
+                let r0 = max_r * rng.uniform(0.015, 0.05);
+                let arm_width = rng.uniform(0.08, 0.18);
+                let arm_phase = rng.uniform(0.0, ROUGH_TAU) + loop_angle(params.phase, 1);
+                let pitch = rng.uniform(1.5, 3.5);
+                let amp = rng.uniform(0.5, 1.0);
+                (r0, arm_width, arm_phase, pitch, amp)
+            })
+            .collect();
+        Self {
+            bulge_r,
+            bulge_amp,
+            arms,
+        }
+    }
 }
 
 impl Style for Galaxy {
@@ -250,11 +363,32 @@ impl Style for Galaxy {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Bloom {
     /// (x, y, radius, amp)
     blooms: Vec<(f64, f64, f64, f64)>,
     phase: f64,
+}
+
+impl BuildScene for Bloom {
+    /// `_bloom_scene`: 4 to 9 glows, each circling its home position.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height, phase) = (params.width, params.height, params.phase);
+        let mut rng = PyRandom::new(params.seed);
+        let scale = small_side(width, height);
+        let count = rng.randint(4, 9);
+        let blooms = (0..count as usize)
+            .map(|i| {
+                let bx = rng.uniform(0.0, width as f64 - 1.0);
+                let by = rng.uniform(0.0, height as f64 - 1.0);
+                let br = scale * rng.uniform(0.08, 0.27);
+                let amp = rng.uniform(0.4, 1.0);
+                let (dx, dy) = circle_offset(i, scale * 0.05, phase);
+                (bx + dx, by + dy, br, amp)
+            })
+            .collect();
+        Self { blooms, phase }
+    }
 }
 
 impl Style for Bloom {
@@ -279,13 +413,46 @@ impl Style for Bloom {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Nebula {
     /// (x, y, radius, amp)
     clouds: Vec<(f64, f64, f64, f64)>,
     /// (x, y, radius)
     stars: Vec<(f64, f64, f64)>,
     phase: f64,
+}
+
+impl BuildScene for Nebula {
+    /// `_nebula_scene`: 3 to 6 drifting clouds and 40 fixed stars.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height, phase) = (params.width, params.height, params.phase);
+        let mut rng = PyRandom::new(params.seed);
+        let (w, h) = (width as f64, height as f64);
+        let diag = ((width * width + height * height) as f64).sqrt();
+        let count = rng.randint(3, 6);
+        let clouds = (0..count as usize)
+            .map(|i| {
+                let ccx = rng.uniform(w * 0.1, w * 0.9);
+                let ccy = rng.uniform(h * 0.1, h * 0.9);
+                let cr = rng.uniform(0.08, 0.25) * diag;
+                let amp = rng.uniform(0.5, 1.5);
+                let (dx, dy) = circle_offset(i, diag * 0.03, phase);
+                (ccx + dx, ccy + dy, cr, amp)
+            })
+            .collect();
+        let stars = (0..40)
+            .map(|_| {
+                let x = rng.uniform(0.0, w - 1.0);
+                let y = rng.uniform(0.0, h - 1.0);
+                (x, y, rng.uniform(0.5, 2.0))
+            })
+            .collect();
+        Self {
+            clouds,
+            stars,
+            phase,
+        }
+    }
 }
 
 impl Style for Nebula {
@@ -319,12 +486,44 @@ impl Style for Nebula {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Orbits {
     /// (x, y, radius)
     stars: Vec<(f64, f64, f64)>,
     /// (radius, palette stop index)
     rings: Vec<(f64, usize)>,
+}
+
+impl BuildScene for Orbits {
+    /// `_orbits_scene`: 60 circling stars and 6 breathing ring bands. The ring
+    /// colour draw, `randrange(n_stops)`, depends on the palette size.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height, phase) = (params.width, params.height, params.phase);
+        let mut rng = PyRandom::new(params.seed);
+        let (w, h) = (width as f64, height as f64);
+        let reach = 0.03 * width.min(height) as f64;
+        let stars = (0..60)
+            .map(|index| {
+                let x = rng.uniform(0.0, w - 1.0);
+                let y = rng.uniform(0.0, h - 1.0);
+                let (dx, dy) = circle_offset(index, reach, phase);
+                (x + dx, y + dy, rng.uniform(0.5, 3.0))
+            })
+            .collect();
+        // Python's `x ** 2` on a float is libm pow.
+        let max_r = ((w / 2.0).m_powf(2.0) + (h / 2.0).m_powf(2.0)).sqrt();
+        let n_stops = params.palette.stop_count() as i64;
+        let rings = (0..6)
+            .map(|index| {
+                let radius = max_r * rng.uniform(0.15, 0.9);
+                let start = golden_start(index);
+                let breath = 1.0 + 0.05 * ((start + loop_angle(phase, 1)).m_sin() - start.m_sin());
+                // randrange(n) is below n, which is a usize.
+                (radius * breath, rng.randrange(n_stops) as usize)
+            })
+            .collect();
+        Self { stars, rings }
+    }
 }
 
 impl Style for Orbits {
@@ -361,7 +560,7 @@ impl Style for Orbits {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Cosmic {
     /// (x, y, size, brightness)
     stars: Vec<(f64, f64, f64, f64)>,
@@ -382,8 +581,11 @@ impl Style for Cosmic {
         let glow_sigma = small * 0.55;
         let arm_sigma = (small * 0.08).max(1.0);
         let star_sigma = (small * 0.02).max(1.0);
-        let (arm_cos, arm_sin, arm_tan) =
-            (self.arm_ang.m_cos(), self.arm_ang.m_sin(), self.arm_w.m_tan());
+        let (arm_cos, arm_sin, arm_tan) = (
+            self.arm_ang.m_cos(),
+            self.arm_ang.m_sin(),
+            self.arm_w.m_tan(),
+        );
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
             let rad = py_hypot(x - ox, y - oy);
@@ -391,7 +593,10 @@ impl Style for Cosmic {
             let ang = (y - oy).m_atan2(x - ox);
             let ang_diff = py_mod(ang - self.arm_ang + PI, 2.0 * PI) - PI;
             let dist_along = rad * arm_tan + self.arm_r * (ang_diff / self.arm_w).m_cos();
-            let d2 = py_hypot(x - (ox + dist_along * arm_cos), y - (oy + dist_along * arm_sin));
+            let d2 = py_hypot(
+                x - (ox + dist_along * arm_cos),
+                y - (oy + dist_along * arm_sin),
+            );
             v += gaussian(d2, arm_sigma) * 1.2;
             for &(sx, sy, size, brightness) in &self.stars {
                 let ds = py_hypot(x - sx, y - sy);
@@ -405,10 +610,30 @@ impl Style for Cosmic {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Rings {
     /// (radius, phase)
     rings: Vec<(f64, f64)>,
+}
+
+impl BuildScene for Rings {
+    /// `_rings_scene`: 4 to 9 rings; neighbouring rings turn in opposite directions.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let scale = (params.width.min(params.height) as f64 / 2.0).max(1.0);
+        let count = rng.randint(4, 9);
+        let rings = (0..count)
+            .map(|i| {
+                let radius = scale * rng.uniform(0.15, 0.95);
+                let turns = if i % 2 == 0 { 1 } else { -1 };
+                (
+                    radius,
+                    rng.uniform(0.0, TAU) + loop_angle(params.phase, turns),
+                )
+            })
+            .collect();
+        Self { rings }
+    }
 }
 
 impl Style for Rings {
@@ -436,10 +661,20 @@ impl Style for Rings {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Starburst {
     rays: f64,
     phase: f64,
+}
+
+impl BuildScene for Starburst {
+    /// `_starburst_scene`: the ray count and a turning phase.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let rays = rng.randint(8, 14) as f64;
+        let phase = rng.uniform(0.0, TAU) + loop_angle(params.phase, 1);
+        Self { rays, phase }
+    }
 }
 
 impl Style for Starburst {
@@ -464,10 +699,27 @@ impl Style for Starburst {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Spiral {
     /// (turns, phase, amp, width)
     arms: Vec<(f64, f64, f64, f64)>,
+}
+
+impl BuildScene for Spiral {
+    /// `_spiral_scene`: 2 to 5 arms of (turns, phase, amplitude, width).
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let count = rng.randint(2, 5);
+        let arms = (0..count)
+            .map(|_| {
+                let turns = rng.uniform(1.0, 4.0);
+                let phase = rng.uniform(0.0, ROUGH_TAU) + loop_angle(params.phase, 1);
+                let amp = rng.uniform(0.4, 1.0);
+                (turns, phase, amp, rng.uniform(0.08, 0.35))
+            })
+            .collect();
+        Self { arms }
+    }
 }
 
 impl Style for Spiral {
@@ -496,11 +748,26 @@ impl Style for Spiral {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Petals {
     count: f64,
     length: f64,
     phase: f64,
+}
+
+impl BuildScene for Petals {
+    /// `_petals_scene`: petal count and length, and a turning phase.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let count = rng.randint(5, 8) as f64;
+        let length = rng.uniform(0.65, 0.95);
+        let phase = rng.uniform(0.0, TAU) + loop_angle(params.phase, 1);
+        Self {
+            count,
+            length,
+            phase,
+        }
+    }
 }
 
 impl Style for Petals {
@@ -526,10 +793,31 @@ impl Style for Petals {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Aurora {
     /// (y0, amp, freq, phase, bw)
     ribbons: Vec<(f64, f64, f64, f64, f64)>,
+}
+
+impl BuildScene for Aurora {
+    /// `_aurora_scene`: 3 to 7 ribbons; neighbouring ones turn in opposite directions.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let count = rng.randint(3, 7);
+        let ribbons = (0..count)
+            .map(|i| {
+                let y0 = rng.uniform(0.0, height as f64 - 1.0);
+                let amp = (height as f64 * rng.uniform(0.06, 0.27)).max(1.0);
+                let freq = rng.uniform(1.0, 5.0) / width.max(1) as f64;
+                let turns = if i % 2 == 0 { 1 } else { -1 };
+                let phase = rng.uniform(0.0, ROUGH_TAU) + loop_angle(params.phase, turns);
+                let bw = rng.uniform(0.6, 1.4);
+                (y0, amp, freq, phase, bw)
+            })
+            .collect();
+        Self { ribbons }
+    }
 }
 
 impl Style for Aurora {
@@ -555,10 +843,29 @@ impl Style for Aurora {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Gems {
     /// (cx, cy, radius, rotation)
     gems: Vec<(f64, f64, f64, f64)>,
+}
+
+impl BuildScene for Gems {
+    /// `_gems_scene`: three gems whose facets turn.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let small = small_side(width, height);
+        let gems = (0..3)
+            .map(|_| {
+                let cx = rng.uniform(0.0, width as f64 - 1.0);
+                let cy = rng.uniform(0.0, height as f64 - 1.0);
+                let cr = small * rng.uniform(0.1, 0.25);
+                let rotation = rng.uniform(0.0, ROUGH_TAU) + loop_angle(params.phase, 1);
+                (cx, cy, cr, rotation)
+            })
+            .collect();
+        Self { gems }
+    }
 }
 
 impl Style for Gems {
@@ -587,10 +894,34 @@ impl Style for Gems {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Cosmos {
     /// (x, y, max_r, rings, phase, amp)
     centers: Vec<(f64, f64, f64, i64, f64, f64)>,
+}
+
+impl BuildScene for Cosmos {
+    /// `_cosmos_scene`: 2 to 5 ring centres whose bands move outward.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let (w, h) = (width as f64, height as f64);
+        // Python squares and adds the integers, then takes the square root.
+        let diag = ((width * width + height * height) as f64).sqrt();
+        let count = rng.randint(2, 5);
+        let centers = (0..count)
+            .map(|_| {
+                let x = rng.uniform(w * 0.2, w * 0.8);
+                let y = rng.uniform(h * 0.2, h * 0.8);
+                let max_r = rng.uniform(0.25, 0.6) * diag;
+                let rings = rng.randint(3, 8);
+                let phase = rng.uniform(0.0, ROUGH_TAU) - loop_angle(params.phase, 1);
+                let amp = rng.uniform(0.6, 1.4);
+                (x, y, max_r, rings, phase, amp)
+            })
+            .collect();
+        Self { centers }
+    }
 }
 
 impl Style for Cosmos {
@@ -629,7 +960,7 @@ impl Style for Cosmos {
 
 /// `render_mandelbrot`: Python gives the view (scale, centre) and iteration limit.
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Mandelbrot {
     scale: f64,
     center: (f64, f64),
@@ -641,11 +972,11 @@ const MANDELBROT_HOME: (f64, f64) = (-0.6, 0.0);
 const MANDELBROT_TARGET: (f64, f64) = (-0.743_643_887_037_151, 0.131_825_904_205_330);
 const MANDELBROT_DEPTH: f64 = 7.0;
 
-impl Mandelbrot {
+impl BuildScene for Mandelbrot {
     /// `_mandelbrot_scene`: a zoom toward `MANDELBROT_TARGET` and back over a
     /// loop, eased at both ends; phase 0 is the whole set.
-    #[must_use]
-    pub fn build(width: usize, height: usize, phase: f64) -> Self {
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height, phase) = (params.width, params.height, params.phase);
         let ease = 0.5 - 0.5 * loop_angle(phase, 1).m_cos();
         let closing = (-MANDELBROT_DEPTH * ease).m_exp();
         let (home_x, home_y) = MANDELBROT_HOME;
@@ -695,11 +1026,27 @@ impl Style for Mandelbrot {
 const HORIZON_MAX_LAYERS: usize = 64;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Horizon {
     /// (ridge height fraction, noise offset, palette position) per layer
     layers: Vec<(f64, f64, f64)>,
     phase: f64,
+}
+
+impl BuildScene for Horizon {
+    /// `_horizon_scene`: four ridges, far to near, each with its own noise offset.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let layers = [0.35, 0.5, 0.65, 0.8]
+            .into_iter()
+            .enumerate()
+            .map(|(i, fraction)| (fraction, rng.uniform(0.0, 100.0), 0.55 - i as f64 * 0.13))
+            .collect();
+        Self {
+            layers,
+            phase: params.phase,
+        }
+    }
 }
 
 impl Style for Horizon {
@@ -749,10 +1096,37 @@ impl Style for Horizon {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Voronoi {
     /// (x, y, brightness)
     sites: Vec<(f64, f64, f64)>,
+}
+
+impl BuildScene for Voronoi {
+    /// `_voronoi_scene`: 10 to 16 sites, all drawn first, then each set
+    /// circling its home position.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let count = rng.randint(10, 16);
+        let sites: Vec<(f64, f64, f64)> = (0..count)
+            .map(|_| {
+                let x = rng.uniform(0.0, width as f64 - 1.0);
+                let y = rng.uniform(0.0, height as f64 - 1.0);
+                (x, y, rng.uniform(0.1, 0.7))
+            })
+            .collect();
+        let reach = small_side(width, height) * 0.06;
+        let sites = sites
+            .into_iter()
+            .enumerate()
+            .map(|(i, (x, y, color))| {
+                let (dx, dy) = circle_offset(i, reach, params.phase);
+                (x + dx, y + dy, color)
+            })
+            .collect();
+        Self { sites }
+    }
 }
 
 impl Style for Voronoi {
@@ -786,11 +1160,28 @@ impl Style for Voronoi {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Crystal {
     light: (f64, f64, f64),
     half: (f64, f64, f64),
     phase: f64,
+}
+
+impl BuildScene for Crystal {
+    /// `_crystal_scene`: the fixed light and its Blinn-Phong half vector.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (lx, ly, lz) = (0.45_f64, -0.55_f64, 0.70_f64);
+        // Python's sum() of the squares, which is compensated since 3.12.
+        let ln = py_sum([lx * lx, ly * ly, lz * lz]).sqrt();
+        let light = (lx / ln, ly / ln, lz / ln);
+        let (hx, hy, hz) = (light.0, light.1, light.2 + 1.0); // half vector, viewer at +z
+        let hn = (hx * hx + hy * hy + hz * hz).sqrt();
+        Self {
+            light,
+            half: (hx / hn, hy / hn, hz / hn),
+            phase: params.phase,
+        }
+    }
 }
 
 impl Style for Crystal {
@@ -836,7 +1227,8 @@ impl Style for Crystal {
                 0.0
             };
             // Python's round() is half-to-even.
-            let tilt = ((py_hypot(gx, gy) * relief).m_atan() / tilt_step).round_ties_even() * tilt_step;
+            let tilt =
+                ((py_hypot(gx, gy) * relief).m_atan() / tilt_step).round_ties_even() * tilt_step;
             let azimuth = (gy.m_atan2(gx) / az_step).round_ties_even() * az_step;
             let n = (
                 -tilt.m_sin() * azimuth.m_cos(),
@@ -853,7 +1245,7 @@ impl Style for Crystal {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Cymatics {
     circular: bool,
     /// (n, m, weight, phase_a, phase_b)
@@ -893,7 +1285,7 @@ impl Style for Cymatics {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Optics {
     /// (kx, ky, wave_phase)
     waves: Vec<(f64, f64, f64)>,
@@ -946,7 +1338,7 @@ impl Style for Optics {
 const CONTOUR_LEVELS: f64 = 14.0;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Contour {
     phase: f64,
 }
@@ -982,7 +1374,7 @@ impl Style for Contour {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Opart {
     pattern: i64,
     angle: f64,
@@ -1030,7 +1422,7 @@ impl Style for Opart {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Marbling {
     /// (kind, a, b, c, d, e, f): kind 0 is a drop, kind 1 a comb.
     ops: Vec<(f64, f64, f64, f64, f64, f64, f64)>,

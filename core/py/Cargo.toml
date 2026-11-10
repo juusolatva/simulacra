@@ -12,7 +12,8 @@ name = "simulacra_core"
 crate-type = ["cdylib"]
 
 [dependencies]
-simulacra_engine = { path = "../engine", features = ["python"] }
+# json: build_scene() returns the Rust-built scenes as JSON for the tests.
+simulacra_engine = { path = "../engine", features = ["python", "json"] }
 pyo3.workspace = true
 
 [features]

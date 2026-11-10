@@ -52,6 +52,31 @@ mod simulacra_core {
     #[pymodule_export]
     const STYLES: [&str; simulacra_engine::STYLES.len()] = simulacra_engine::STYLES;
 
+    /// Styles whose scene builder is ported to Rust, in registry order.
+    #[pymodule_export]
+    const SCENE_BUILDERS: [&str; simulacra_engine::SCENE_BUILDERS.len()] =
+        simulacra_engine::SCENE_BUILDERS;
+
+    /// The scene the engine's port of `NATIVE_STYLES[style]` builds, as JSON
+    /// (field names as in the Python dict, every float exact), or `None` for a
+    /// style whose builder is not ported. The tests compare it with the Python
+    /// builder value by value.
+    #[pyfunction]
+    #[pyo3(signature = (style, width, height, seed, stops, phase=0.0))]
+    fn build_scene(
+        style: &str,
+        width: usize,
+        height: usize,
+        seed: i64,
+        stops: Stops,
+        phase: f64,
+    ) -> PyResult<Option<String>> {
+        let palette = palette(stops)?;
+        Ok(simulacra_engine::build_scene_json(
+            style, width, height, seed, &palette, phase,
+        ))
+    }
+
     /// The engine's built-in palettes as `(name, stops)` pairs; a Python test
     /// keeps them equal to `simulacra.PALETTES`.
     #[pyfunction]
