@@ -905,6 +905,9 @@ class RenderingTests(unittest.TestCase):
         code, _, err = self.run_cli('--width', '20000', '--height', '20000')
         self.assertEqual(code, 2)
         self.assertIn('--no-limits', err)
+        code, _, err = self.run_cli('--width', '100000000', '--height', '1')
+        self.assertEqual(code, 2)
+        self.assertIn('has a side over 100000 pixels', err)
         code, _, err = self.run_cli('--width', '5000', '--height', '5000', '--frames', '20')
         self.assertEqual(code, 2)
         self.assertIn('frames', err)
@@ -1271,7 +1274,10 @@ class RustSceneBuilderTests(unittest.TestCase):
     def test_rust_scenes_match_python_at_huge_sizes(self):
         # Far beyond any canvas: cosmos and nebula square the sides, which Rust
         # must do without overflow and round once, like Python's exact ints.
-        for style in art._core.SCENE_BUILDERS:
+        # Scenes that grow with the canvas (a point per pixel or so of curve, a
+        # height per column, a value per tile) would need memory in proportion.
+        canvas_sized = {'lissajous', 'mosaic', 'woodblock'}
+        for style in sorted(set(art._core.SCENE_BUILDERS) - canvas_sized):
             for width, height in ((2 ** 33, 2 ** 33 + 1), (2 ** 63 - 1, 3), (2 ** 64 - 1, 2 ** 64 - 1)):
                 with self.subTest(style=style, size=(width, height)):
                     self.assert_same_scene(style, width, height, 5, art.PALETTES['deep'], 0.3)
@@ -1368,11 +1374,12 @@ class StandaloneCliTests(unittest.TestCase):
         self.assertEqual(self.run_cli('--list-palettes').stdout.split(), sorted(art.PALETTES))
         for args, message in ((['--width', '0'], 'width and height must be positive'),
                               (['--width', '10001', '--height', '10000'], 'the limit is 100000000'),
+                              (['--width', '1', '--height', '100000000'], '1 x 100000000 has a side over 100000 pixels'),
                               (['--no-limits', '--width', str(2 ** 32), '--height', '1'], 'cannot exceed 4294967295'),
                               (['--phase', 'inf'], 'phase must be a finite number'),
                               (['--palette-stops', 'ff0000'], 'at least two colors'),
                               (['--out', 'image.gif'], 'GIF output'),
-                              (['--style', 'torus'], 'torus'),
+                              (['--style', 'marbling'], 'marbling'),
                               (['--seed', '3', '--random-seed'], 'cannot be used with')):
             with self.subTest(args=args):
                 result = self.run_cli(*args, check=False)

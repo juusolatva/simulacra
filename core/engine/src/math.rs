@@ -20,6 +20,8 @@ pub trait Libm {
     #[must_use]
     fn m_tan(self) -> f64;
     #[must_use]
+    fn m_tanh(self) -> f64;
+    #[must_use]
     fn m_atan(self) -> f64;
     #[must_use]
     fn m_atan2(self, other: f64) -> f64;
@@ -48,6 +50,10 @@ impl Libm for f64 {
     #[inline]
     fn m_tan(self) -> f64 {
         self.tan()
+    }
+    #[inline]
+    fn m_tanh(self) -> f64 {
+        self.tanh()
     }
     #[inline]
     fn m_atan(self) -> f64 {
@@ -84,6 +90,10 @@ impl Libm for f64 {
     #[inline]
     fn m_tan(self) -> f64 {
         libm::tan(self)
+    }
+    #[inline]
+    fn m_tanh(self) -> f64 {
+        libm::tanh(self)
     }
     #[inline]
     fn m_atan(self) -> f64 {

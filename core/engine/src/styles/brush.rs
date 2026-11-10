@@ -9,7 +9,7 @@ use std::f64::consts::{PI, TAU};
 
 use super::fields::diagonal;
 use super::{ROUGH_TAU, Style, circle_offset, drift_stars, gaussian, last_index, loop_angle, unit};
-use crate::geometry::Point;
+use crate::geometry::{Point, py_sum};
 use crate::noise::{contrast, fbm};
 use crate::palette::Palette;
 use crate::random::PyRandom;
@@ -431,6 +431,127 @@ impl Style for Torus {
     }
 }
 
+/// A sampled curve point whose first two values are screen x and y.
+trait ScreenPoint: Copy {
+    fn xy(self) -> Point;
+}
+
+impl ScreenPoint for Point {
+    fn xy(self) -> Point {
+        self
+    }
+}
+
+impl ScreenPoint for (f64, f64, f64) {
+    fn xy(self) -> Point {
+        (self.0, self.1)
+    }
+}
+
+/// Python's `_sample_by_length(point_at, spacing, closed)`: samples `point_at(u)`
+/// for `u` in [0, 1] about `spacing` pixels apart, measuring the length on 512
+/// coarse segments with Python's compensated `sum()`. A closed curve repeats
+/// its first point at the end; an open one ends at `point_at(1.0)`.
+fn sample_by_length<P: ScreenPoint>(
+    point_at: impl Fn(f64) -> P,
+    spacing: f64,
+    closed: bool,
+) -> Vec<P> {
+    let coarse: Vec<Point> = (0..=512)
+        .map(|i| point_at(f64::from(i) / 512.0).xy())
+        .collect();
+    let length = py_sum(
+        coarse
+            .windows(2)
+            .map(|pair| py_hypot(pair[1].0 - pair[0].0, pair[1].1 - pair[0].1)),
+    );
+    // A float-to-int cast saturates, and the count is a whole number of at most
+    // a few times the canvas side.
+    let count = ((length / spacing).ceil() as usize).max(64);
+    let mut points: Vec<P> = (0..count)
+        .map(|i| point_at(i as f64 / count as f64))
+        .collect();
+    points.push(if closed { points[0] } else { point_at(1.0) });
+    points
+}
+
+/// Python's `min(values)`: the first of the smallest values.
+fn py_min(values: impl IntoIterator<Item = f64>) -> f64 {
+    values
+        .into_iter()
+        .reduce(|best, v| if v < best { v } else { best })
+        .expect("values")
+}
+
+/// Python's `max(values)`: the first of the largest values.
+fn py_max(values: impl IntoIterator<Item = f64>) -> f64 {
+    values
+        .into_iter()
+        .reduce(|best, v| if v > best { v } else { best })
+        .expect("values")
+}
+
+/// Python's `_torus_knot_point(tube, a, b, u)`: the (a, b) torus knot in model
+/// space at `u` in [0, 1).
+fn torus_knot_point(tube: f64, (a, b): (f64, f64), u: f64) -> (f64, f64, f64) {
+    let t = TAU * u;
+    let ct = (b * t).m_cos();
+    (
+        (2.0 + tube * ct) * (a * t).m_cos(),
+        (2.0 + tube * ct) * (a * t).m_sin(),
+        tube * (b * t).m_sin(),
+    )
+}
+
+/// Python's `_turned(point, cosine, sine)`: a turn about the vertical axis.
+fn turned((x, y, z): (f64, f64, f64), cosine: f64, sine: f64) -> (f64, f64, f64) {
+    (x * cosine + z * sine, y, z * cosine - x * sine)
+}
+
+impl BuildScene for Torus {
+    /// `_torus_scene`: one of four knots, turned once about the vertical axis
+    /// per loop; the centre and scale come from the unturned knot and the depth
+    /// range from the turned one.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let tube = rng.uniform(0.6, 1.2);
+        let knot = *rng.choice(&[(2.0, 3.0), (3.0, 2.0), (3.0, 5.0), (5.0, 2.0)]);
+        let angle = loop_angle(params.phase, 1);
+        let (cosine, sine) = (angle.m_cos(), angle.m_sin());
+        let model: Vec<(f64, f64, f64)> = (0..2200)
+            .map(|i| torus_knot_point(tube, knot, f64::from(i) / 2200.0))
+            .collect();
+        let (x_lo, x_hi) = (
+            py_min(model.iter().map(|p| p.0)),
+            py_max(model.iter().map(|p| p.0)),
+        );
+        let (y_lo, y_hi) = (
+            py_min(model.iter().map(|p| p.1)),
+            py_max(model.iter().map(|p| p.1)),
+        );
+        let (cx, cy) = ((x_lo + x_hi) / 2.0, (y_lo + y_hi) / 2.0);
+        let zs: Vec<f64> = model.iter().map(|&p| turned(p, cosine, sine).2).collect();
+        let (z_lo, z_hi) = (py_min(zs.iter().copied()), py_max(zs.iter().copied()));
+        let span = py_max([x_hi - x_lo, y_hi - y_lo, 1e-9]);
+        let small = width.min(height) as f64;
+        let s = small * 0.85 / span;
+        let r_glow = (small * 0.016).max(2.0);
+        let (half_x, half_y) = (last_index(width) / 2.0, last_index(height) / 2.0);
+        let depth_span = (z_hi - z_lo).max(1e-9);
+        let screen = |u: f64| {
+            let (x, y, z) = turned(torus_knot_point(tube, knot, u), cosine, sine);
+            (
+                (x - cx) * s + half_x,
+                (cy - y) * s + half_y,
+                0.45 + 0.55 * (z - z_lo) / depth_span,
+            )
+        };
+        let points = sample_by_length(screen, (r_glow * 0.5).max(1.0), true);
+        Self { points, r_glow }
+    }
+}
+
 /// The most curves a `lissajous` scene may have; the Python builder draws 2 or 3.
 const LISSAJOUS_MAX_CURVES: usize = 8;
 
@@ -490,6 +611,53 @@ impl Style for Lissajous {
             }
             unit(v / (self.n_curves * 0.9))
         })
+    }
+}
+
+impl BuildScene for Lissajous {
+    /// `_lissajous_scene`: 2 or 3 curves whose two phase offsets turn in
+    /// opposite directions over a loop, each sampled as an open polyline.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height, phase) = (params.width, params.height, params.phase);
+        let mut rng = PyRandom::new(params.seed);
+        let small = width.min(height) as f64;
+        let n_curves = rng.randint(2, 3);
+        // (ax, ay, fx, fy, px, py, amp, sigma), drawn in that order.
+        let specs: Vec<[f64; 8]> = (0..n_curves)
+            .map(|_| {
+                [
+                    rng.uniform(0.25, 0.8),
+                    rng.uniform(0.25, 0.8),
+                    rng.uniform(1.0, 2.5),
+                    rng.uniform(2.0, 4.5),
+                    rng.uniform(0.0, ROUGH_TAU) + loop_angle(phase, -1),
+                    rng.uniform(0.0, ROUGH_TAU) + loop_angle(phase, 1),
+                    rng.uniform(0.5, 1.0),
+                    (small * rng.uniform(0.008, 0.02)).max(0.8),
+                ]
+            })
+            .collect();
+        let (cx, cy) = (last_index(width) / 2.0, last_index(height) / 2.0);
+        let curves = specs
+            .into_iter()
+            .map(|[ax, ay, fx, fy, px, py, amp, sigma]| {
+                let point_at = |u: f64| {
+                    let t = TAU * u;
+                    (
+                        cx + cx * ax * (fx * t + px).m_sin(),
+                        cy - cy * ay * (fy * t + py).m_sin(),
+                    )
+                };
+                let reach = (sigma * 3.0).ceil().max(2.0);
+                // Non-integer frequencies leave the curve open over one period.
+                let points = sample_by_length(point_at, (reach / 2.0).max(1.0), false);
+                (points, reach, sigma, amp)
+            })
+            .collect();
+        Self {
+            curves,
+            n_curves: n_curves as f64,
+        }
     }
 }
 

@@ -10,7 +10,7 @@ use crate::geometry::py_mod;
 /// Integer lattice hash in [0, 1]. Python ints are unbounded, but every step
 /// is masked to 32 bits, so wrapping 64-bit arithmetic gives the same result.
 #[inline]
-fn hash(x: i64, y: i64, seed: u32) -> f64 {
+pub(crate) fn hash(x: i64, y: i64, seed: u32) -> f64 {
     let n = (x as u64)
         .wrapping_mul(3_747_612)
         .wrapping_add((y as u64).wrapping_mul(6_682_691))

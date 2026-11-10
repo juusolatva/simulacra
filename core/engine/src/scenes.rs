@@ -8,7 +8,7 @@
 //! [`build_scene`] and (with the `json` feature) [`build_scene_json`].
 
 use crate::palette::Palette;
-use crate::styles::{Style, brush, drift, fields, quasar, shapes, space};
+use crate::styles::{Style, brush, drift, fields, mosaic, quasar, shapes, space, woodblock};
 #[cfg(feature = "json")]
 use crate::validate::{SceneError, check_loop_phase};
 
@@ -109,9 +109,11 @@ scene_builders! {
     "ink" => brush::Ink,
     "interference" => fields::Interference,
     "kaleidoscope" => fields::Kaleidoscope,
+    "lissajous" => brush::Lissajous,
     "lunar" => space::Lunar,
     "mandala" => shapes::Mandala,
     "mandelbrot" => fields::Mandelbrot,
+    "mosaic" => mosaic::Mosaic,
     "nebula" => fields::Nebula,
     "opart" => fields::Opart,
     "optics" => fields::Optics,
@@ -126,8 +128,10 @@ scene_builders! {
     "spiral" => fields::Spiral,
     "starburst" => fields::Starburst,
     "supernova" => space::Supernova,
+    "torus" => brush::Torus,
     "voronoi" => fields::Voronoi,
     "waves" => fields::Waves,
+    "woodblock" => woodblock::Woodblock,
 }
 
 #[cfg(feature = "json")]
@@ -191,7 +195,7 @@ mod tests {
             );
         }
         assert!(
-            super::build_scene_json("torus", 30, 20, 11, &palette, 0.4)
+            super::build_scene_json("marbling", 30, 20, 11, &palette, 0.4)
                 .unwrap()
                 .is_none()
         );
@@ -200,12 +204,21 @@ mod tests {
         }
     }
 
+    /// Builders whose scene grows with the canvas, as in Python: curve points
+    /// spaced about a pixel apart (`lissajous`), a height per column
+    /// (`woodblock`) and a value per tile (`mosaic`). Far beyond any renderable
+    /// canvas they need memory in proportion, so the huge-side test skips them.
+    const CANVAS_SIZED_SCENES: [&str; 3] = ["lissajous", "mosaic", "woodblock"];
+
     /// The diagonal-based builders square the sides exactly, so even sides far
     /// beyond any renderable canvas neither overflow nor wrap.
     #[test]
     fn huge_sides_do_not_overflow() {
         let palette = Palette::new(vec![(0, 0, 0), (255, 255, 255)]).unwrap();
-        for style in SCENE_BUILDERS {
+        for style in SCENE_BUILDERS
+            .into_iter()
+            .filter(|s| !CANVAS_SIZED_SCENES.contains(s))
+        {
             for (width, height) in [(usize::MAX, usize::MAX), (1 << 33, 3), (1, usize::MAX)] {
                 assert!(
                     build_scene(style, width, height, 2, &palette, 0.3).is_some(),
