@@ -46,7 +46,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Rust rewrite, Phase 3: scene validation in the engine (`validate.rs`): finite, bounded numbers, indices and lengths that fit, and a work limit per canvas; the checked `render()` and the Python adapter validate every scene | Done | PR #37 |
 | Rust rewrite, Phase 4 batch 1: freeze policy for ported styles; `BuildScene` and one `scene_builders!` list; Rust scenes compared with Python field by field (`_core.build_scene`, `RustSceneBuilderTests`); 19 builders ported (the per-pixel fields and `orbits`), 22 of 48 in all | Done | PR #38 |
 | Rust rewrite, Phase 4 batch 2: the geometry and object builders (12): the space styles with a shared `sky_stars`, `circuit`, `geo`, `mandala`, `prism`, `shard`, `quasar`, `cosmic`, `constellations` (`drift_stars`, `last_index`); 34 of 48 in all | Done | PR #39 |
-| Rust rewrite, Phase 4 batch 3: the remaining per-pixel fields (`contour`, `cymatics`, `opart`, `optics`) and the brush builders (`comet`, `ember`, `flowfield`, `ink`; `ink`'s `steps` is now a whole-number float, validated, since Python's int outgrows `i64` on huge sides); 42 of 48 in all | Done | — |
+| Rust rewrite, Phase 4 batch 3: the remaining per-pixel fields (`contour`, `cymatics`, `opart`, `optics`) and the brush builders (`comet`, `ember`, `flowfield`, `ink`; `ink`'s `steps` is now a whole-number float, validated, since Python's int outgrows `i64` on huge sides); 42 of 48 in all | Done | PR #40 |
 | Rust rewrite, Phase 3 onward: distribution (route, signing), the remaining scene builders, streaming encoders | In progress. `PLAN.md` holds the status and the checklists | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
