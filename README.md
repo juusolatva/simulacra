@@ -1,6 +1,11 @@
 # Simulacra
 
-Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. The script runs on the Python standard library alone, and an optional Rust core makes every style hundreds of times faster. A standalone binary that needs no Python is in preview for three styles (see [Standalone binary](#standalone-binary-preview)). It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
+[![Tests](https://github.com/juusolatva/simulacra/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/juusolatva/simulacra/actions/workflows/tests.yml)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=juusolatva_abstract-art&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=juusolatva_abstract-art)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=juusolatva_abstract-art&metric=coverage)](https://sonarcloud.io/summary/new_code?id=juusolatva_abstract-art)
+[![License: MIT](https://img.shields.io/github/license/juusolatva/simulacra)](LICENSE)
+
+Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. The script runs on the Python standard library alone, and an optional Rust core makes every style hundreds of times faster. A standalone binary that needs no Python is in preview: it renders every style as a still image (see [Standalone binary](#standalone-binary-preview)). It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
