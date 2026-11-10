@@ -1,7 +1,7 @@
 //! Scene builders ported from Python, so the engine can render a style on its
 //! own. Each matches the Python `_<style>_scene()` draw for draw (through
-//! [`PyRandom`](crate::PyRandom)); styles not ported yet return `None` and still
-//! need their scene from Python (through the adapter or a scene file).
+//! [`PyRandom`](crate::PyRandom)). Every style in [`STYLES`](crate::STYLES)
+//! has one; an unknown style name gives `None`.
 //!
 //! A ported style implements [`BuildScene`] on its scene struct and gets one
 //! line in `scene_builders!` below, which generates [`SCENE_BUILDERS`],
@@ -87,6 +87,7 @@ macro_rules! scene_builders {
 
 scene_builders! {
     "asteroids" => space::Asteroids,
+    "attractor" => brush::Attractor,
     "aurora" => fields::Aurora,
     "blackhole" => space::Blackhole,
     "blobs" => fields::Blobs,
@@ -113,6 +114,7 @@ scene_builders! {
     "lunar" => space::Lunar,
     "mandala" => shapes::Mandala,
     "mandelbrot" => fields::Mandelbrot,
+    "marbling" => fields::Marbling,
     "mosaic" => mosaic::Mosaic,
     "nebula" => fields::Nebula,
     "opart" => fields::Opart,
@@ -153,6 +155,10 @@ mod tests {
             let built = build_scene(style, 8, 6, 1, &palette, 0.0).is_some();
             assert_eq!(built, SCENE_BUILDERS.contains(&style), "{style}");
         }
+        // Every style is ported, so the engine renders all of them on its own.
+        let mut styles = STYLES;
+        styles.sort_unstable();
+        assert_eq!(SCENE_BUILDERS, styles);
     }
 
     #[test]
@@ -195,7 +201,7 @@ mod tests {
             );
         }
         assert!(
-            super::build_scene_json("marbling", 30, 20, 11, &palette, 0.4)
+            super::build_scene_json("no-such-style", 30, 20, 11, &palette, 0.4)
                 .unwrap()
                 .is_none()
         );

@@ -8,8 +8,8 @@ the `Libm` backends and the CPython `hypot` port; one registry
 (`for_each_style!`) lists the styles; scenes load from JSON (`serde`), and the
 `portable` fixtures (one committed scene per style with the SHA-256 of its
 render) pass in `cargo test -p simulacra_engine --features json,portable`
-without Python. Open in Phase 2: the scene builders' `tanh` and `pow` (with
-Phase 4). Phase 2b is done:
+without Python. The scene builders' `tanh` and `pow`, left open in Phase 2,
+came with Phase 4 (`Libm::m_tanh` and `m_powf`). Phase 2b is done:
 `simulacra_engine::PyRandom` reproduces CPython's `random.Random` for every
 helper the scene builders use. Phase 3 has started: the `simulacra` binary
 (`core/cli`) renders `blobs`, `mandelbrot` and `waves` to PNG without Python,
@@ -18,10 +18,10 @@ with scene builders ported to the engine, pixel-identical to `simulacra.py`
 fixtures on each target (`release-binaries.yml`), and the engine validates
 every scene before rendering it. Phase 3 has the distribution route, Windows
 signing and clean-machine smoke tests left, which wait for the first release.
-Phase 4 has started: style experimentation has stopped, ported styles are
-frozen in Python (see "Freeze policy"), batch 1 ported 19 more builders,
-batch 2 another 12, batch 3 another 8 and batch 4 another 4, so the binary
-renders 46 styles.
+Phase 4 is done: style experimentation has stopped, ported styles are frozen
+in Python (see "Freeze policy"), and batches 1 to 5 ported the remaining 45
+builders, so the binary renders all 48 styles (still images only until
+Phase 5).
 Phases 5 and 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
@@ -528,7 +528,8 @@ installed: `_render_native` builds every scene in Python, so without that
 step a Rust-only change would reach the binary but not Python users with the
 core. Without the core, `simulacra.py` keeps the style's old look (or refuses
 the style) until Phase 6. The first such change has to add all of this:
-`make_fixtures.py` builds its scenes in Python, `_render_native` has no Rust
+`make_fixtures.py` builds its scenes in Python (except for the styles in its
+`RUST_BUILT`, so far `attractor`), `_render_native` has no Rust
 builder path, and the comparisons cover every style in `NATIVE_STYLES` or
 `SCENE_BUILDERS`. This replaces the earlier ownership rule, which required
 every change to a ported Python builder to be mirrored in Rust in the same
@@ -689,6 +690,47 @@ Batch 4 (2026-11-10): the sampled and prepared scenes (`torus`, `lissajous`,
   0.00 to 0.02 s per style with a peak of 4.7 to 9.4 MB (`lissajous` keeps a
   distance buffer per curve); `simulacra.py` with the core took 0.07 to
   0.10 s and about 36 MB. The decoded pixels are identical.
+- No intentional visual change, so no contact sheet was needed.
+
+Batch 5 (2026-11-10): the complex preparation (`attractor`, `marbling`). All
+48 builders are ported, which meets the Phase 4 acceptance criterion.
+
+- `marbling` replays its ops in Python's order (eight drops, a comb, two
+  drops, a comb back), the drop index running on across both groups of
+  drops, and draws the background angle last.
+- `attractor` keeps a Rust copy of `_ATTRACTOR_TABLE` (256 entries, generated
+  from the Python table);
+  `test_rust_attractor_table_matches_python_in_both_orientations` finds a
+  seed for each of the 512 entries and orientations and compares the
+  parameters it picks. `points` is Python's exact
+  `min(6 * width * height, 24_000_000)`, with a saturating product.
+- Portable framing: the attractor's `mid` and `scale` come from the bounds
+  of a 3,000-step chaotic orbit, so on a portable core (the `libm` crate's
+  `sin` and `cos` against Python's glibc) they drift, by at most 0.070 and
+  2.3% over 24,000 scenes (4,000 seeds at 6 phases); the parameters stay
+  exact. `RustSceneBuilderTests` holds them to about twice that on a portable
+  core (`PORTABLE_ATTRACTOR_MID`, `PORTABLE_ATTRACTOR_SCALE`) and to exact
+  equality on the default core. The release binaries build this scene in Rust
+  with the `libm` crate, the same on every target, so `make_fixtures.py` now
+  takes the attractor's fixture scene from the Rust builder (`RUST_BUILT`);
+  only its `mid`, `scale` and hash changed. The freeze policy's "regenerate
+  its fixture from the Rust builder" step can use the same mechanism.
+- With every style ported, the tests that used an unported style use an
+  unknown name instead, and both `builders_cover_exactly_the_listed_styles`
+  and `test_ported_builders_are_native_styles` require a builder for every
+  style.
+- Checks: `RustSceneBuilderTests` (exact on the default core; on a portable
+  core `marbling` has no difference at all and `attractor` stays within the
+  bounds above), `StandaloneCliTests` over all 48 styles, the release check
+  (48 styles render their portable fixtures from Rust-built scenes) and the
+  slow native-versus-Python checks. On a portable core, Rust-built and
+  Python-built `marbling` scenes rendered the same pixels in all 200 cases
+  (5 sizes up to 640 × 480, 5 seeds, 2 palettes, 4 phases).
+- Performance at 640 × 480 (seed 3, phase 0.37), end to end: the binary took
+  0.08 s for `attractor` (its 1.8 million orbit steps are sequential) and
+  0.01 s for `marbling`, with a peak of 4.5 to 5.6 MB; `simulacra.py` with
+  the core took 0.12 and 0.08 s and about 36 MB. The decoded pixels are
+  identical.
 - No intentional visual change, so no contact sheet was needed.
 
 For each batch:
@@ -954,7 +996,8 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    release binaries for Linux and Windows checked against the fixtures, and
    scene validation in the engine. The distribution route and signing wait
    for the release.
-8. In progress: Phase 4, porting the scene builders. Style experimentation
-   has stopped and ported styles are frozen in Python (decided 2026-11-10,
-   see "Freeze policy"). Batches 1 to 4 are done (46 of 48 builders
-   ported). Next are `attractor` and `marbling`.
+8. Done: Phase 4, porting the scene builders. Style experimentation has
+   stopped and ported styles are frozen in Python (decided 2026-11-10, see
+   "Freeze policy"). Batches 1 to 5 ported every builder, so the standalone
+   binary renders all 48 styles. Phase 5 (animation and native encoding) is
+   next.

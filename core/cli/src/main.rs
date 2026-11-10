@@ -1,8 +1,8 @@
 //! `simulacra`: the standalone command-line tool, rendering without Python.
 //!
 //! The options, defaults and messages follow `simulacra.py`'s command line for
-//! still images. Only styles whose scene builder has been ported to Rust are
-//! available (`--list-styles`); animation output (APNG and GIF) comes later.
+//! still images, for every style (`--list-styles`); animation output (APNG and
+//! GIF) comes later.
 
 mod output;
 mod png;

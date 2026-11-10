@@ -358,7 +358,7 @@ Rebuild with the same `maturin develop` command after changing Rust code. On an 
 
 ## Standalone binary (preview)
 
-`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py` for still images and draws the same pixels, but so far for every style except `attractor` and `marbling`, whose scene generation has not been ported to Rust yet (`--list-styles` lists the 46 it renders). Animation and GIF output are not available yet.
+`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py` for still images and draws the same pixels, but for every style (`--list-styles`). Animation and GIF output are not available yet.
 
 ```bash
 cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli

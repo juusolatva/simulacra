@@ -1569,6 +1569,51 @@ pub struct Marbling {
     slide: f64,
 }
 
+/// Python's `_MARBLING_BANDS`: stripes per unit of the background.
+const MARBLING_BANDS: f64 = 7.0;
+
+impl BuildScene for Marbling {
+    /// `_marbling_scene`: eight ink drops, a comb, two more drops and a comb
+    /// back, applied in that order; the drops circle and the combs' strength
+    /// swings with the loop.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height, phase) = (params.width, params.height, params.phase);
+        let mut rng = PyRandom::new(params.seed);
+        let small = small_side(width, height);
+        let (half_x, half_y) = (width as f64 / small, height as f64 / small);
+        let mut ops = Vec::with_capacity(12);
+        let mut index = 0;
+        let mut drops = |rng: &mut PyRandom, ops: &mut Vec<_>, count: usize| {
+            for _ in 0..count {
+                let (dx, dy) = circle_offset(index, 0.05, phase);
+                let x = rng.uniform(-half_x, half_x) + dx;
+                let y = rng.uniform(-half_y, half_y) + dy;
+                let radius = rng.uniform(0.14, 0.4);
+                let ink = rng.uniform(0.0, 1.0);
+                ops.push((0.0, x, y, radius, ink, 0.0, 0.0));
+                index += 1;
+            }
+        };
+        let comb = |rng: &mut PyRandom, ops: &mut Vec<_>, sign: f64| {
+            let angle = rng.uniform(0.0, PI);
+            let spacing = rng.uniform(0.2, 0.4);
+            let offset = rng.uniform(0.0, spacing);
+            let strength = sign * rng.uniform(0.6, 1.0) * loop_angle(phase, 1).m_cos();
+            ops.push((1.0, angle, spacing, offset, strength, 0.0, 0.0));
+        };
+        drops(&mut rng, &mut ops, 8);
+        comb(&mut rng, &mut ops, 1.0);
+        drops(&mut rng, &mut ops, 2);
+        comb(&mut rng, &mut ops, -1.0);
+        Self {
+            ops,
+            bands: MARBLING_BANDS,
+            angle: rng.uniform(0.0, PI),
+            slide: 5.0 * py_mod(phase, 1.0),
+        }
+    }
+}
+
 impl Marbling {
     /// Undo the ops from last to first; `Some(ink)` when the point lies inside a drop.
     fn trace(&self, mut u: f64, mut v: f64) -> (f64, f64, Option<f64>) {
