@@ -313,6 +313,15 @@ fn scenes_that_would_stall_are_rejected() {
     let fixture = load("comet");
     assert_too_much_work(fixture.validate_edited(|s| s["comets"][0][3] = json!(1e12)));
     assert_too_much_work(fixture.validate_edited(|s| s["comets"][0][4] = json!(1e9)));
+    // A negative radius empties the stamps, but every step still runs.
+    assert_too_much_work(fixture.validate_edited(|s| {
+        s["comets"][0][3] = json!(1e12);
+        s["comets"][0][4] = json!(-1.0);
+    }));
+    let fixture = load("circuit");
+    assert_too_much_work(fixture.validate_edited(|s| {
+        s["traces"] = Value::Array(vec![json!([[], []]); 200_000]);
+    }));
     let fixture = load("attractor");
     assert_too_much_work(fixture.validate_edited(|s| s["points"] = json!(1_u64 << 40)));
     let fixture = load("mandelbrot");

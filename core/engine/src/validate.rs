@@ -238,6 +238,8 @@ tuple_numbers!(A, B, C, D, E, F);
 tuple_numbers!(A, B, C, D, E, F, G);
 tuple_numbers!(A, B, C, D, E, F, G, H);
 tuple_numbers!(A, B, C, D, E, F, G, H, I);
+tuple_numbers!(A, B, C, D, E, F, G, H, I, J);
+tuple_numbers!(A, B, C, D, E, F, G, H, I, J, K);
 tuple_numbers!(A, B, C, D, E, F, G, H, I, J, K, L);
 
 /// Checks the numbers of the named fields of a scene struct, using each

@@ -126,10 +126,12 @@ impl Style for Comet {
         check_numbers!(self, comets);
         let mut work = canvas.pixels();
         for &(_, _, _, speed, radius) in &self.comets {
-            // `steps` stamps, each a square of side 2 * reach + 1 (wrapping, not clipped).
+            // `steps` stamps, each a square of side 2 * reach + 1 (wrapping, not
+            // clipped). A step costs its libm calls even when the square is
+            // empty (a negative radius), so it counts on its own as well.
             let steps = (speed * 2.0).ceil().max(1.0);
             let side = (2.0 * (radius * 2.0).ceil() + 1.0).max(0.0);
-            work += SEQUENTIAL_WEIGHT * steps * side * side;
+            work += SEQUENTIAL_WEIGHT * steps * (1.0 + side * side);
         }
         Ok(work)
     }

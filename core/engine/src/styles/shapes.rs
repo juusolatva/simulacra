@@ -22,10 +22,11 @@ pub struct Circuit {
 impl Style for Circuit {
     fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
         check_numbers!(self, traces);
+        // Every trace costs work per pixel, even one without nodes or segments.
         let per_pixel: usize = self
             .traces
             .iter()
-            .map(|(nodes, segments)| nodes.len() + segments.len())
+            .map(|(nodes, segments)| 1 + nodes.len() + segments.len())
             .sum();
         Ok(canvas.per_pixel(per_pixel as f64))
     }
