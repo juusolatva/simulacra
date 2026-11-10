@@ -20,7 +20,8 @@ every scene before rendering it. Phase 3 has the distribution route, Windows
 signing and clean-machine smoke tests left, which wait for the first release.
 Phase 4 has started: style experimentation has stopped, ported styles are
 frozen in Python (see "Freeze policy"), batch 1 ported 19 more builders,
-batch 2 another 12 and batch 3 another 8, so the binary renders 42 styles.
+batch 2 another 12, batch 3 another 8 and batch 4 another 4, so the binary
+renders 46 styles.
 Phases 5 and 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
@@ -646,6 +647,47 @@ Batch 3 (2026-11-10): the remaining per-pixel fields (`contour`, `cymatics`,
   identical.
 - No intentional visual change, so no contact sheet was needed.
 
+Batch 4 (2026-11-10): the sampled and prepared scenes (`torus`, `lissajous`,
+`woodblock`, `mosaic`). 46 of the 48 builders are ported.
+
+- `torus` and `lissajous` share `sample_by_length`, the port of
+  `_sample_by_length`: the length of 512 coarse segments is summed with
+  `py_sum` (Python's `sum()` is compensated) from `py_hypot` distances.
+  `torus` takes its bounds with `py_min` and `py_max`, which keep Python's
+  first-of-equal choice. `lissajous`'s `reach` and `n_curves` are floats
+  holding Python's ints, as for `Petals.count`.
+- `woodblock`'s cliffs need `tanh`, so `Libm` gained `m_tanh` (the platform
+  libm by default, the `libm` crate under `portable`), and Clippy's message
+  for `f64::tanh` now points to it.
+- `mosaic` ports the regions and the ten tile patterns. Python's `//` and `%`
+  on ints are `div_euclid` and `rem_euclid` (every divisor is positive), and
+  the region, silhouette and twinkle seeds are Python's exact sums reduced
+  to 32 bits (`seed32` plus a wrapping add), all the noise and the hash
+  (`noise::hash`, now crate-visible) read of them.
+- `lissajous`, `woodblock` and `mosaic` build scenes that grow with the
+  canvas, as in Python: curve points about a pixel apart, a height per
+  column and a value per tile. The tile values take at most about 2.7 times
+  the frame's bytes, while the curve points and column heights grow with a
+  side alone, so they outweigh the frame only on thin canvases (under about
+  60 pixels across for `lissajous`, 19 for `woodblock`). The CLI's pixel limit
+  applies before any scene is built, but under `--no-limits` a side near
+  `u32::MAX` asks for memory in proportion. The huge-side tests (Rust's
+  `huge_sides_do_not_overflow` and `test_rust_scenes_match_python_at_huge_sizes`)
+  skip these three; Python could not build those scenes either.
+- Checks: `RustSceneBuilderTests` (exact on the default core; on a portable
+  core within the tolerance, largest difference 9.2e-15 of max(1, |value|) in
+  `woodblock`'s surfaces, none in `mosaic`), `StandaloneCliTests` over the 46
+  styles, the release check (46 styles render their portable fixtures from
+  Rust-built scenes) and the slow native-versus-Python checks. On a portable
+  core, Rust-built and Python-built scenes rendered the same pixels in all 800
+  cases for the 4 new styles (5 sizes up to 640 × 480, 5 seeds, 2 palettes,
+  4 phases).
+- Performance at 640 × 480 (seed 3, phase 0.37), end to end: the binary took
+  0.00 to 0.02 s per style with a peak of 4.7 to 9.4 MB (`lissajous` keeps a
+  distance buffer per curve); `simulacra.py` with the core took 0.07 to
+  0.10 s and about 36 MB. The decoded pixels are identical.
+- No intentional visual change, so no contact sheet was needed.
+
 For each batch:
 
 - [ ] Compare Python and Rust scene data before comparing rendered RGB: the
@@ -911,6 +953,5 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    for the release.
 8. In progress: Phase 4, porting the scene builders. Style experimentation
    has stopped and ported styles are frozen in Python (decided 2026-11-10,
-   see "Freeze policy"). Batches 1 to 3 are done (42 of 48 builders
-   ported). Next are the sampled and prepared scenes (`torus`, `lissajous`,
-   `woodblock`, `mosaic`), then `attractor` and `marbling`.
+   see "Freeze policy"). Batches 1 to 4 are done (46 of 48 builders
+   ported). Next are `attractor` and `marbling`.

@@ -11,7 +11,7 @@ disallowed-methods = [
     { path = "f64::cos", reason = "use Libm::m_cos (src/math.rs)" },
     { path = "f64::sin_cos", reason = "use Libm::m_sin and m_cos (src/math.rs)" },
     { path = "f64::tan", reason = "use Libm::m_tan (src/math.rs)" },
-    { path = "f64::tanh", reason = "add it to Libm (src/math.rs)" },
+    { path = "f64::tanh", reason = "use Libm::m_tanh (src/math.rs)" },
     { path = "f64::atan", reason = "use Libm::m_atan (src/math.rs)" },
     { path = "f64::atan2", reason = "use Libm::m_atan2 (src/math.rs)" },
     { path = "f64::powf", reason = "use Libm::m_powf (src/math.rs)" },
