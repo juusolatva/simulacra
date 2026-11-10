@@ -133,9 +133,10 @@ class Runner:
             # Copy the binary into the mounted directory; the image has no Rust,
             # no Python and nothing of the build environment.
             shutil.copy2(binary, workdir / binary.name)
+            # Write the image as the caller where there is a uid (not on Windows).
+            user = ["--user", f"{os.getuid()}:{os.getgid()}"] if hasattr(os, "getuid") else []
             self.command = [
-                "docker", "run", "--rm", "--network", "none",
-                "--user", f"{os.getuid()}:{os.getgid()}",
+                "docker", "run", "--rm", "--network", "none", *user,
                 "-v", f"{workdir}:/work", "-w", "/work",
                 container, f"/work/{binary.name}",
             ]
@@ -170,6 +171,14 @@ class Runner:
         return hashlib.sha256(rgb).hexdigest()
 
 
+def workload_key(name, workload):
+    return f"{name} " + " ".join(str(v) for v in workload if v is not None)
+
+
+def expected_keys(styles):
+    return {workload_key(name, workload) for name in styles for workload in WORKLOADS}
+
+
 def require_no_python(container):
     """The container image must not offer Python, or the check proves less."""
     probe = subprocess.run(
@@ -183,6 +192,8 @@ def require_no_python(container):
 
 def check(args):
     binary = Path(args.binary)
+    if not binary.is_file() and binary.with_suffix(".exe").is_file():
+        binary = binary.with_suffix(".exe")
     if not binary.is_file():
         raise SystemExit(f"{binary} is not a file")
     if args.container:
@@ -213,11 +224,11 @@ def check(args):
             hashes = {}
             for name in styles:
                 for workload in WORKLOADS:
-                    key = f"{name} " + " ".join(str(v) for v in workload if v is not None)
+                    key = workload_key(name, workload)
                     hashes[key] = runner.render(name, *workload)
                     print(f"workload {key}: {hashes[key]}")
             Path(args.hashes).write_text(
-                json.dumps({"target": args.target, "hashes": hashes}, indent=1) + "\n",
+                json.dumps({"target": args.target, "styles": styles, "hashes": hashes}, indent=1) + "\n",
                 encoding="utf-8",
             )
     print(f"{binary}: {len(styles)} styles match their portable fixtures")
@@ -227,6 +238,17 @@ def compare(args):
     reports = [json.loads(Path(p).read_text(encoding="utf-8")) for p in args.files]
     if len(reports) < 2:
         raise SystemExit("compare needs the hashes of at least two targets")
+    for path, report in zip(args.files, reports):
+        # Every report must hold every workload for its styles, so reports
+        # that all lack the same entries (or are all empty) cannot pass.
+        if not report.get("styles"):
+            raise SystemExit(f"{path}: no styles")
+        missing = expected_keys(report["styles"]) - report["hashes"].keys()
+        extra = report["hashes"].keys() - expected_keys(report["styles"])
+        if missing or extra:
+            raise SystemExit(
+                f"{path}: missing workloads {sorted(missing)}, unexpected {sorted(extra)}"
+            )
     reference = reports[0]
     differences = []
     for report in reports[1:]:
