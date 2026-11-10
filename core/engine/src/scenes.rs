@@ -9,6 +9,7 @@
 
 use crate::palette::Palette;
 use crate::styles::{Style, drift, fields};
+#[cfg(feature = "json")]
 use crate::validate::{SceneError, check_loop_phase};
 
 /// What a scene builder receives: the arguments of
