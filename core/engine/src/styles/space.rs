@@ -3,12 +3,16 @@
 //! Distances use `sqrt(dx * dx + dy * dy)` on both sides so results stay bit-identical.
 
 use crate::math::Libm;
+use std::f64::consts::{PI, TAU};
 
-use super::{Style, center, unit};
+use super::{Style, center, loop_angle, small_side, unit};
+use crate::geometry::py_mod;
 use crate::noise::{contrast, fbm, fbm_loop, polar_noise};
 use crate::palette::Palette;
-use crate::validate::{Canvas, SceneError, check_loop_phase, check_numbers};
+use crate::random::PyRandom;
 use crate::raster::shade;
+use crate::scenes::{BuildScene, SceneParams};
+use crate::validate::{Canvas, SceneError, check_loop_phase, check_numbers};
 
 /// `(x, y, sigma, brightness)`
 type Star = (f64, f64, f64, f64);
@@ -110,7 +114,8 @@ impl Style for Lunar {
             let ground = self.height(u, v);
             let gx = (self.height(u + LUNAR_EPS, v) - ground) / LUNAR_EPS;
             let gy = (self.height(u, v + LUNAR_EPS) - ground) / LUNAR_EPS;
-            let diffuse = (light.5 - gx * light.3 - gy * light.4) / (gx * gx + gy * gy + 1.0).sqrt();
+            let diffuse =
+                (light.5 - gx * light.3 - gy * light.4) / (gx * gx + gy * gy + 1.0).sqrt();
             let lit = diffuse.max(0.0) / light.5;
             let sun = if lit > 0.0 {
                 self.shadow(u, v, ground)
@@ -315,5 +320,156 @@ impl Style for Supernova {
                 + 0.8 * star_glow(u, v, &self.stars);
             unit(1.0 - (-1.3 * energy).m_exp())
         })
+    }
+}
+
+/// Python's `width / max(1.0, min(width, height))` and the same for the
+/// height: half the canvas in view units, whose short side spans 2.
+#[inline]
+fn half_extents(width: usize, height: usize) -> (f64, f64) {
+    let small = small_side(width, height);
+    (width as f64 / small, height as f64 / small)
+}
+
+/// Python's `_sky_stars(rng, count, half_x, half_y)`.
+fn sky_stars(rng: &mut PyRandom, count: usize, half_x: f64, half_y: f64) -> Vec<Star> {
+    (0..count)
+        .map(|_| {
+            (
+                rng.uniform(-half_x, half_x),
+                rng.uniform(-half_y, half_y),
+                rng.uniform(0.004, 0.011),
+                rng.uniform(0.35, 1.0),
+            )
+        })
+        .collect()
+}
+
+const LUNAR_CRATERS: usize = 36;
+
+impl BuildScene for Lunar {
+    /// `_lunar_scene`: 36 craters and a sun whose azimuth swings over the loop.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let (half_x, half_y) = half_extents(params.width, params.height);
+        let craters = (0..LUNAR_CRATERS)
+            .map(|_| {
+                // Python's `x ** 3` on a float is libm pow.
+                let radius = 0.025 + 0.3 * rng.random().m_powf(3.0);
+                let x = rng.uniform(-half_x, half_x);
+                let y = rng.uniform(-half_y, half_y);
+                let depth = rng.uniform(0.1, 0.22);
+                (x, y, radius, depth, if radius > 0.15 { 1.0 } else { 0.0 })
+            })
+            .collect();
+        let azimuth = rng.uniform(0.0, TAU) + 0.9 * loop_angle(params.phase, 1).m_sin();
+        let elevation = rng.uniform(0.2, 0.38);
+        let flat = elevation.m_cos();
+        Self {
+            craters,
+            light: (
+                azimuth.m_cos(),
+                azimuth.m_sin(),
+                elevation.m_tan(),
+                flat * azimuth.m_cos(),
+                flat * azimuth.m_sin(),
+                elevation.m_sin(),
+            ),
+        }
+    }
+}
+
+const ASTEROID_COUNT: usize = 80;
+
+impl BuildScene for Asteroids {
+    /// `_asteroids_scene`: a tilted belt of 80 rocks drifting a whole number of
+    /// laps per loop, sorted nearest (largest `fade`) first, over 90 stars.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let phase = params.phase;
+        let mut rng = PyRandom::new(params.seed);
+        let (half_x, half_y) = half_extents(params.width, params.height);
+        let tilt = rng.uniform(-0.6, 0.6);
+        let (cos_t, sin_t) = (tilt.m_cos(), tilt.m_sin());
+        let span = 2.0 * ((half_x * half_x + half_y * half_y).sqrt() + 0.3);
+        let sun = rng.uniform(0.0, TAU);
+        let stars = sky_stars(&mut rng, 90, half_x, half_y);
+        let mut rocks: Vec<Rock> = (0..ASTEROID_COUNT)
+            .map(|_| {
+                let depth = rng.random();
+                let lap = rng.random();
+                let across = (rng.random() + rng.random() + rng.random() - 1.5) * 0.7;
+                let radius = 0.03 + 0.15 * depth * depth * (0.4 + 0.6 * rng.random());
+                let laps = if depth > 0.6 { 2.0 } else { 1.0 };
+                let along = (py_mod(lap + laps * py_mod(phase, 1.0), 1.0) - 0.5) * span;
+                let turns = if lap > 0.5 { 1 } else { -1 };
+                (
+                    along * cos_t - across * sin_t,
+                    along * sin_t + across * cos_t,
+                    radius,
+                    rng.uniform(0.0, TAU) + loop_angle(phase, turns),
+                    rng.uniform(0.04, 0.16),
+                    rng.uniform(0.0, TAU),
+                    rng.uniform(0.03, 0.12),
+                    rng.uniform(0.0, TAU),
+                    rng.uniform(0.02, 0.08),
+                    rng.uniform(0.0, TAU),
+                    0.45 + 0.55 * depth,
+                    rng.uniform(0.0, TAU),
+                )
+            })
+            .collect();
+        // Python's stable `sort(key=lambda rock: -rock[10])`; fade is finite.
+        rocks.sort_by(|a, b| (-a.10).total_cmp(&-b.10));
+        Self {
+            rocks,
+            stars,
+            belt: (cos_t, sin_t),
+            light: (0.8 * sun.m_cos(), 0.8 * sun.m_sin(), 0.6),
+        }
+    }
+}
+
+impl BuildScene for Blackhole {
+    /// `_blackhole_scene`: horizon, tilted and rolled disk turning two laps per
+    /// loop, and 140 stars.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let mut rng = PyRandom::new(params.seed);
+        let (half_x, half_y) = half_extents(params.width, params.height);
+        let roll = rng.uniform(-0.45, 0.45);
+        let center = (rng.uniform(-0.12, 0.12), rng.uniform(-0.12, 0.12));
+        let radius = rng.uniform(0.17, 0.24);
+        let tilt = rng.uniform(0.16, 0.3);
+        let arms = rng.randint(2, 5) as f64;
+        let spin = rng.uniform(0.0, TAU) - loop_angle(params.phase, 2);
+        Self {
+            center,
+            radius,
+            tilt,
+            roll: (roll.m_cos(), roll.m_sin()),
+            arms,
+            spin,
+            stars: sky_stars(&mut rng, 140, half_x, half_y),
+        }
+    }
+}
+
+impl BuildScene for Supernova {
+    /// `_supernova_scene`: a breathing shell, a pulsing core with turned
+    /// diffraction spikes, looping filament noise and 110 stars.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let phase = params.phase;
+        let mut rng = PyRandom::new(params.seed);
+        let (half_x, half_y) = half_extents(params.width, params.height);
+        let center = (rng.uniform(-0.12, 0.12), rng.uniform(-0.12, 0.12));
+        let radius = rng.uniform(0.5, 0.68) * (1.0 + 0.06 * loop_angle(phase, 1).m_sin());
+        let spike = rng.uniform(0.0, PI / 2.0);
+        Self {
+            center,
+            radius,
+            spike: (spike.m_cos(), spike.m_sin()),
+            pulse: 1.0 + 0.3 * loop_angle(phase, 1).m_cos(),
+            phase,
+            stars: sky_stars(&mut rng, 110, half_x, half_y),
+        }
     }
 }

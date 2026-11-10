@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-`simulacra.py` is a generative art tool (Simulacra, formerly Abstract Art) that draws abstract patterns and stylized representations of real phenomena: 48 styles, 24 palettes, PNG, APNG and GIF writers and a CLI. `test_simulacra.py` holds the `unittest` suite and `bench_simulacra.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is a Cargo workspace: `engine` (the renderer, usable without Python), `py` (the optional `simulacra_core` extension, which renders all 48 styles natively for `simulacra.py`) and `cli` (the standalone `simulacra` binary, in preview for the 22 styles whose scene builders are ported to Rust, `SCENE_BUILDERS`). The Rust rewrite toward a Python-free application is tracked in `PLAN.md`: Phases 1, 2 and 2b are done, Phase 3 waits only on release work, and Phase 4 (porting scene builders) is in progress. Style experimentation has stopped: the Python code of a ported style is frozen (see Conventions). Third-party dependencies are allowed; the standard-library-only rule has been dropped.
+`simulacra.py` is a generative art tool (Simulacra, formerly Abstract Art) that draws abstract patterns and stylized representations of real phenomena: 48 styles, 24 palettes, PNG, APNG and GIF writers and a CLI. `test_simulacra.py` holds the `unittest` suite and `bench_simulacra.py` the benchmark. The pure-Python module needs only the standard library and stays usable on its own as the reference implementation. `core/` is a Cargo workspace: `engine` (the renderer, usable without Python), `py` (the optional `simulacra_core` extension, which renders all 48 styles natively for `simulacra.py`) and `cli` (the standalone `simulacra` binary, in preview for the 34 styles whose scene builders are ported to Rust, `SCENE_BUILDERS`). The Rust rewrite toward a Python-free application is tracked in `PLAN.md`: Phases 1, 2 and 2b are done, Phase 3 waits only on release work, and Phase 4 (porting scene builders) is in progress. Style experimentation has stopped: the Python code of a ported style is frozen (see Conventions). Third-party dependencies are allowed; the standard-library-only rule has been dropped.
 
 ## Progress
 
@@ -45,6 +45,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Rust rewrite, Phase 3: test release binaries for Linux x86_64 and aarch64 and Windows x86_64 (`portable`), checked against the fixtures on each target (on Linux in a container without Python) and compared across targets | Done | PR #36 |
 | Rust rewrite, Phase 3: scene validation in the engine (`validate.rs`): finite, bounded numbers, indices and lengths that fit, and a work limit per canvas; the checked `render()` and the Python adapter validate every scene | Done | PR #37 |
 | Rust rewrite, Phase 4 batch 1: freeze policy for ported styles; `BuildScene` and one `scene_builders!` list; Rust scenes compared with Python field by field (`_core.build_scene`, `RustSceneBuilderTests`); 19 builders ported (the per-pixel fields and `orbits`), 22 of 48 in all | Done | PR #38 |
+| Rust rewrite, Phase 4 batch 2: the geometry and object builders (12): the space styles with a shared `sky_stars`, `circuit`, `geo`, `mandala`, `prism`, `shard`, `quasar`, `cosmic`, `constellations` (`drift_stars`, `last_index`); 34 of 48 in all | Done | PR #39 |
 | Rust rewrite, Phase 3 onward: distribution (route, signing), the remaining scene builders, streaming encoders | In progress. `PLAN.md` holds the status and the checklists | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
@@ -123,9 +124,11 @@ Do not commit generated images.
 - **Keep docs in sync:** when adding or renaming a style, update `STYLES`, the module docstring's style list, the README style table and, if relevant, the tests. A new native style also needs a `portable` fixture (`make_fixtures.py`), a line in `for_each_style!` and a `validate` (see Scene validation). A new built-in palette goes into both `PALETTES` and `core/engine/src/palettes.rs` (`test_native_palettes_match_python`). **Freeze:** a style whose scene builder is ported to Rust (`SCENE_BUILDERS`) is frozen in Python: do not edit its Python builder or renderer. A deliberate change to it goes into Rust only, and the same PR takes the style out of the Python comparisons, regenerates its fixture from the Rust builder and makes `simulacra.py` render the style from the Rust builder when the core is installed (`_render_native` builds every scene in Python, so otherwise Python users with the core keep the old look); see PLAN.md, "Freeze policy" (that path does not exist yet). An accidental edit to a frozen Python builder fails `RustSceneBuilderTests` (and `StandaloneCliTests`); an edit to a frozen Python renderer fails `test_native_styles_match_python_exactly` (native core against pure Python), not the scene, CLI or fixture tests. **Porting a builder:** implement `BuildScene` next to the scene struct, add it to `scene_builders!`, and run `RustSceneBuilderTests` and the CLI tests; the release check and the fixture tests pick the style up from `SCENE_BUILDERS`.
 - **New crate versions:** pin releases at least two weeks old (check the crates.io release date; pin in `Cargo.lock` with `cargo update -p <crate> --precise <version>` when a newer release is too fresh), and look up unfamiliar transitive crates before committing the lockfile.
 
-## SonarQube triage notes
+## SonarQube and CodeQL triage notes
 
 Project key: `juusolatva_abstract-art`.
+
+- **CodeQL `py/overly-permissive-file` (`os.open(..., 0o666)` in `_create_temporary`):** false positive. `0o666` is the mode `open()` itself passes; the kernel removes the umask bits, so the file gets exactly the permissions of a normal `open(path, "wb")` (0o644 under the usual umask 0o022), which `test_writers_use_default_file_permissions` checks. A fixed stricter mode such as 0o644 would override a user's umask (dropping group write under 0o002), and reading the umask needs `os.umask()`, which is process-wide (see Writers). `core/cli/src/output.rs` makes the same choice. Dismiss the alert as a false positive rather than changing the mode.
 
 - **S2245 (pseudorandom generator):** false positive. Seeded `random.Random` is used deliberately for reproducible art.
 - **S5863 in the determinism test:** false positive. The two sides are separate renders that must be equal.
@@ -139,7 +142,7 @@ Project key: `juusolatva_abstract-art`.
 
 ## Known issues and follow-ups
 
-In progress: port the remaining scene builders so the standalone binary covers every style (PLAN.md Phase 4; 22 of 48 are ported, still images only, and no animation or GIF output until Phase 5; the geometry and object batch is next). Open ideas, none started: stream animation frames to the writers instead of holding them all in memory (PLAN.md Phase 5); collect Rust coverage (PLAN.md Phase 6); animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
+In progress: port the remaining scene builders so the standalone binary covers every style (PLAN.md Phase 4; 34 of 48 are ported, still images only, and no animation or GIF output until Phase 5; the remaining per-pixel fields and the brush builders are next). Open ideas, none started: stream animation frames to the writers instead of holding them all in memory (PLAN.md Phase 5); collect Rust coverage (PLAN.md Phase 6); animate the per-ring turbulence in `quasar` and `mandala`, which needs the Rust noise to take a phase.
 
 ### Performance
 

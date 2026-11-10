@@ -4,12 +4,15 @@
 //! `_quasar_scene()` so both implementations share the same random layout.
 
 use crate::math::{Libm, py_hypot};
+use std::f64::consts::PI;
 
-use super::Style;
+use super::{Style, center, loop_angle};
 use crate::noise::{fbm, polar_noise};
 use crate::palette::Palette;
-use crate::validate::{Canvas, SceneError, check_numbers};
+use crate::random::PyRandom;
 use crate::raster::shade;
+use crate::scenes::{BuildScene, SceneParams};
+use crate::validate::{Canvas, SceneError, check_numbers};
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -113,5 +116,48 @@ impl Style for Quasar {
 
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| self.value(x, y, seed))
+    }
+}
+
+/// Python's `seed + int(ro * 10.0)` reduced by `_seed32`. `ro * 10.0` can
+/// exceed `i64` at huge sizes, so the truncated value is reduced modulo 2**32
+/// first (float `%` is exact), which leaves the low 32 bits of the sum
+/// unchanged.
+fn orbit_seed(seed: i64, ro: f64) -> u32 {
+    let offset = ((ro * 10.0).trunc() % 4_294_967_296.0) as i64;
+    seed.wrapping_add(offset) as u32
+}
+
+impl BuildScene for Quasar {
+    /// `_quasar_native_scene`: the jets sweep once per loop and their beaming
+    /// swings; orbit radii are sorted and each gets its turbulence seed.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height, phase) = (params.width, params.height, params.phase);
+        let small = width.min(height) as f64;
+        let mut rng = PyRandom::new(params.seed);
+        let beta = rng.uniform(0.55, 0.9) + 0.08 * loop_angle(phase, 1).m_sin();
+        let spin = rng.uniform(0.0, 2.0 * PI) + loop_angle(phase, 1);
+        let r_shadow = (small * rng.uniform(0.05, 0.11)).max(1.5);
+        let r_outer = small * rng.uniform(1.4, 3.2);
+        let jet_half_angle = rng.uniform(0.15, 0.3);
+        let jet_len = rng.uniform(small * 1.0, small * 2.2);
+        let count = rng.randint(5, 8);
+        let mut orbits: Vec<f64> = (0..count)
+            .map(|_| rng.uniform(r_shadow * 1.25, r_outer))
+            .collect();
+        orbits.sort_by(f64::total_cmp);
+        Self {
+            center: center(width, height),
+            beta,
+            r_shadow,
+            r_outer,
+            jet_axis: (spin.m_cos(), spin.m_sin()),
+            jet_half_angle,
+            jet_len,
+            orbits: orbits
+                .into_iter()
+                .map(|ro| (ro, orbit_seed(params.seed, ro)))
+                .collect(),
+        }
     }
 }

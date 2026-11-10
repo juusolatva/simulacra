@@ -19,8 +19,9 @@ fixtures on each target (`release-binaries.yml`), and the engine validates
 every scene before rendering it. Phase 3 has the distribution route, Windows
 signing and clean-machine smoke tests left, which wait for the first release.
 Phase 4 has started: style experimentation has stopped, ported styles are
-frozen in Python (see "Freeze policy"), and batch 1 ported 19 more builders,
-so the binary renders 22 styles. Phases 5 and 6 have not started.
+frozen in Python (see "Freeze policy"), batch 1 ported 19 more builders and
+batch 2 another 12, so the binary renders 34 styles. Phases 5 and 6 have not
+started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -582,6 +583,42 @@ that depends on the palette (`randrange(n_stops)`). With `blobs`,
   in Python).
 - No intentional visual change, so no contact sheet was needed.
 
+Batch 2 (2026-11-10): the geometry and object scenes. The four space styles
+(`asteroids`, `blackhole`, `lunar`, `supernova`) share a Rust `sky_stars`
+(Python's `_sky_stars`); then `circuit`, `geo`, `mandala`, `prism` and
+`shard` in `shapes.rs`, `quasar`, `cosmic` and `constellations`. 34 of the
+48 builders are ported.
+
+- Shared pieces: `drift_stars` (Python's `_drift_stars`, for `cosmic` and
+  `constellations`) and `last_index` (Python's `width - 1` as a float,
+  subtracted before rounding) in `styles/mod.rs`; `constellations` uses
+  `fields::diagonal` for its exact `sqrt(width * width + height * height)`.
+- Ordering: `asteroids` and `mandala` sort with Rust's stable `sort_by`, as
+  Python's `sort` is stable (rocks by `-fade`, rings by radius), and `quasar`
+  sorts its orbit radii. `prism` places every gem before any gets its
+  layers, and a layer below one pixel still makes its four draws before it is
+  skipped. `shard` turns points with `turned_about`, which adds the offset to
+  the point so phase 0 is exact. `constellations` chooses pairs from the
+  starting positions and measures them again after the drift.
+- Quasar's ring seeds: Python's `_seed32(seed + int(ro * 10.0))`. At huge
+  canvas sizes `ro * 10.0` exceeds `i64`, so Rust reduces the truncated value
+  modulo 2**32 with float `%` (exact) before a wrapping add, which leaves the
+  low 32 bits unchanged; `test_rust_scenes_match_python_at_huge_sizes`
+  covers it.
+- Checks: `RustSceneBuilderTests` (exact on the default core; on a portable
+  core within the tolerance, largest difference 2.2e-14 of max(1, |value|) in
+  `mandala`'s glyph positions), `StandaloneCliTests` over the 34 styles, the
+  release check (34 styles render their portable fixtures from Rust-built
+  scenes) and the slow native-versus-Python checks. On a portable core,
+  Rust-built and Python-built scenes rendered the same pixels in all 2400
+  cases for the 12 new styles (5 sizes up to 640 × 480, 5 seeds, 2 palettes,
+  4 phases).
+- Performance at 640 × 480 (seed 3, phase 0.37), end to end: the binary took
+  0.01 to 0.07 s per style (`lunar` slowest) with a peak of 4.6 to 6.7 MB;
+  `simulacra.py` with the core took 0.06 to 0.12 s and about 36 MB. The PNG
+  files differ only in compression; the decoded pixels are identical.
+- No intentional visual change, so no contact sheet was needed.
+
 For each batch:
 
 - [ ] Compare Python and Rust scene data before comparing rendered RGB: the
@@ -749,7 +786,8 @@ circle offsets (`cos(angle) - cos(start)`), plane-wave directions in
 difference over the test grid was 1.8e-15 of max(1, |value|), in `orbits`. Rendering
 Rust-built against Python-built scenes on a `portable` core over 200 cases
 per style (5 sizes up to 640 × 480, 5 seeds, 2 palettes, 4 phases) changed no
-pixel in any of the 22 ported styles, and every Rust-built fixture scene
+pixel in any of the 22 styles ported by then (batch 2 repeated the check for
+its 12 styles; see above), and every Rust-built fixture scene
 renders the recorded hash. `RustSceneBuilderTests` therefore compares scenes
 exactly on the default core and within 1e-12 of max(1, |value|) on a
 portable one.
@@ -846,7 +884,8 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    for the release.
 8. In progress: Phase 4, porting the scene builders. Style experimentation
    has stopped and ported styles are frozen in Python (decided 2026-11-10,
-   see "Freeze policy"). Batch 1 is done (22 of 48 builders ported). Next is
-   the geometry and object batch (`geo`, `prism`, `shard`, `circuit`,
-   `cosmic`, `constellations`, the space styles and their shared stars), then
-   the sampled and prepared scenes, then `attractor`.
+   see "Freeze policy"). Batches 1 and 2 are done (34 of 48 builders
+   ported). Next are the remaining per-pixel fields (`contour`, `cymatics`,
+   `opart`, `optics`) and the brush builders (`comet`, `ember`, `flowfield`,
+   `ink`), then the sampled and prepared scenes (`torus`, `lissajous`,
+   `woodblock`, `mosaic`), then `attractor` and `marbling`.

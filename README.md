@@ -358,7 +358,7 @@ Rebuild with the same `maturin develop` command after changing Rust code. On an 
 
 ## Standalone binary (preview)
 
-`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py` for still images and draws the same pixels, but so far only for the 22 styles whose scene generation has been ported to Rust (`--list-styles`): `aurora`, `blobs`, `bloom`, `cosmos`, `crystal`, `drift`, `galaxy`, `gems`, `horizon`, `interference`, `kaleidoscope`, `mandelbrot`, `nebula`, `orbits`, `petals`, `pinwheel`, `plasma`, `rings`, `spiral`, `starburst`, `voronoi` and `waves`. Animation and GIF output are not available yet.
+`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py` for still images and draws the same pixels, but so far only for the 34 styles whose scene generation has been ported to Rust (`--list-styles`): `asteroids`, `aurora`, `blackhole`, `blobs`, `bloom`, `circuit`, `constellations`, `cosmic`, `cosmos`, `crystal`, `drift`, `galaxy`, `gems`, `geo`, `horizon`, `interference`, `kaleidoscope`, `lunar`, `mandala`, `mandelbrot`, `nebula`, `orbits`, `petals`, `pinwheel`, `plasma`, `prism`, `quasar`, `rings`, `shard`, `spiral`, `starburst`, `supernova`, `voronoi` and `waves`. Animation and GIF output are not available yet.
 
 ```bash
 cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli

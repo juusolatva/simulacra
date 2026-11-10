@@ -6,7 +6,8 @@ use std::f64::consts::{PI, TAU};
 use rayon::prelude::*;
 
 use super::{
-    ROUGH_TAU, Style, center, circle_offset, gaussian, golden_start, loop_angle, small_side, unit,
+    ROUGH_TAU, Style, center, circle_offset, drift_stars, gaussian, golden_start, loop_angle,
+    small_side, unit,
 };
 use crate::geometry::py_mod;
 use crate::geometry::py_sum;
@@ -20,7 +21,7 @@ use crate::validate::{Canvas, SceneError, check_index, check_loop_phase, check_n
 /// Python's `math.sqrt(width * width + height * height)`: the integers are
 /// squared and added exactly and rounded to a float once, as Python converts
 /// its unbounded int (round half to even).
-fn diagonal(width: usize, height: usize) -> f64 {
+pub(crate) fn diagonal(width: usize, height: usize) -> f64 {
     let (w, h) = (width as u128, height as u128);
     // Each square fits in u128 (a usize has at most 64 bits); their sum can
     // need 129 bits.
@@ -1497,6 +1498,35 @@ impl Style for Marbling {
             // (2 * band) mod 5 without overflowing for a band near the i64 limits.
             0.1 + 0.8 * ((band.rem_euclid(5) * 2).rem_euclid(5) as f64) / 4.0
         })
+    }
+}
+
+impl BuildScene for Cosmic {
+    /// `_cosmic_scene`: 40 to 90 drifting, twinkling stars and an arm that
+    /// turns once per loop.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (w, h) = (params.width as f64, params.height as f64);
+        let mut rng = PyRandom::new(params.seed);
+        let count = rng.randint(40, 90);
+        let stars = (0..count)
+            .map(|_| {
+                (
+                    rng.uniform(0.0, w),
+                    rng.uniform(0.0, h),
+                    rng.uniform(0.2, 1.2),
+                    rng.uniform(0.4, 1.0),
+                )
+            })
+            .collect();
+        let small = small_side(params.width, params.height);
+        let arm_r = rng.uniform(small * 0.5, small * 0.8);
+        let arm_ang = rng.uniform(0.0, 2.0 * PI);
+        Self {
+            stars: drift_stars(stars, 0.02 * small, params.phase),
+            arm_r,
+            arm_ang: arm_ang + loop_angle(params.phase, 1),
+            arm_w: rng.uniform(0.4, 1.0),
+        }
     }
 }
 
