@@ -9,6 +9,7 @@ use super::{Style, center, gaussian, loop_angle, small_side, unit};
 use crate::geometry::py_mod;
 use crate::noise::{contrast, fbm, fbm_loop};
 use crate::palette::Palette;
+use crate::validate::{Canvas, SceneError, check_index, check_loop_phase, check_numbers};
 use crate::random::PyRandom;
 use crate::raster::{shade, shade_rgb};
 
@@ -27,6 +28,11 @@ impl Blobs {
 }
 
 impl Style for Blobs {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_loop_phase(self.phase)?;
+        Ok(canvas.per_pixel(0.0))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let k = 40.0 / width.max(height) as f64;
         shade(width, height, palette, |x, y| {
@@ -65,6 +71,11 @@ impl Waves {
 }
 
 impl Style for Waves {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, layers);
+        Ok(canvas.per_pixel(self.layers.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let size = width.max(height) as f64;
         shade(width, height, palette, |x, y| {
@@ -87,6 +98,11 @@ pub struct Plasma {
 }
 
 impl Style for Plasma {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, layers);
+        Ok(canvas.per_pixel(self.layers.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
@@ -107,6 +123,11 @@ pub struct Interference {
 }
 
 impl Style for Interference {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, layers);
+        Ok(canvas.per_pixel(self.layers.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
@@ -129,6 +150,11 @@ pub struct Kaleidoscope {
 }
 
 impl Style for Kaleidoscope {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, phase);
+        Ok(canvas.per_pixel(0.0))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
@@ -157,6 +183,12 @@ pub struct Pinwheel {
 }
 
 impl Style for Pinwheel {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, twist, spin);
+        check_loop_phase(self.phase)?;
+        Ok(canvas.per_pixel(0.0))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let (half_w, half_h) = (width as f64 / 2.0, height as f64 / 2.0);
         let max_r = (half_w * half_w + half_h * half_h).sqrt() * 1.05;
@@ -190,6 +222,11 @@ pub struct Galaxy {
 }
 
 impl Style for Galaxy {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, bulge_r, bulge_amp, arms);
+        Ok(canvas.per_pixel(self.arms.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let max_r = py_hypot(cx, cy).max(1.0);
@@ -221,6 +258,12 @@ pub struct Bloom {
 }
 
 impl Style for Bloom {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, blooms);
+        check_loop_phase(self.phase)?;
+        Ok(canvas.per_pixel(self.blooms.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
@@ -246,6 +289,12 @@ pub struct Nebula {
 }
 
 impl Style for Nebula {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, clouds, stars);
+        check_loop_phase(self.phase)?;
+        Ok(canvas.per_pixel(self.clouds.len() as f64 + self.stars.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let noise_k = 24.0 / width.max(height) as f64;
         shade(width, height, palette, |x, y| {
@@ -279,6 +328,14 @@ pub struct Orbits {
 }
 
 impl Style for Orbits {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, stars, rings);
+        for &(_, stop) in &self.rings {
+            check_index("rings (palette stop)", stop, canvas.stops)?;
+        }
+        Ok(canvas.per_pixel((self.stars.len() + self.rings.len()) as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = (width as f64 / 2.0, height as f64 / 2.0);
         shade_rgb(width, height, |x, y| {
@@ -314,6 +371,11 @@ pub struct Cosmic {
 }
 
 impl Style for Cosmic {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, stars, arm_r, arm_ang, arm_w);
+        Ok(canvas.per_pixel(self.stars.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let small = small_side(width, height);
         let (ox, oy) = (width as f64 / 2.0, height as f64 / 2.0);
@@ -350,6 +412,11 @@ pub struct Rings {
 }
 
 impl Style for Rings {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, rings);
+        Ok(canvas.per_pixel(self.rings.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         shade(width, height, palette, |x, y| {
@@ -376,6 +443,11 @@ pub struct Starburst {
 }
 
 impl Style for Starburst {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, rays, phase);
+        Ok(canvas.per_pixel(0.0))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
@@ -399,6 +471,11 @@ pub struct Spiral {
 }
 
 impl Style for Spiral {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, arms);
+        Ok(canvas.per_pixel(self.arms.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let max_r = py_hypot(cx, cy).max(1.0);
@@ -427,6 +504,11 @@ pub struct Petals {
 }
 
 impl Style for Petals {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, count, length, phase);
+        Ok(canvas.per_pixel(0.0))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
@@ -451,6 +533,11 @@ pub struct Aurora {
 }
 
 impl Style for Aurora {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, ribbons);
+        Ok(canvas.per_pixel(self.ribbons.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
@@ -475,6 +562,11 @@ pub struct Gems {
 }
 
 impl Style for Gems {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, gems);
+        Ok(canvas.per_pixel(self.gems.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
@@ -502,6 +594,17 @@ pub struct Cosmos {
 }
 
 impl Style for Cosmos {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, centers);
+        if self.centers.iter().any(|center| center.3 < 1) {
+            return Err(SceneError::Range {
+                field: "centers",
+                rule: "has a centre with fewer than one ring",
+            });
+        }
+        Ok(canvas.per_pixel(self.centers.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
@@ -560,6 +663,11 @@ impl Mandelbrot {
 }
 
 impl Style for Mandelbrot {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, scale, center);
+        Ok(canvas.per_pixel(f64::from(self.iterations)))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let scale = self.scale;
         let (center_x, center_y) = self.center;
@@ -583,6 +691,9 @@ impl Style for Mandelbrot {
     }
 }
 
+/// The most layers a `horizon` scene may have; the Python builder draws 4.
+const HORIZON_MAX_LAYERS: usize = 64;
+
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Horizon {
@@ -592,6 +703,20 @@ pub struct Horizon {
 }
 
 impl Style for Horizon {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, layers);
+        check_loop_phase(self.phase)?;
+        // Each layer holds a row of ridge heights as wide as the canvas.
+        if self.layers.len() > HORIZON_MAX_LAYERS {
+            return Err(SceneError::Range {
+                field: "layers",
+                rule: "has more than 64 layers (each needs a canvas-wide row)",
+            });
+        }
+        // One ridge per layer, then every layer per pixel.
+        Ok(canvas.per_pixel(2.0 * self.layers.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let h = height as f64;
         let span = (width as f64 - 1.0).max(1.0);
@@ -631,6 +756,11 @@ pub struct Voronoi {
 }
 
 impl Style for Voronoi {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, sites);
+        Ok(canvas.per_pixel(self.sites.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let scale = (width.min(height) as f64).max(1.0);
         shade(width, height, palette, |x, y| {
@@ -664,6 +794,12 @@ pub struct Crystal {
 }
 
 impl Style for Crystal {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, light, half);
+        check_loop_phase(self.phase)?;
+        Ok(canvas.per_pixel(1.0))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let k = 28.0 / width.max(height) as f64;
         let relief = 14.0 / k;
@@ -725,6 +861,11 @@ pub struct Cymatics {
 }
 
 impl Style for Cymatics {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, modes);
+        Ok(canvas.per_pixel(self.modes.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
@@ -765,6 +906,11 @@ pub struct Optics {
 }
 
 impl Style for Optics {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, waves, film, blades, spin, flares);
+        Ok(canvas.per_pixel(self.waves.len() as f64 + self.flares.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
@@ -806,6 +952,11 @@ pub struct Contour {
 }
 
 impl Style for Contour {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_loop_phase(self.phase)?;
+        Ok(canvas.per_pixel(2.0))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let k = 24.0 / width.max(height) as f64;
         let terrain = |x: f64, y: f64| contrast(fbm_loop(x * k, y * k, seed, 5, self.phase), 2.0);
@@ -842,6 +993,11 @@ pub struct Opart {
 }
 
 impl Style for Opart {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, angle, freq, shift, bulges);
+        Ok(canvas.per_pixel(self.bulges.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
@@ -909,6 +1065,11 @@ impl Marbling {
 }
 
 impl Style for Marbling {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, ops, bands, angle, slide);
+        Ok(canvas.per_pixel(self.ops.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = center(width, height);
         let scale = (width.min(height) as f64 / 2.0).max(1.0);
@@ -919,7 +1080,8 @@ impl Style for Marbling {
             }
             let band = ((v * self.angle.m_cos() - u * self.angle.m_sin()) * self.bands + self.slide)
                 .floor() as i64;
-            0.1 + 0.8 * ((band * 2).rem_euclid(5) as f64) / 4.0
+            // (2 * band) mod 5 without overflowing for a band near the i64 limits.
+            0.1 + 0.8 * ((band.rem_euclid(5) * 2).rem_euclid(5) as f64) / 4.0
         })
     }
 }

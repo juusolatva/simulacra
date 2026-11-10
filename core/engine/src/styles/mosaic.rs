@@ -5,6 +5,7 @@ use rayon::prelude::*;
 
 use super::Style;
 use crate::palette::Palette;
+use crate::validate::{Canvas, SceneError, check_numbers};
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
@@ -31,6 +32,28 @@ fn axis(length: usize, tile: f64, count: usize, grout: f64) -> Vec<Option<usize>
 }
 
 impl Style for Mosaic {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, tile, grout, values);
+        if self.cols == 0 || self.rows == 0 {
+            return Err(SceneError::Range {
+                field: "cols and rows",
+                rule: "must both be at least 1",
+            });
+        }
+        let tiles = self.cols.checked_mul(self.rows).ok_or(SceneError::Range {
+            field: "cols and rows",
+            rule: "multiply to more tiles than fit in memory",
+        })?;
+        if self.values.len() != tiles {
+            return Err(SceneError::Length {
+                field: "values",
+                expected: tiles,
+                found: self.values.len(),
+            });
+        }
+        Ok(canvas.pixels() + tiles as f64)
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let colors: Vec<[u8; 3]> = self.values.iter().map(|&t| palette.color(t)).collect();
         let grout = palette.color(0.0);

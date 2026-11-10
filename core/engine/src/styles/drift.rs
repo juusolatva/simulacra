@@ -2,6 +2,7 @@
 
 use crate::noise::{contrast, fbm_loop};
 use crate::palette::Palette;
+use crate::validate::{Canvas, SceneError, check_loop_phase};
 use crate::raster::shade;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
@@ -11,6 +12,11 @@ pub struct Drift {
 }
 
 impl super::Style for Drift {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_loop_phase(self.phase)?;
+        Ok(canvas.per_pixel(0.0))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         // Noise coordinates scale with the canvas so the composition is size-independent.
         let k = 32.0 / width.max(height) as f64;

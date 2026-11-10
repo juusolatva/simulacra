@@ -7,6 +7,7 @@ use crate::math::Libm;
 use super::{Style, center, unit};
 use crate::noise::{contrast, fbm, fbm_loop, polar_noise};
 use crate::palette::Palette;
+use crate::validate::{Canvas, SceneError, check_loop_phase, check_numbers};
 use crate::raster::shade;
 
 /// `(x, y, sigma, brightness)`
@@ -95,6 +96,13 @@ impl Lunar {
 }
 
 impl Style for Lunar {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, craters, light);
+        // Height, two gradient samples and up to LUNAR_STEPS shadow samples per pixel.
+        let samples = 3.0 + LUNAR_STEPS as f64;
+        Ok(canvas.per_pixel(self.craters.len() as f64 * samples))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let light = self.light;
         shade(width, height, palette, |x, y| {
@@ -160,6 +168,11 @@ impl Asteroids {
 }
 
 impl Style for Asteroids {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, rocks, stars, belt, light);
+        Ok(canvas.per_pixel((self.rocks.len() + self.stars.len()) as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| {
             let (u, v) = view(x, y, width, height);
@@ -225,6 +238,11 @@ impl Blackhole {
 }
 
 impl Style for Blackhole {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, center, radius, tilt, roll, arms, spin, stars);
+        Ok(canvas.per_pixel(self.stars.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let (cos_r, sin_r) = self.roll;
         shade(width, height, palette, |x, y| {
@@ -267,6 +285,12 @@ impl Supernova {
 }
 
 impl Style for Supernova {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, center, radius, spike, pulse, stars);
+        check_loop_phase(self.phase)?;
+        Ok(canvas.per_pixel(self.stars.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let radius = self.radius;
         shade(width, height, palette, |x, y| {

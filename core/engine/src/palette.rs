@@ -34,6 +34,12 @@ impl Palette {
         Ok(Self { stops })
     }
 
+    /// Number of stops (at least one).
+    #[must_use]
+    pub fn stop_count(&self) -> usize {
+        self.stops.len()
+    }
+
     /// Stop `index` as RGB, clamped to 0..=255.
     pub fn stop(&self, index: usize) -> [u8; 3] {
         let (r, g, b) = self.stops[index];

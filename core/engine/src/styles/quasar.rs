@@ -8,6 +8,7 @@ use crate::math::{Libm, py_hypot};
 use super::Style;
 use crate::noise::{fbm, polar_noise};
 use crate::palette::Palette;
+use crate::validate::{Canvas, SceneError, check_numbers};
 use crate::raster::shade;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
@@ -95,6 +96,21 @@ impl Quasar {
 }
 
 impl Style for Quasar {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(
+            self,
+            center,
+            beta,
+            r_shadow,
+            r_outer,
+            jet_axis,
+            jet_half_angle,
+            jet_len,
+            orbits
+        );
+        Ok(canvas.per_pixel(self.orbits.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| self.value(x, y, seed))
     }

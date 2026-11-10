@@ -15,10 +15,26 @@ pub mod woodblock;
 use crate::geometry::py_mod;
 use crate::math::Libm;
 use crate::palette::Palette;
+use crate::validate::{Canvas, SceneError};
 
 /// A style's scene, ready to shade.
 pub trait Style: Send + Sync {
+    /// Shades the scene without checking it: an inconsistent scene can panic
+    /// or run for a very long time. [`render`](crate::render) validates the
+    /// scene first; call this directly only on a scene that passed
+    /// [`validate`](Self::validate) for the same canvas and palette.
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8>;
+
+    /// Checks the scene against the canvas and palette (see
+    /// [`validate`](crate::validate)) and estimates the work rendering it
+    /// takes, in inner loop iterations; [`validate_scene`](crate::validate_scene)
+    /// compares that with [`work_limit`](crate::work_limit).
+    ///
+    /// # Errors
+    ///
+    /// [`SceneError`] for a number that is not finite or too large, an index
+    /// or length that does not fit, or a value outside the style's range.
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError>;
 }
 
 /// Python's `_loop(phase, cycles)`: `tau * cycles * (phase % 1.0)`, an angle that
