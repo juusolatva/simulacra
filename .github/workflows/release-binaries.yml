@@ -1,0 +1,193 @@
+name: Release binaries
+
+# Test builds of the standalone `simulacra` binary for every release target:
+# Linux (x86_64, aarch64) and Windows (x86_64); macOS is not a target
+# (PLAN.md Phase 3). Nothing is published: the first release waits for the
+# finished Rust rewrite, so the packages are workflow artifacts kept 14 days.
+#
+# build:   on a native runner per target, check that the binary does not pull in
+#          PyO3, run the portable fixtures and the CLI tests, build with the
+#          `portable` math backend and package the binary.
+# verify:  on a fresh runner, download the package as a user would, unpack it and
+#          run core/cli/tests/check_release.py: every style the binary lists must
+#          render its portable fixture's hash. On Linux the binary runs in a
+#          container image with no Python and no Rust (the checker itself needs
+#          Python, but runs outside the container).
+# compare: the larger workloads (sizes, seeds, phases, palettes) must render
+#          identically on all targets.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - '.github/workflows/release-binaries.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - '.github/workflows/release-binaries.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # debian:trixie-slim (multi-arch index): no Python, no Rust toolchain.
+  NO_PYTHON_IMAGE: debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read # Check out the code
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-24.04 }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm }
+          - { target: x86_64-pc-windows-msvc, runner: windows-2025 }
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Update the stable toolchain
+        run: rustup update stable && rustup default stable
+
+      # Every target builds natively, so the tests below run on the target itself.
+      - name: Check that the runner is the target
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          if [ "$host" != "$TARGET" ]; then
+            echo "runner host $host is not $TARGET" >&2
+            exit 1
+          fi
+
+      - name: The binary does not depend on PyO3
+        run: |
+          if cargo tree --locked --manifest-path core/Cargo.toml -p simulacra_cli --features portable -e normal,build | grep -q pyo3; then
+            echo "simulacra_cli depends on pyo3" >&2
+            exit 1
+          fi
+
+      - name: Portable fixtures
+        run: cargo test --locked --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable
+
+      - name: CLI tests
+        run: cargo test --locked --manifest-path core/Cargo.toml -p simulacra_cli --features portable
+
+      - name: Build the release binary
+        run: cargo build --locked --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable --target "$TARGET"
+
+      # tar keeps the executable bit, which artifact zips would drop.
+      - name: Package
+        run: |
+          mkdir package
+          cp LICENSE package/
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp "core/target/$TARGET/release/simulacra.exe" package/
+            (cd package && 7z a "../simulacra-$TARGET.zip" .)
+          else
+            cp "core/target/$TARGET/release/simulacra" package/
+            tar -czf "simulacra-$TARGET.tar.gz" -C package .
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: simulacra-${{ matrix.target }}
+          path: simulacra-${{ matrix.target }}.*
+          if-no-files-found: error
+          retention-days: 14
+
+  verify:
+    name: Verify ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read # Check out the checker and the fixtures
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-24.04, container: true }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm, container: true }
+          - { target: x86_64-pc-windows-msvc, runner: windows-2025 }
+    env:
+      TARGET: ${{ matrix.target }}
+      CONTAINER: ${{ matrix.container && 'true' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: simulacra-${{ matrix.target }}
+          path: download
+
+      - name: Unpack
+        run: |
+          mkdir dist
+          if [ "$RUNNER_OS" = Windows ]; then
+            7z x -odist "download/simulacra-$TARGET.zip"
+          else
+            tar -xzf "download/simulacra-$TARGET.tar.gz" -C dist
+          fi
+          ls -l dist
+
+      - name: Show the dynamic libraries the binary needs
+        if: runner.os == 'Linux'
+        run: ldd dist/simulacra
+
+      - name: Check the binary against the portable fixtures
+        run: |
+          binary=dist/simulacra
+          if [ "$RUNNER_OS" = Windows ]; then binary=dist/simulacra.exe; fi
+          python -I core/cli/tests/check_release.py check "$binary" \
+            --target "$TARGET" --hashes "hashes-$TARGET.json" \
+            ${CONTAINER:+--container "$NO_PYTHON_IMAGE"}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hashes-${{ matrix.target }}
+          path: hashes-${{ matrix.target }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  compare:
+    name: Identical images on every target
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Check out the checker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: hashes-*
+          path: hashes
+          merge-multiple: true
+
+      - name: Compare the workload hashes
+        run: python -I core/cli/tests/check_release.py compare hashes/*.json
