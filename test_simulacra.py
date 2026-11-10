@@ -796,6 +796,49 @@ class RenderingTests(unittest.TestCase):
         self.assertEqual(native, {name: list(stops) for name, stops in art.PALETTES.items()})
 
     @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_scenes_stay_well_within_the_work_limit(self):
+        # The engine rejects scenes whose estimated work exceeds a limit that
+        # grows with the canvas (validate.rs); built-in scenes must stay far
+        # below it at every size, including thin strips and 4K.
+        sizes = ((1, 1), (3, 2), (1, 4000), (4000, 1), (64, 64), (640, 480), (100, 2000),
+                 (3840, 2160))
+        for style, builder in art.NATIVE_STYLES.items():
+            for width, height in sizes:
+                for seed, phase in ((1, 0.0), (7, 0.81), (12345, 0.37)):
+                    with self.subTest(style=style, size=(width, height), seed=seed):
+                        stops = art.PALETTES['rainbow']
+                        scene = builder(width, height, seed, stops, phase)
+                        work, limit = art._core.scene_work(style, width, height, stops, scene)
+                        self.assertLessEqual(work, limit / 8)
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+    def test_native_render_rejects_invalid_scenes(self):
+        stops = art.PALETTES['deep']
+
+        def scene(style, **changes):
+            built = art.NATIVE_STYLES[style](48, 36, 3, stops, 0.0)
+            built.update(changes)
+            return built
+
+        constellations = scene('constellations')
+        bad_pair = scene('constellations',
+                         pairs=[(0, len(constellations['stars']), 10.0)])
+        cases = (
+            ('constellations', bad_pair, 'pairs refers to entry'),
+            ('mandelbrot', scene('mandelbrot', iterations=2 ** 32 - 1), 'steps'),
+            ('mandelbrot', scene('mandelbrot', scale=math.nan), 'scale holds NaN'),
+            ('mandelbrot', scene('mandelbrot', scale=math.inf), 'scale holds inf'),
+            ('mosaic', scene('mosaic', cols=0), 'cols and rows must both be at least 1'),
+            ('woodblock', scene('woodblock', scale=1e300), 'scale holds'),
+        )
+        for style, data, message in cases:
+            with self.subTest(style=style, message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    art._core.render(style, 48, 36, 3, stops, data)
+        with self.assertRaisesRegex(ValueError, 'width and height must be positive'):
+            art._core.render('blobs', 0, 36, 3, stops, {'phase': 0.0})
+
+    @unittest.skipIf(art._core is None, 'Rust core not built (see README)')
     def test_native_noise_and_palette_match_python(self):
         for x, y, seed, octaves in ((-3.7, 12.25, 77, 4), (1e6, -1e6, 0, 3), (0.5, 0.5, 2 ** 32 - 1, 1)):
             self.assertEqual(art._core.fbm(x, y, seed, octaves), art.fbm(x, y, seed, octaves))

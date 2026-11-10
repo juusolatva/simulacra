@@ -9,6 +9,7 @@ use crate::geometry::{Point, Segment, point_in_poly, poly_min_dist, py_sum, seg_
 type PrismLayer = (Vec<Point>, f64, f64);
 use crate::noise::polar_noise;
 use crate::palette::Palette;
+use crate::validate::{Canvas, SceneError, check_numbers, check_polygons};
 use crate::raster::shade;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
@@ -19,6 +20,17 @@ pub struct Circuit {
 }
 
 impl Style for Circuit {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, traces);
+        // Every trace costs work per pixel, even one without nodes or segments.
+        let per_pixel: usize = self
+            .traces
+            .iter()
+            .map(|(nodes, segments)| 1 + nodes.len() + segments.len())
+            .sum();
+        Ok(canvas.per_pixel(per_pixel as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let small = small_side(width, height);
         let core = (small * 0.008).max(0.7);
@@ -52,6 +64,13 @@ pub struct Geo {
 }
 
 impl Style for Geo {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, polygons);
+        check_polygons("polygons", &self.polygons)?;
+        let per_pixel: usize = self.polygons.iter().map(Vec::len).sum();
+        Ok(canvas.per_pixel(per_pixel as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let sigma = ((width.min(height) as f64 / 2.0).max(1.0) * 0.025).max(0.6);
         shade(width, height, palette, |x, y| {
@@ -74,6 +93,18 @@ pub struct Shard {
 }
 
 impl Style for Shard {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, shards);
+        check_polygons("shards", self.shards.iter().map(|shard| &shard.1))?;
+        // The polygon is walked twice per pixel (distance and inside test).
+        let per_pixel: usize = self
+            .shards
+            .iter()
+            .map(|(_, poly, cracks)| 2 * poly.len() + cracks.len())
+            .sum();
+        Ok(canvas.per_pixel(per_pixel as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let norm = self.shards.len() as f64 * 2.2;
         shade(width, height, palette, |x, y| {
@@ -104,6 +135,15 @@ pub struct Prism {
 }
 
 impl Style for Prism {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, gems);
+        let layers = || self.gems.iter().flat_map(|gem| &gem.4);
+        check_polygons("gems", layers().map(|layer| &layer.0))?;
+        // Assume every gem's box covers every pixel.
+        let per_pixel = self.gems.len() + layers().map(|layer| 2 * layer.0.len()).sum::<usize>();
+        Ok(canvas.per_pixel(per_pixel as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
@@ -138,6 +178,12 @@ pub struct Mandala {
 }
 
 impl Style for Mandala {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, center, medallion, rings, spokes, glyphs);
+        let per_pixel = self.rings.len() + self.spokes.len() + self.glyphs.len();
+        Ok(canvas.per_pixel(per_pixel as f64))
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let (cx, cy) = self.center;
         let medallion = self.medallion;

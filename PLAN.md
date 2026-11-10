@@ -15,9 +15,9 @@ helper the scene builders use. Phase 3 has started: the `simulacra` binary
 (`core/cli`) renders `blobs`, `mandelbrot` and `waves` to PNG without Python,
 with scene builders ported to the engine, pixel-identical to `simulacra.py`
 (PR #32), and test release binaries for Linux and Windows render the `portable`
-fixtures on each target (`release-binaries.yml`). Next in Phase 3: scene
-validation, then the distribution route, signing and smoke tests when the
-first release approaches. Phase 4's ownership rule already applies to those three
+fixtures on each target (`release-binaries.yml`), and the engine validates
+every scene before rendering it. Phase 3 has the distribution route, Windows
+signing and clean-machine smoke tests left, which wait for the first release. Phase 4's ownership rule already applies to those three
 builders. Phases 4 to 6 have not started otherwise.
 
 Prepared on 2026-11-04 from the GitHub source review of
@@ -427,18 +427,37 @@ scene builders use, across the supported seed range.
   boundary, not only in CLI parsing. Done: `simulacra_engine::render` rejects
   an empty canvas and a `width * height * 3` that overflows (`RenderError`);
   the PNG writer rejects sides above 2**32 - 1.
-- [ ] Validate scenes at the engine boundary before any untrusted scene source
+- [x] Validate scenes at the engine boundary before any untrusted scene source
   exists (at the latest with a CLI option that reads a scene file). The
-  shaders trust their scene: an index out of range (constellation pairs, an
+  shaders trusted their scene: an index out of range (constellation pairs, an
   `orbits` ring's palette stop through the unchecked `Palette::stop`), a
   `mosaic` grid that does not match its `cols` and `rows`, `woodblock`
-  surfaces shorter than the canvas width, or a huge iteration count (`ink`
-  steps, `comet` speed and reach, constellation line steps) panics or stalls
-  rendering. Add a check per style against the canvas and palette (for
-  example a `validate(width, height, &palette)` on `Style`), limits on
-  scene-driven loop counts, and malformed-scene tests. Raised by Qodo on PR
-  #30; the same holds for scenes passed through the Python adapter, which so
-  far only come from our own builders.
+  surfaces shorter than the canvas width, empty polygons, or a huge iteration
+  count (`ink` steps, `comet` speed and reach, constellation line steps,
+  `attractor` points, `mandelbrot` iterations, long lists multiplying the
+  per-pixel work) panicked or stalled rendering, and a float that saturated
+  to `i64::MAX` overflowed the next integer addition. Raised by Qodo on PR
+  #30. Done (`core/engine/src/validate.rs`): every style implements
+  `Style::validate(&Canvas)`, and the checked `simulacra_engine::render` (used
+  by the CLI and, now, the Python adapter) calls `validate_scene` first.
+  Every float must be finite and at most 2**40 in size (a looping-noise
+  `phase` only finite, since `fbm_loop` reduces it modulo 1 and Python passes
+  `phase=1e300` through); indices, lengths and counts must fit the canvas, the
+  palette and each other (`lissajous` at most 8 curves and `horizon` at most
+  64 layers, as each needs a canvas-sized buffer or row); and the estimated work, in inner loop iterations with
+  sequential stamps weighted 8 and attractor steps 128 to approximate time,
+  must stay within `WORK_BASE + WORK_PER_PIXEL * pixels` (2**27 + 16384 per
+  pixel). Measured over sizes from 1 x 1 to 3840 x 2160 and 4000 x 1 strips,
+  built-in scenes use at most 8.3% of the limit (`ink` at 4K); a test holds
+  them to an eighth. On a 12-thread machine the limit is roughly 20 to 30
+  seconds of rendering at 4K. `marbling`'s band arithmetic and the noise
+  lattice's neighbour indices were rewritten to avoid overflow with identical
+  results (a valid `blackhole` scene's lensing can derive coordinates that
+  saturate the lattice). Tests: every number in every
+  fixture set to 1e300 must be rejected (which catches a field missing from a
+  style's checks), and each structural rule and work limit has a
+  malformed-scene case (`core/engine/tests/validation.rs`, and
+  `test_native_render_rejects_invalid_scenes` through the adapter).
 - [x] Preserve safe temporary-file creation, destination replacement, and
   cleanup on failure. Create the temporary file with mode 0o666 so the umask
   applies, as `_create_temporary()` does: `tempfile::NamedTempFile` creates
@@ -752,6 +771,7 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 6. Done: port CPython's random generator (`PyRandom`).
 7. In progress: prove standalone delivery with a small subset of styles. Done:
    the `simulacra` binary for `blobs`, `mandelbrot` and `waves`, and test
-   release binaries for Linux and Windows checked against the fixtures. Next:
-   scene validation; the distribution route and signing wait for the release.
+   release binaries for Linux and Windows checked against the fixtures, and
+   scene validation in the engine. The distribution route and signing wait
+   for the release; Phase 4 (porting scene builders) is next.
 8. Continue Python style experimentation and migrate settled styles in batches.

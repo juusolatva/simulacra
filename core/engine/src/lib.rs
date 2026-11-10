@@ -16,25 +16,30 @@ pub mod random;
 mod raster;
 pub mod scenes;
 pub mod styles;
+pub mod validate;
 
 pub use palette::{Palette, PaletteError};
 pub use palettes::{PALETTES, palette_stops};
 pub use random::PyRandom;
 pub use scenes::{SCENE_BUILDERS, build_scene};
 pub use styles::Style;
+pub use validate::{SceneError, scene_work, validate_scene, work_limit};
 
 /// True when built with the `portable` feature (the pure-Rust `libm` crate),
 /// whose output can differ from Python's; see `PORTABLE_DRIFT_STYLES` in Python.
 pub const PORTABLE: bool = cfg!(feature = "portable");
 
-/// Why [`render`] refused a canvas.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why [`render`] refused a canvas or scene.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderError {
     /// Width or height is zero.
     EmptyCanvas { width: usize, height: usize },
     /// `width * height * 3` bytes exceed the largest possible allocation
     /// (`isize::MAX` bytes).
     TooLarge { width: usize, height: usize },
+    /// The scene does not fit the canvas or palette, or would take too long
+    /// to render; see [`validate_scene`].
+    Scene(SceneError),
 }
 
 impl std::fmt::Display for RenderError {
@@ -49,22 +54,31 @@ impl std::fmt::Display for RenderError {
             Self::TooLarge { width, height } => {
                 write!(f, "{width} x {height} pixels do not fit in memory")
             }
+            Self::Scene(err) => err.fmt(f),
         }
     }
 }
 
+/// `Display` includes the scene error's message, so `source` is not set.
 impl std::error::Error for RenderError {}
 
+impl From<SceneError> for RenderError {
+    fn from(err: SceneError) -> Self {
+        Self::Scene(err)
+    }
+}
+
 /// Renders `scene` as packed RGB (`width * height * 3` bytes, row-major) after
-/// checking the canvas: both sides positive and the buffer no larger than Rust
-/// can allocate (`isize::MAX` bytes). A buffer below that can still exhaust
-/// memory; callers that take sizes from users should also apply a limit, as
-/// the CLI does.
+/// checking the canvas (both sides positive, the buffer no larger than Rust
+/// can allocate, `isize::MAX` bytes) and the scene ([`validate_scene`]). A
+/// buffer below that can still exhaust memory; callers that take sizes from
+/// users should also apply a limit, as the CLI does.
 /// `seed` is the shaders' 32-bit seed; see [`seed32`].
 ///
 /// # Errors
 ///
-/// [`RenderError`] if the canvas is empty or too large to address.
+/// [`RenderError`] if the canvas is empty or too large to address, or the
+/// scene is invalid for it.
 pub fn render(
     scene: &dyn Style,
     width: usize,
@@ -79,6 +93,7 @@ pub fn render(
     if bytes.is_none_or(|n| n > isize::MAX as usize) {
         return Err(RenderError::TooLarge { width, height });
     }
+    validate_scene(scene, width, height, palette)?;
     Ok(scene.render(width, height, seed, palette))
 }
 
@@ -166,13 +181,12 @@ macro_rules! style_deserialize {
         /// those of the dict the Python `_<style>_scene()` builder returns;
         /// unknown fields are ignored, as the Python adapter ignores them.
         ///
-        /// Scenes are trusted input: only the types are checked, not that the
-        /// data is consistent. An index out of range (a star pair, an `orbits`
-        /// ring's palette stop), a list shorter than the canvas (`woodblock`
-        /// surfaces) or a huge iteration count (`ink` steps) makes rendering
-        /// panic or run for a very long time, exactly as with a scene passed
-        /// through the Python adapter. Do not load scenes from untrusted sources
-        /// until the engine validates them (PLAN.md, Phase 3).
+        /// Only the types are checked here, not that the data is consistent:
+        /// render the scene with [`render`], which validates it against the
+        /// canvas and palette first ([`validate_scene`]). Calling
+        /// [`Style::render`] directly on a scene from an untrusted source can
+        /// panic (an index out of range) or run for a very long time (a huge
+        /// iteration count).
         ///
         /// # Errors
         ///
@@ -199,7 +213,7 @@ macro_rules! style_deserialize {
 for_each_style!(style_deserialize);
 
 /// Reads the scene for `style` from JSON text; see [`deserialize_scene`],
-/// including why scenes must come from a trusted source for now. Floats are
+/// including why it must be rendered with [`render`]. Floats are
 /// parsed exactly (`serde_json`'s `float_roundtrip`).
 ///
 /// # Errors

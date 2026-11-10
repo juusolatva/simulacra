@@ -2,8 +2,9 @@
 //!
 //! Python validates arguments and generates each scene with `random.Random`,
 //! so seeds stay compatible; this crate extracts the scene dict into the
-//! engine's scene struct, renders it with the GIL released and returns packed
-//! RGB bytes (row-major, 3 bytes per pixel).
+//! engine's scene struct, renders it with the GIL released through the
+//! engine's checked `render` (which validates the canvas and the scene) and
+//! returns packed RGB bytes (row-major, 3 bytes per pixel).
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -38,6 +39,8 @@ mod simulacra_core {
     use pyo3::prelude::*;
     use pyo3::types::PyBytes;
 
+    use pyo3::exceptions::PyValueError;
+
     use super::{Stops, extract_style, palette};
 
     /// True when built with the `portable` feature (the pure-Rust `libm` crate),
@@ -60,7 +63,8 @@ mod simulacra_core {
     }
 
     /// Render `style` from a scene dict built by the matching Python
-    /// `_<style>_scene()`; returns packed RGB bytes.
+    /// `_<style>_scene()`; returns packed RGB bytes. Raises `ValueError` for
+    /// an empty canvas or a scene that does not fit the canvas and palette.
     #[pyfunction]
     fn render<'py>(
         py: Python<'py>,
@@ -73,8 +77,27 @@ mod simulacra_core {
     ) -> PyResult<Bound<'py, PyBytes>> {
         let palette = palette(stops)?;
         let renderer = extract_style(style, scene)?;
-        let rgb = py.detach(|| renderer.render(width, height, seed, &palette));
+        let rgb = py
+            .detach(|| simulacra_engine::render(renderer.as_ref(), width, height, seed, &palette))
+            .map_err(|err| PyValueError::new_err(err.to_string()))?;
         Ok(PyBytes::new(py, &rgb))
+    }
+
+    /// `(work, limit)`: the engine's estimate of the work rendering the scene
+    /// takes, in inner loop iterations, and the most it accepts for the canvas.
+    /// Raises `ValueError` if the scene fails a structural check.
+    #[pyfunction]
+    fn scene_work(
+        style: &str,
+        width: usize,
+        height: usize,
+        stops: Stops,
+        scene: &Bound<'_, PyAny>,
+    ) -> PyResult<(f64, f64)> {
+        let palette = palette(stops)?;
+        let renderer = extract_style(style, scene)?;
+        simulacra_engine::scene_work(renderer.as_ref(), width, height, &palette)
+            .map_err(|err| PyValueError::new_err(err.to_string()))
     }
 
     /// fBm noise in [0, 1]; same results as `simulacra.fbm`. A `phase`

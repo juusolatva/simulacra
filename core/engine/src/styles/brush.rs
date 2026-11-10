@@ -12,6 +12,9 @@ use super::{Style, gaussian, unit};
 use crate::geometry::Point;
 use crate::noise::{contrast, fbm};
 use crate::palette::Palette;
+use crate::validate::{
+    Canvas, SEQUENTIAL_WEIGHT, SceneError, check_index, check_numbers, clipped_span,
+};
 use crate::raster::shade;
 
 /// Maps an intensity buffer through `1 - exp(-max(0, v))`, as `_glow_pixels` does.
@@ -63,12 +66,27 @@ pub struct Flowfield {
     starts: Vec<Point>,
 }
 
+/// Stamps per flow step: enough that consecutive pixels along a step touch.
+fn flow_samples(width: usize, height: usize) -> i64 {
+    let scale = (width.min(height) as f64).max(1.0);
+    let step = (scale / 200.0).max(0.35);
+    ((step * 2.0).ceil() as i64).max(1)
+}
+
 impl Style for Flowfield {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, starts);
+        // Each start walks at most 120 steps of `samples + 1` stamps.
+        let samples = flow_samples(canvas.width, canvas.height) as f64;
+        let stamps = self.starts.len() as f64 * 120.0 * (samples + 1.0);
+        Ok(canvas.pixels() + SEQUENTIAL_WEIGHT * stamps)
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let mut glow = vec![0.0; width * height];
         let scale = (width.min(height) as f64).max(1.0);
         let step = (scale / 200.0).max(0.35);
-        let samples = ((step * 2.0).ceil() as i64).max(1);
+        let samples = flow_samples(width, height);
         let inside =
             |px: i64, py: i64| (0..width as i64).contains(&px) && (0..height as i64).contains(&py);
         for &(mut x, mut y) in &self.starts {
@@ -104,6 +122,20 @@ pub struct Comet {
 }
 
 impl Style for Comet {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, comets);
+        let mut work = canvas.pixels();
+        for &(_, _, _, speed, radius) in &self.comets {
+            // `steps` stamps, each a square of side 2 * reach + 1 (wrapping, not
+            // clipped). A step costs its libm calls even when the square is
+            // empty (a negative radius), so it counts on its own as well.
+            let steps = (speed * 2.0).ceil().max(1.0);
+            let side = (2.0 * (radius * 2.0).ceil() + 1.0).max(0.0);
+            work += SEQUENTIAL_WEIGHT * steps * (1.0 + side * side);
+        }
+        Ok(work)
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let mut glow = vec![0.0; width * height];
         let (w, h) = (width as i64, height as i64);
@@ -146,6 +178,20 @@ pub struct Ink {
 }
 
 impl Style for Ink {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, strokes);
+        let mut work = canvas.pixels();
+        for &(_, _, _, _, _, _, brush, _, steps) in &self.strokes {
+            // `steps + 1` stamps; the radius never exceeds max(brush, 0.5), and each
+            // stamp's square is clipped to the canvas.
+            let stamps = (steps as f64 + 1.0).max(0.0);
+            let side = 2.0 * (brush.max(0.5) * 2.0).ceil() + 1.0;
+            let area = side.min(canvas.width as f64) * side.min(canvas.height as f64);
+            work += SEQUENTIAL_WEIGHT * stamps * area;
+        }
+        Ok(work)
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let mut glow = vec![0.0; width * height];
         let (w, h) = (width as i64, height as i64);
@@ -182,6 +228,17 @@ pub struct Ember {
 }
 
 impl Style for Ember {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, embers);
+        let mut work = canvas.pixels();
+        for &(_, _, _, size, _, _) in &self.embers {
+            // Every row is visited; the columns are clipped to the canvas.
+            let columns = (2.0 * (size * 2.0 + 0.01 + 1.0) + 3.0).clamp(0.0, canvas.width as f64);
+            work += SEQUENTIAL_WEIGHT * canvas.height as f64 * (1.0 + columns);
+        }
+        Ok(work)
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let mut glow_sum = vec![0.0; width * height];
         for &(cx, y0, rise, size, phase, base_flicker) in &self.embers {
@@ -221,6 +278,18 @@ pub struct Torus {
 }
 
 impl Style for Torus {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, points, r_glow);
+        let mut work = 2.0 * canvas.pixels();
+        for pair in self.points.windows(2) {
+            let (p0, p1) = (pair[0], pair[1]);
+            work += SEQUENTIAL_WEIGHT
+                * clipped_span(p0.0, p1.0, self.r_glow, canvas.width)
+                * clipped_span(p0.1, p1.1, self.r_glow, canvas.height);
+        }
+        Ok(work)
+    }
+
     fn render(&self, width: usize, height: usize, seed: u32, palette: &Palette) -> Vec<u8> {
         let mut glow = vec![0.0_f64; width * height];
         for pair in self.points.windows(2) {
@@ -250,6 +319,9 @@ impl Style for Torus {
     }
 }
 
+/// The most curves a `lissajous` scene may have; the Python builder draws 2 or 3.
+const LISSAJOUS_MAX_CURVES: usize = 8;
+
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Lissajous {
@@ -259,6 +331,26 @@ pub struct Lissajous {
 }
 
 impl Style for Lissajous {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, curves, n_curves);
+        // Each curve holds a distance buffer as large as the canvas.
+        if self.curves.len() > LISSAJOUS_MAX_CURVES {
+            return Err(SceneError::Range {
+                field: "curves",
+                rule: "has more than 8 curves (each needs a canvas-sized buffer)",
+            });
+        }
+        let mut work = canvas.per_pixel(self.curves.len() as f64);
+        for (points, reach, _, _) in &self.curves {
+            for pair in points.windows(2) {
+                work += SEQUENTIAL_WEIGHT
+                    * clipped_span(pair[0].0, pair[1].0, *reach, canvas.width)
+                    * clipped_span(pair[0].1, pair[1].1, *reach, canvas.height);
+            }
+        }
+        Ok(work)
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let grids: Vec<Vec<f64>> = self
             .curves
@@ -304,6 +396,18 @@ fn gaussian_zero() -> f64 {
 }
 
 impl Style for Constellations {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, stars, pairs);
+        let mut work = canvas.per_pixel(self.stars.len() as f64);
+        for &(i, j, dist) in &self.pairs {
+            check_index("pairs", i, self.stars.len())?;
+            check_index("pairs", j, self.stars.len())?;
+            // `steps + 1` points along the line.
+            work += SEQUENTIAL_WEIGHT * ((dist / 1.2).trunc().max(1.0) + 1.0);
+        }
+        Ok(work)
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let mut lines = vec![0.0_f64; width * height];
         for &(i, j, dist) in &self.pairs {
@@ -337,6 +441,10 @@ impl Style for Constellations {
     }
 }
 
+/// Work of one orbit step: four libm calls in a chain no thread can share,
+/// measured at about 16 brush stamps.
+const ATTRACTOR_STEP_WORK: f64 = 16.0 * SEQUENTIAL_WEIGHT;
+
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
 pub struct Attractor {
@@ -347,12 +455,17 @@ pub struct Attractor {
 }
 
 impl Style for Attractor {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, params, mid, scale);
+        Ok(canvas.pixels() + ATTRACTOR_STEP_WORK * (self.points as f64 + 100.0))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let (a, b, c, d) = self.params;
         let (cx, cy) = ((width as f64 - 1.0) / 2.0, (height as f64 - 1.0) / 2.0);
         let mut counts = vec![0u32; width * height];
         let (mut x, mut y) = (0.1_f64, 0.1_f64);
-        for i in 0..self.points + 100 {
+        for i in 0..self.points.saturating_add(100) {
             (x, y) = ((a * y).m_sin() + c * (a * x).m_cos(), (b * x).m_sin() + d * (b * y).m_cos());
             if i >= 100 {
                 let ix = (cx + (x - self.mid.0) * self.scale + 0.5) as i64;

@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use simulacra_engine::{Palette, SCENE_BUILDERS, STYLES, build_scene, scene_from_json, seed32};
+use simulacra_engine::{
+    Palette, SCENE_BUILDERS, STYLES, build_scene, render, scene_from_json, seed32,
+};
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -70,7 +72,15 @@ fn fixtures_render_their_recorded_hash() {
         let scene = scene_from_json(style, fixture.scene.get())
             .unwrap_or_else(|err| panic!("{style}: {err}"));
         let palette = Palette::new(fixture.stops).expect("palette");
-        let rgb = scene.render(fixture.width, fixture.height, fixture.core_seed, &palette);
+        // The checked render: every committed scene must pass validation.
+        let rgb = render(
+            scene.as_ref(),
+            fixture.width,
+            fixture.height,
+            fixture.core_seed,
+            &palette,
+        )
+        .unwrap_or_else(|err| panic!("{style}: {err}"));
         assert_eq!(rgb.len(), fixture.width * fixture.height * 3, "{style}");
         let digest = hex(&Sha256::digest(&rgb));
         if digest != fixture.sha256 {

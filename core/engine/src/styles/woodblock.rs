@@ -7,6 +7,7 @@ use rayon::prelude::*;
 use super::Style;
 use crate::geometry::py_mod;
 use crate::palette::Palette;
+use crate::validate::{Canvas, Numbers, SceneError, check_numbers};
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize))]
@@ -16,6 +17,13 @@ struct Layer {
     color: f64,
     carve: f64,
     wave: bool,
+}
+
+impl Numbers for Layer {
+    fn check(&self, field: &'static str) -> Result<(), SceneError> {
+        self.surface.check(field)?;
+        (self.spacing, self.color, self.carve).check(field)
+    }
 }
 
 impl Layer {
@@ -52,6 +60,20 @@ impl Woodblock {
 }
 
 impl Style for Woodblock {
+    fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
+        check_numbers!(self, layers, scale);
+        for layer in &self.layers {
+            if layer.surface.len() != canvas.width {
+                return Err(SceneError::Length {
+                    field: "layers (surface, one height per column)",
+                    expected: canvas.width,
+                    found: layer.surface.len(),
+                });
+            }
+        }
+        Ok(canvas.per_pixel(self.layers.len() as f64))
+    }
+
     fn render(&self, width: usize, height: usize, _seed: u32, palette: &Palette) -> Vec<u8> {
         let mut rgb = vec![0u8; width * height * 3];
         rgb.par_chunks_mut(width * 3)
