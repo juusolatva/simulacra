@@ -60,7 +60,7 @@ mod simulacra_core {
     /// The scene the engine's port of `NATIVE_STYLES[style]` builds, as JSON
     /// (field names as in the Python dict, every float exact), or `None` for a
     /// style whose builder is not ported. The tests compare it with the Python
-    /// builder value by value.
+    /// builder value by value. Raises `ValueError` for a phase that is not finite.
     #[pyfunction]
     #[pyo3(signature = (style, width, height, seed, stops, phase=0.0))]
     fn build_scene(
@@ -72,9 +72,8 @@ mod simulacra_core {
         phase: f64,
     ) -> PyResult<Option<String>> {
         let palette = palette(stops)?;
-        Ok(simulacra_engine::build_scene_json(
-            style, width, height, seed, &palette, phase,
-        ))
+        simulacra_engine::build_scene_json(style, width, height, seed, &palette, phase)
+            .map_err(|err| PyValueError::new_err(err.to_string()))
     }
 
     /// The engine's built-in palettes as `(name, stops)` pairs; a Python test

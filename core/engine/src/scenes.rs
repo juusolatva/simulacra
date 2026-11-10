@@ -9,6 +9,7 @@
 
 use crate::palette::Palette;
 use crate::styles::{Style, drift, fields};
+use crate::validate::{SceneError, check_loop_phase};
 
 /// What a scene builder receives: the arguments of
 /// `simulacra.NATIVE_STYLES[style](width, height, seed, stops, phase)`.
@@ -58,8 +59,13 @@ macro_rules! scene_builders {
         /// [`build_scene`] serialized as JSON, field names as in the Python
         /// scene dict and every float in its shortest exact form, so a test
         /// can compare the scene with the Python builder's value by value.
+        ///
+        /// # Errors
+        ///
+        /// [`SceneError::Number`] for a phase that is not finite: JSON has no
+        /// NaN or infinity (`serde_json` would write `null`), and rendering
+        /// rejects such a phase anyway.
         #[cfg(feature = "json")]
-        #[must_use]
         pub fn build_scene_json(
             style: &str,
             width: usize,
@@ -67,12 +73,13 @@ macro_rules! scene_builders {
             seed: i64,
             palette: &Palette,
             phase: f64,
-        ) -> Option<String> {
+        ) -> Result<Option<String>, SceneError> {
+            check_loop_phase(phase)?;
             let params = SceneParams { width, height, seed, palette, phase };
-            Some(match style {
+            Ok(Some(match style {
                 $($name => to_json(&<$scene as BuildScene>::build(&params)),)*
-                _ => return None,
-            })
+                _ => return Ok(None),
+            }))
         }
     };
 }
@@ -151,7 +158,9 @@ mod tests {
     fn json_scenes_load_back_into_the_same_style() {
         let palette = Palette::new(vec![(0, 0, 0), (255, 255, 255)]).unwrap();
         for style in SCENE_BUILDERS {
-            let json = super::build_scene_json(style, 30, 20, 11, &palette, 0.4).unwrap();
+            let json = super::build_scene_json(style, 30, 20, 11, &palette, 0.4)
+                .unwrap()
+                .unwrap();
             let scene = crate::scene_from_json(style, &json).unwrap();
             let direct = build_scene(style, 30, 20, 11, &palette, 0.4).unwrap();
             assert_eq!(
@@ -160,6 +169,28 @@ mod tests {
                 "{style}"
             );
         }
-        assert!(super::build_scene_json("ink", 30, 20, 11, &palette, 0.4).is_none());
+        assert!(
+            super::build_scene_json("ink", 30, 20, 11, &palette, 0.4)
+                .unwrap()
+                .is_none()
+        );
+        for phase in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(super::build_scene_json("blobs", 30, 20, 11, &palette, phase).is_err());
+        }
+    }
+
+    /// The diagonal-based builders square the sides exactly, so even sides far
+    /// beyond any renderable canvas neither overflow nor wrap.
+    #[test]
+    fn huge_sides_do_not_overflow() {
+        let palette = Palette::new(vec![(0, 0, 0), (255, 255, 255)]).unwrap();
+        for style in SCENE_BUILDERS {
+            for (width, height) in [(usize::MAX, usize::MAX), (1 << 33, 3), (1, usize::MAX)] {
+                assert!(
+                    build_scene(style, width, height, 2, &palette, 0.3).is_some(),
+                    "{style}"
+                );
+            }
+        }
     }
 }

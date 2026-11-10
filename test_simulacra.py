@@ -1268,6 +1268,20 @@ class RustSceneBuilderTests(unittest.TestCase):
                                           stops=len(stops), phase=phase):
                             self.assert_same_scene(style, width, height, seed, stops, phase)
 
+    def test_rust_scenes_match_python_at_huge_sizes(self):
+        # Far beyond any canvas: cosmos and nebula square the sides, which Rust
+        # must do without overflow and round once, like Python's exact ints.
+        for style in art._core.SCENE_BUILDERS:
+            for width, height in ((2 ** 33, 2 ** 33 + 1), (2 ** 63 - 1, 3), (2 ** 64 - 1, 2 ** 64 - 1)):
+                with self.subTest(style=style, size=(width, height)):
+                    self.assert_same_scene(style, width, height, 5, art.PALETTES['deep'], 0.3)
+
+    def test_rust_scene_rejects_a_non_finite_phase(self):
+        for phase in (math.nan, math.inf, -math.inf):
+            with self.subTest(phase=phase):
+                with self.assertRaisesRegex(ValueError, 'phase'):
+                    art._core.build_scene('blobs', 8, 6, 1, art.PALETTES['deep'], phase)
+
     def test_rust_scenes_match_python_over_many_seeds(self):
         stops = art.PALETTES['lagoon']
         for style in art._core.SCENE_BUILDERS:

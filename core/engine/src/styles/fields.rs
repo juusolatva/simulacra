@@ -17,6 +17,29 @@ use crate::raster::{shade, shade_rgb};
 use crate::scenes::{BuildScene, SceneParams};
 use crate::validate::{Canvas, SceneError, check_index, check_loop_phase, check_numbers};
 
+/// Python's `math.sqrt(width * width + height * height)`: the integers are
+/// squared and added exactly and rounded to a float once, as Python converts
+/// its unbounded int (round half to even).
+fn diagonal(width: usize, height: usize) -> f64 {
+    let (w, h) = (width as u128, height as u128);
+    // Each square fits in u128 (a usize has at most 64 bits); their sum can
+    // need 129 bits.
+    let (w2, h2) = (w * w, h * h);
+    let sum = match w2.checked_add(h2) {
+        Some(sum) => sum as f64,
+        None => {
+            // sum = 2 * half + low. Halve without losing anything that affects
+            // rounding: `half` has at least 127 significant bits, so OR-ing the
+            // dropped bit into its lowest bit keeps it as a sticky bit far below
+            // the 53 that survive, and doubling the float is exact.
+            let half = (w2 >> 1) + (h2 >> 1) + ((w2 & 1) & (h2 & 1));
+            let low = (w2 ^ h2) & 1;
+            (half | low) as f64 * 2.0
+        }
+    };
+    sum.sqrt()
+}
+
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Blobs {
@@ -428,7 +451,7 @@ impl BuildScene for Nebula {
         let (width, height, phase) = (params.width, params.height, params.phase);
         let mut rng = PyRandom::new(params.seed);
         let (w, h) = (width as f64, height as f64);
-        let diag = ((width * width + height * height) as f64).sqrt();
+        let diag = diagonal(width, height);
         let count = rng.randint(3, 6);
         let clouds = (0..count as usize)
             .map(|i| {
@@ -906,8 +929,7 @@ impl BuildScene for Cosmos {
         let (width, height) = (params.width, params.height);
         let mut rng = PyRandom::new(params.seed);
         let (w, h) = (width as f64, height as f64);
-        // Python squares and adds the integers, then takes the square root.
-        let diag = ((width * width + height * height) as f64).sqrt();
+        let diag = diagonal(width, height);
         let count = rng.randint(2, 5);
         let centers = (0..count)
             .map(|_| {
@@ -1475,5 +1497,34 @@ impl Style for Marbling {
             // (2 * band) mod 5 without overflowing for a band near the i64 limits.
             0.1 + 0.8 * ((band.rem_euclid(5) * 2).rem_euclid(5) as f64) / 4.0
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::diagonal;
+
+    /// Python's `math.sqrt(w * w + h * h)` on exact ints, including sums that
+    /// need more than 128 bits.
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn diagonal_matches_python_exact_ints() {
+        let cases: [(usize, usize, f64); 8] = [
+            (usize::MAX, usize::MAX, 2.6087635650665566e+19),
+            (usize::MAX, 1, 1.8446744073709552e+19),
+            (usize::MAX, 1 << 63, 2.0624086856177975e+19),
+            ((1 << 63) + 1, (1 << 63) + 1, 1.3043817825332783e+19),
+            (1 << 33, (1 << 33) + 1, 12148002000.611305),
+            (640, 480, 800.0),
+            (0, 0, 0.0),
+            (1, 0, 1.0),
+        ];
+        for (width, height, expected) in cases {
+            assert_eq!(
+                diagonal(width, height).to_bits(),
+                expected.to_bits(),
+                "{width} x {height}"
+            );
+        }
     }
 }
