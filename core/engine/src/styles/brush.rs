@@ -1043,22 +1043,31 @@ fn clifford_step((x, y): Point, (a, b, c, d): (f64, f64, f64, f64)) -> Point {
 }
 
 /// Python's `_clifford_bounds`: `(min_x, max_x, min_y, max_y)` of a 3,000-point
-/// orbit after 100 warm-up steps.
+/// orbit after 100 warm-up steps, in one pass. The strict comparisons keep the
+/// first of equal values, as Python's `min()` and `max()` do (the orbit is
+/// bounded by its sines and cosines, so there is no NaN).
 fn clifford_bounds(params: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
     let mut point = (0.1, 0.1);
-    let mut orbit = Vec::with_capacity(3000);
-    for i in 0..3100 {
+    for _ in 0..101 {
         point = clifford_step(point, params);
-        if i >= 100 {
-            orbit.push(point);
+    }
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (point.0, point.0, point.1, point.1);
+    for _ in 1..3000 {
+        point = clifford_step(point, params);
+        if point.0 < min_x {
+            min_x = point.0;
+        }
+        if point.0 > max_x {
+            max_x = point.0;
+        }
+        if point.1 < min_y {
+            min_y = point.1;
+        }
+        if point.1 > max_y {
+            max_y = point.1;
         }
     }
-    (
-        py_min(orbit.iter().map(|p| p.0)),
-        py_max(orbit.iter().map(|p| p.0)),
-        py_min(orbit.iter().map(|p| p.1)),
-        py_max(orbit.iter().map(|p| p.1)),
-    )
+    (min_x, max_x, min_y, max_y)
 }
 
 impl BuildScene for Attractor {

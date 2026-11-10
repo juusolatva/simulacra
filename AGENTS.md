@@ -133,6 +133,7 @@ Project key: `juusolatva_abstract-art`.
 
 - **CodeQL `py/overly-permissive-file` (`os.open(..., 0o666)` in `_create_temporary`):** false positive. `0o666` is the mode `open()` itself passes; the kernel removes the umask bits, so the file gets exactly the permissions of a normal `open(path, "wb")` (0o644 under the usual umask 0o022), which `test_writers_use_default_file_permissions` checks. A fixed stricter mode such as 0o644 would override a user's umask (dropping group write under 0o002), and reading the umask needs `os.umask()`, which is process-wide (see Writers). `core/cli/src/output.rs` makes the same choice. Dismiss the alert as a false positive rather than changing the mode.
 
+- **rust:S6164 (approximate constant, e.g. `1.414` read as `SQRT_2`) in `ATTRACTOR_TABLE`:** false positive. The table entries are parameter values that must equal Python's `_ATTRACTOR_TABLE` exactly; a library constant would change the figure.
 - **S2245 (pseudorandom generator):** false positive. Seeded `random.Random` is used deliberately for reproducible art.
 - **S5863 in the determinism test:** false positive. The two sides are separate renders that must be equal.
 - **pythonsecurity:S8707 (path traversal on `--out`, or on the benchmark's `--save` and `--compare`):** accepted. A local tool reads and writes where its user asks.
