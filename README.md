@@ -365,7 +365,7 @@ cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli
 core/target/release/simulacra --style waves --palette lagoon --seed 17 --width 1280 --height 720 --out waves.png
 ```
 
-Building with `--features portable` gives the same image on every platform, as planned for released binaries; such a build can differ slightly from Python (see [Optional Rust core](#optional-rust-core)). See [`PLAN.md`](PLAN.md), Phase 3, for what comes next.
+Building with `--features portable` gives the same image on every platform, as planned for released binaries; such a build can differ slightly from Python (see [Optional Rust core](#optional-rust-core)). CI builds such test binaries for Linux (x86_64, aarch64) and Windows (x86_64) and checks each one against the committed fixtures with `core/cli/tests/check_release.py`; they are not published yet. See [`PLAN.md`](PLAN.md), Phase 3, for what comes next.
 
 ## Testing
 

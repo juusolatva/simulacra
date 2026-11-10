@@ -1,6 +1,6 @@
 # Rust rewrite plan
 
-Status (2026-11-08): Phase 1 is done except wider baseline coverage (more
+Status (2026-11-10): Phase 1 is done except wider baseline coverage (more
 seeds, aspect ratios and palettes). Phase 2 meets its acceptance criterion:
 `core/` is a Cargo workspace with `simulacra_engine` (no PyO3 unless its
 `python` feature is on) and the `simulacra_core` adapter; the math module has
@@ -14,8 +14,10 @@ Phase 4). Phase 2b is done:
 helper the scene builders use. Phase 3 has started: the `simulacra` binary
 (`core/cli`) renders `blobs`, `mandelbrot` and `waves` to PNG without Python,
 with scene builders ported to the engine, pixel-identical to `simulacra.py`
-(PR #32). Next in Phase 3: scene validation, release binaries and
-distribution. Phase 4's ownership rule already applies to those three
+(PR #32), and test release binaries for Linux and Windows render the `portable`
+fixtures on each target (`release-binaries.yml`). Next in Phase 3: scene
+validation, then the distribution route, signing and smoke tests when the
+first release approaches. Phase 4's ownership rule already applies to those three
 builders. Phases 4 to 6 have not started otherwise.
 
 Prepared on 2026-11-04 from the GitHub source review of
@@ -445,14 +447,35 @@ scene builders use, across the supported seed range.
   `create_new(true)` and `mode(0o666)`. Done (`core/cli/src/output.rs`):
   `.simulacra-<hex>.tmp` next to the destination, created exclusively with
   mode 0o666, renamed over the destination, removed on failure; tested.
-- [ ] Produce test release binaries for Windows (x86_64), macOS (arm64 and
-  x86_64), and Linux (x86_64 and aarch64), built with the `portable` math
-  backend, and check the `portable` fixtures on each target.
+- [x] Produce test release binaries for Windows (x86_64) and Linux (x86_64
+  and aarch64), built with the `portable` math backend, and check the
+  `portable` fixtures on each target. macOS was dropped as a target
+  (decided 2026-11-10): there is no Mac to test a download on, and so no
+  signing or notarization either. Done
+  (`.github/workflows/release-binaries.yml`): each target builds on a native
+  runner (`ubuntu-24.04`, `ubuntu-24.04-arm`, `windows-2025`), checks that `simulacra_cli` does not pull in PyO3, runs
+  the engine's portable fixtures and the CLI tests there, and packages the
+  binary (tar.gz, zip on Windows) as a 14-day artifact; nothing is
+  published. A separate job downloads each package on a fresh runner and
+  runs `core/cli/tests/check_release.py`: every style in `--list-styles`
+  must render its fixture's SHA-256 from the decoded PNG, so ported styles
+  join automatically. A last job requires 12 larger workloads (640 × 480 and
+  non-square sizes, negative and 64-bit seeds, phases outside [0, 1), custom
+  stops) to hash identically on all three targets. The Linux binaries link
+  glibc from the build runner (Ubuntu 24.04); the oldest glibc to support,
+  or a static musl build instead, is part of choosing the distribution
+  route.
 - [ ] Choose a distribution route, for example GitHub Releases built with
-  `cargo-dist`, plus Homebrew and `cargo install`.
-- [ ] Sign and notarize macOS binaries so Gatekeeper accepts downloads; check
-  Windows SmartScreen behavior and decide whether to sign Windows binaries.
+  `cargo-dist`, plus `cargo install`.
+- [ ] Check Windows SmartScreen behavior and decide whether to sign Windows
+  binaries. (macOS signing and notarization are dropped with the target.)
 - [ ] Smoke-test those binaries in environments without Python installed.
+  Partly done: on Linux the verify job runs the downloaded binary in a
+  pinned `debian:trixie-slim` image with no Python and no Rust (the checker
+  refuses an image that has Python). The Windows runner has Python
+  installed, so there the evidence is that the binary does not link it
+  (PyO3 absent from the dependency tree); a clean machine or VM check
+  belongs with the release.
 
 Acceptance: downloaded executables generate images that match the `portable`
 fixtures on every target, without Python or build tools. Distribution is
@@ -728,6 +751,7 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    `portable` fixtures). Render options follow with Phase 3.
 6. Done: port CPython's random generator (`PyRandom`).
 7. In progress: prove standalone delivery with a small subset of styles. Done:
-   the `simulacra` binary for `blobs`, `mandelbrot` and `waves`. Next: scene
-   validation, release binaries and distribution.
+   the `simulacra` binary for `blobs`, `mandelbrot` and `waves`, and test
+   release binaries for Linux and Windows checked against the fixtures. Next:
+   scene validation; the distribution route and signing wait for the release.
 8. Continue Python style experimentation and migrate settled styles in batches.
