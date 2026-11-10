@@ -2,13 +2,23 @@
 
 use crate::noise::{contrast, fbm_loop};
 use crate::palette::Palette;
-use crate::validate::{Canvas, SceneError, check_loop_phase};
 use crate::raster::shade;
+use crate::scenes::{BuildScene, SceneParams};
+use crate::validate::{Canvas, SceneError, check_loop_phase};
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Drift {
     phase: f64,
+}
+
+impl BuildScene for Drift {
+    /// `_drift_scene`: the noise only needs the phase.
+    fn build(params: &SceneParams<'_>) -> Self {
+        Self {
+            phase: params.phase,
+        }
+    }
 }
 
 impl super::Style for Drift {

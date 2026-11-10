@@ -2,6 +2,7 @@
 
 import inspect
 import io
+import json
 import math
 import os
 import pathlib
@@ -1187,6 +1188,121 @@ class RenderingTests(unittest.TestCase):
             self.assertEqual(out.read_bytes(), expected.read_bytes())
 
 
+# With portable math the Rust builders' sin, cos, exp and pow come from the libm
+# crate, so scene floats can differ from Python's in the last bits (measured: at
+# most 1.8e-15 of max(1, |value|), from orbits) while every rendered pixel stays
+# the same. See "Measured portable drift" in PLAN.md.
+PORTABLE_SCENE_TOLERANCE = 1e-12
+
+
+def _scene_differences(rust, python, path='scene', tolerance=0.0):
+    """Where a Rust-built scene (parsed from JSON) differs from the Python builder's.
+
+    JSON turns tuples into lists, so sequences compare element by element. Floats
+    must have the same bits (so 0.0 and -0.0 differ), or with a ``tolerance`` lie
+    within ``tolerance * max(1, |python|)``. An integer equals a float only when the
+    Rust field is a float holding the same value (``Petals.count``).
+    """
+    if isinstance(python, dict):
+        if not isinstance(rust, dict) or rust.keys() != python.keys():
+            return ['%s: keys %s != %s' % (path, sorted(rust) if isinstance(rust, dict) else rust,
+                                           sorted(python))]
+        return [d for key in python
+                for d in _scene_differences(rust[key], python[key], '%s.%s' % (path, key), tolerance)]
+    if isinstance(python, (list, tuple)):
+        if not isinstance(rust, list) or len(rust) != len(python):
+            return ['%s: %r != %r' % (path, rust, python)]
+        return [d for i, (r, p) in enumerate(zip(rust, python))
+                for d in _scene_differences(r, p, '%s[%d]' % (path, i), tolerance)]
+    if isinstance(rust, bool) or isinstance(python, bool):
+        return [] if rust is python else ['%s: %r != %r' % (path, rust, python)]
+    if isinstance(rust, float):
+        if not isinstance(python, (int, float)):
+            same = False
+        elif tolerance:
+            same = abs(rust - python) <= tolerance * max(1.0, abs(python))
+        else:
+            same = struct.pack('<d', rust) == struct.pack('<d', python)
+        return [] if same else ['%s: %r != %r' % (path, rust, python)]
+    return [] if type(rust) is type(python) and rust == python else ['%s: %r != %r' % (path, rust, python)]
+
+
+@unittest.skipIf(art._core is None, 'Rust core not built (see README)')
+class RustSceneBuilderTests(unittest.TestCase):
+    """The engine's ports of the Python scene builders (``_core.SCENE_BUILDERS``).
+
+    The standalone binary builds its scenes in Rust, so each port must reproduce
+    its Python builder draw for draw: the scene data itself is compared, before
+    any rendering, so a mismatch names the field that differs. Exact on the
+    default core; within ``PORTABLE_SCENE_TOLERANCE`` on a portable one.
+    """
+
+    def assert_same_scene(self, style, width, height, seed, stops, phase):
+        rust = art._core.build_scene(style, width, height, seed, stops, phase)
+        self.assertIsNotNone(rust)
+        python = art.NATIVE_STYLES[style](width, height, seed, stops, phase)
+        tolerance = PORTABLE_SCENE_TOLERANCE if art._core.PORTABLE else 0.0
+        differences = _scene_differences(json.loads(rust), python, tolerance=tolerance)
+        self.assertEqual(differences, [])
+
+    def test_ported_builders_are_native_styles(self):
+        self.assertEqual(list(art._core.SCENE_BUILDERS), sorted(art._core.SCENE_BUILDERS))
+        self.assertLessEqual(set(art._core.SCENE_BUILDERS), set(art.NATIVE_STYLES))
+        stops = art.PALETTES['deep']
+        for style in set(art.NATIVE_STYLES) - set(art._core.SCENE_BUILDERS):
+            with self.subTest(style=style):
+                self.assertIsNone(art._core.build_scene(style, 8, 6, 1, stops, 0.0))
+
+    def test_rust_scenes_match_python_exactly(self):
+        # Palettes with 2, 5 and 7 stops: orbits draws randrange(len(stops)).
+        palettes = ([(0, 0, 0), (255, 255, 255)], art.PALETTES['deep'], art.PALETTES['rainbow'])
+        sizes = ((1, 1), (2, 5), (37, 23), (29, 61), (640, 480), (3840, 2160))
+        seeds = (0, 1, -7, 12345, 2 ** 40 + 3, 2 ** 63 - 1, -2 ** 63)
+        phases = (0.0, 0.37, 1.0, -1.81, 2.5, 1e9 + 0.125, 1e300)
+        self.assertEqual({len(stops) for stops in palettes}, {2, 5, 7})
+        for style in art._core.SCENE_BUILDERS:
+            for (width, height), seed in zip(sizes * 2, seeds):
+                for stops in palettes:
+                    for phase in phases:
+                        with self.subTest(style=style, size=(width, height), seed=seed,
+                                          stops=len(stops), phase=phase):
+                            self.assert_same_scene(style, width, height, seed, stops, phase)
+
+    def test_rust_scenes_match_python_at_huge_sizes(self):
+        # Far beyond any canvas: cosmos and nebula square the sides, which Rust
+        # must do without overflow and round once, like Python's exact ints.
+        for style in art._core.SCENE_BUILDERS:
+            for width, height in ((2 ** 33, 2 ** 33 + 1), (2 ** 63 - 1, 3), (2 ** 64 - 1, 2 ** 64 - 1)):
+                with self.subTest(style=style, size=(width, height)):
+                    self.assert_same_scene(style, width, height, 5, art.PALETTES['deep'], 0.3)
+
+    def test_rust_scene_rejects_a_non_finite_phase(self):
+        for phase in (math.nan, math.inf, -math.inf):
+            with self.subTest(phase=phase):
+                with self.assertRaisesRegex(ValueError, 'phase'):
+                    art._core.build_scene('blobs', 8, 6, 1, art.PALETTES['deep'], phase)
+
+    def test_rust_scenes_match_python_over_many_seeds(self):
+        stops = art.PALETTES['lagoon']
+        for style in art._core.SCENE_BUILDERS:
+            for seed in range(200):
+                with self.subTest(style=style, seed=seed):
+                    self.assert_same_scene(style, 48 + seed % 7, 36 + seed % 5, seed, stops, seed / 64.0)
+
+    def test_scene_differences_reports_mismatches(self):
+        self.assertEqual(_scene_differences({'a': [[1.0, 2]]}, {'a': [(1.0, 2)]}), [])
+        self.assertEqual(_scene_differences({'n': 5.0}, {'n': 5}), [])
+        self.assertEqual(len(_scene_differences({'n': 5}, {'n': 5.0})), 1)
+        self.assertEqual(len(_scene_differences({'x': -0.0}, {'x': 0.0})), 1)
+        self.assertEqual(len(_scene_differences({'x': 0.1 + 0.2}, {'x': 0.3})), 1)
+        self.assertEqual(len(_scene_differences({'x': [1.0]}, {'x': (1.0, 2.0)})), 1)
+        self.assertEqual(len(_scene_differences({'x': 1}, {'x': 1, 'y': 2})), 1)
+        self.assertEqual(len(_scene_differences({'i': 3}, {'i': 4})), 1)
+        self.assertEqual(_scene_differences({'x': [0.1 + 0.2, 1e6 + 1e-7]}, {'x': (0.3, 1e6)}, tolerance=1e-12), [])
+        self.assertEqual(len(_scene_differences({'x': 1e-3}, {'x': 2e-3}, tolerance=1e-12)), 1)
+        self.assertEqual(len(_scene_differences({'n': 5}, {'n': 6}, tolerance=1e-12)), 1)
+
+
 STANDALONE_CLI = os.environ.get('SIMULACRA_CLI')
 
 
@@ -1205,9 +1321,12 @@ class StandaloneCliTests(unittest.TestCase):
     def scanlines(self, path):
         return zlib.decompress(dict(chunks(path))[b'IDAT'])
 
+    def listed_styles(self):
+        return self.run_cli('--list-styles').stdout.split()
+
     def test_images_match_the_python_renderer(self):
         cases = [(style, width, height, seed, phase)
-                 for style in ('blobs', 'mandelbrot', 'waves')
+                 for style in self.listed_styles()
                  for width, height in ((48, 36), (29, 37))
                  for seed in (1, -7, 2 ** 40 + 3)
                  for phase in (0.0, 0.37)]
@@ -1240,7 +1359,12 @@ class StandaloneCliTests(unittest.TestCase):
                     self.assertEqual(dict(chunks(rust))[b'IHDR'], dict(chunks(python))[b'IHDR'])
 
     def test_lists_and_errors(self):
-        self.assertEqual(self.run_cli('--list-styles').stdout.split(), ['blobs', 'mandelbrot', 'waves'])
+        styles = self.listed_styles()
+        self.assertEqual(styles, sorted(styles))
+        self.assertLessEqual(set(styles), set(art.NATIVE_STYLES))
+        self.assertIn('waves', styles)  # the default style
+        if art._core is not None:
+            self.assertEqual(styles, list(art._core.SCENE_BUILDERS))
         self.assertEqual(self.run_cli('--list-palettes').stdout.split(), sorted(art.PALETTES))
         for args, message in ((['--width', '0'], 'width and height must be positive'),
                               (['--width', '10001', '--height', '10000'], 'the limit is 100000000'),

@@ -13,7 +13,7 @@ use crate::validate::{Canvas, SceneError, check_numbers, check_polygons};
 use crate::raster::shade;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Circuit {
     /// (node pads, segments) per trace
     traces: Vec<(Vec<Point>, Vec<Segment>)>,
@@ -58,7 +58,7 @@ impl Style for Circuit {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Geo {
     polygons: Vec<Vec<Point>>,
 }
@@ -86,7 +86,7 @@ impl Style for Geo {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Shard {
     /// (radius, polygon, cracks)
     shards: Vec<(f64, Vec<Point>, Vec<Segment>)>,
@@ -128,7 +128,7 @@ impl Style for Shard {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Prism {
     /// (cx, cy, radius, glow, layers)
     gems: Vec<(f64, f64, f64, f64, Vec<PrismLayer>)>,
@@ -165,7 +165,7 @@ impl Style for Prism {
 }
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Mandala {
     center: Point,
     medallion: f64,

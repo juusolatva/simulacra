@@ -44,6 +44,38 @@ pub(crate) fn loop_angle(phase: f64, cycles: i32) -> f64 {
     std::f64::consts::TAU * f64::from(cycles) * py_mod(phase, 1.0)
 }
 
+/// Python's `6.28`, the upper bound many builders draw a phase from (it is not
+/// tau, and the scenes must match it).
+#[allow(
+    clippy::approx_constant,
+    reason = "Python draws uniform(0, 6.28), not tau"
+)]
+pub(crate) const ROUGH_TAU: f64 = 6.28;
+
+/// The golden angle in radians, as Python's `_circle_offset` writes it.
+const GOLDEN_ANGLE: f64 = 2.399_963_229_728_653;
+
+/// Python's `index * 2.399963229728653`: where item `index` starts on its
+/// circle (in `_circle_offset`, `_drift_stars` and the ring breathing of
+/// `orbits`).
+#[inline]
+pub(crate) fn golden_start(index: usize) -> f64 {
+    index as f64 * GOLDEN_ANGLE
+}
+
+/// Python's `_circle_offset(index, reach, phase)`: where item `index` sits on a
+/// circle of radius `reach` as `phase` runs from 0 to 1, measured from the
+/// circle's starting point, so phase 0 gives exactly `(0.0, 0.0)`.
+#[inline]
+pub(crate) fn circle_offset(index: usize, reach: f64, phase: f64) -> (f64, f64) {
+    let start = golden_start(index);
+    let angle = start + loop_angle(phase, 1);
+    (
+        reach * (angle.m_cos() - start.m_cos()),
+        reach * (angle.m_sin() - start.m_sin()),
+    )
+}
+
 /// `(width - 1) / 2.0`, the pixel-center origin most styles use.
 #[inline]
 pub fn center(width: usize, height: usize) -> (f64, f64) {
