@@ -519,16 +519,25 @@ are frozen from the PR that ports its builder. They stay in `simulacra.py` as
 the reference the tests compare against (native against Python, Rust scenes
 against Python scenes, the binary against Python) until Phase 6 retires
 Python, but they are not edited. A deliberate change to a frozen style (a new
-look or a bug fix) is made in Rust only, and that PR also takes the style out
-of the Python comparisons and regenerates its fixture from the Rust builder.
-The first such change has to add that path: `make_fixtures.py` builds its
-scenes in Python, and the comparisons cover every style in `NATIVE_STYLES` or
+look or a bug fix) is made in Rust only. The same PR takes the style out of
+the Python comparisons, regenerates its fixture from the Rust builder, and
+makes `simulacra.py` render the style from the Rust builder when the core is
+installed: `_render_native` builds every scene in Python, so without that
+step a Rust-only change would reach the binary but not Python users with the
+core. Without the core, `simulacra.py` keeps the style's old look (or refuses
+the style) until Phase 6. The first such change has to add all of this:
+`make_fixtures.py` builds its scenes in Python, `_render_native` has no Rust
+builder path, and the comparisons cover every style in `NATIVE_STYLES` or
 `SCENE_BUILDERS`. This replaces the earlier ownership rule, which required
 every change to a ported Python builder to be mirrored in Rust in the same
-PR. A frozen style no longer has four places to keep in step. Any change that
-reaches Python anyway still fails `RustSceneBuilderTests`, `StandaloneCliTests`
-and `ported_scene_builders_render_the_fixture_hash`. The authoring decision in
-Phase 6 covers styles added after cutover.
+PR. A frozen style no longer has four places to keep in step. An accidental
+edit is still caught: a change to a frozen Python builder fails
+`RustSceneBuilderTests` (and `StandaloneCliTests`), and a change to a frozen
+Python renderer fails `test_native_styles_match_python_exactly`, which
+compares the native core with the pure-Python renderer. A Rust builder change
+also fails `ported_scene_builders_render_the_fixture_hash`, and a Rust shader
+change the portable fixtures. The authoring decision in Phase 6 covers styles
+added after cutover.
 
 Batch 1 (2026-11-10): the 18 per-pixel fields with short builders (`aurora`,
 `bloom`, `cosmos`, `crystal`, `drift`, `galaxy`, `gems`, `horizon`,
