@@ -19,9 +19,9 @@ fixtures on each target (`release-binaries.yml`), and the engine validates
 every scene before rendering it. Phase 3 has the distribution route, Windows
 signing and clean-machine smoke tests left, which wait for the first release.
 Phase 4 has started: style experimentation has stopped, ported styles are
-frozen in Python (see "Freeze policy"), batch 1 ported 19 more builders and
-batch 2 another 12, so the binary renders 34 styles. Phases 5 and 6 have not
-started.
+frozen in Python (see "Freeze policy"), batch 1 ported 19 more builders,
+batch 2 another 12 and batch 3 another 8, so the binary renders 42 styles.
+Phases 5 and 6 have not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -619,6 +619,33 @@ Batch 2 (2026-11-10): the geometry and object scenes. The four space styles
   files differ only in compression; the decoded pixels are identical.
 - No intentional visual change, so no contact sheet was needed.
 
+Batch 3 (2026-11-10): the remaining per-pixel fields (`contour`, `cymatics`,
+`opart`, `optics`) and the brush builders (`comet`, `ember`, `flowfield`,
+`ink`). 42 of the 48 builders are ported.
+
+- `ink`'s `steps` (`max(8, ceil(length * 2))`) is now a float holding a whole
+  number in the Rust scene: Python's unbounded int outgrows `i64` on sides near
+  2**64 (`test_rust_scenes_match_python_at_huge_sizes`), but it is always a
+  float's exact value, and the comparison accepts a Rust float against a
+  Python int as for `Petals.count`. Validation requires it to be a whole
+  number of at least 1 (Python would divide by zero at 0); the shader loops to
+  `steps as i64`, so output is unchanged and the fixture loads as before.
+- `comet` and `ember` draw positions up to `width - 1.0` (a float
+  subtraction), `flowfield` and `ink` up to Python's int `width - 1`
+  (`last_index`), as their Python builders do.
+- Checks: `RustSceneBuilderTests` (exact on the default core; on a portable
+  core within the tolerance, largest difference 6.7e-16 of max(1, |value|) in
+  `ember`), `StandaloneCliTests` over the 42 styles, the release check (42
+  styles render their portable fixtures from Rust-built scenes) and the slow
+  native-versus-Python checks. On a portable core, Rust-built and
+  Python-built scenes rendered the same pixels in all 1600 cases for the 8
+  new styles (5 sizes up to 640 × 480, 5 seeds, 2 palettes, 4 phases).
+- Performance at 640 × 480 (seed 3, phase 0.37), end to end: the binary took
+  0.00 to 0.03 s per style with a peak of 4.6 to 6.8 MB; `simulacra.py` with
+  the core took 0.05 to 0.09 s and about 36 MB. The decoded pixels are
+  identical.
+- No intentional visual change, so no contact sheet was needed.
+
 For each batch:
 
 - [ ] Compare Python and Rust scene data before comparing rendered RGB: the
@@ -884,8 +911,6 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    for the release.
 8. In progress: Phase 4, porting the scene builders. Style experimentation
    has stopped and ported styles are frozen in Python (decided 2026-11-10,
-   see "Freeze policy"). Batches 1 and 2 are done (34 of 48 builders
-   ported). Next are the remaining per-pixel fields (`contour`, `cymatics`,
-   `opart`, `optics`) and the brush builders (`comet`, `ember`, `flowfield`,
-   `ink`), then the sampled and prepared scenes (`torus`, `lissajous`,
+   see "Freeze policy"). Batches 1 to 3 are done (42 of 48 builders
+   ported). Next are the sampled and prepared scenes (`torus`, `lissajous`,
    `woodblock`, `mosaic`), then `attractor` and `marbling`.

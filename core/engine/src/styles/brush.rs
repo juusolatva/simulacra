@@ -5,10 +5,10 @@
 //! order `simulacra.py` uses. Only the final per-pixel shading is parallel.
 
 use crate::math::{Libm, py_hypot};
-use std::f64::consts::TAU;
+use std::f64::consts::{PI, TAU};
 
 use super::fields::diagonal;
-use super::{Style, drift_stars, gaussian, last_index, unit};
+use super::{ROUGH_TAU, Style, circle_offset, drift_stars, gaussian, last_index, loop_angle, unit};
 use crate::geometry::Point;
 use crate::noise::{contrast, fbm};
 use crate::palette::Palette;
@@ -116,6 +116,25 @@ impl Style for Flowfield {
     }
 }
 
+impl BuildScene for Flowfield {
+    /// `_flowfield_scene`: 40 to 80 trail starts, each circling a small radius.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let reach = 0.04 * width.min(height) as f64;
+        let (last_x, last_y) = (last_index(width), last_index(height));
+        let count = rng.randint(40, 80);
+        let starts = (0..count as usize)
+            .map(|index| {
+                let (x, y) = (rng.uniform(0.0, last_x), rng.uniform(0.0, last_y));
+                let (dx, dy) = circle_offset(index, reach, params.phase);
+                (x + dx, y + dy)
+            })
+            .collect();
+        Self { starts }
+    }
+}
+
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Comet {
@@ -170,8 +189,33 @@ impl Style for Comet {
     }
 }
 
-/// (x0, y0, x1, y1, control x, control y, brush, alpha, steps)
-type Stroke = (f64, f64, f64, f64, f64, f64, f64, f64, i64);
+impl BuildScene for Comet {
+    /// `_comet_scene`: 3 to 6 comets whose heads circle a point.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let (w, h) = (width as f64, height as f64);
+        let reach = 0.12 * width.min(height) as f64;
+        let count = rng.randint(3, 6);
+        let comets = (0..count as usize)
+            .map(|index| {
+                let (x, y) = (rng.uniform(0.0, w - 1.0), rng.uniform(0.0, h - 1.0));
+                let angle = rng.uniform(0.0, 2.0 * PI);
+                let speed = rng.uniform(0.2, 0.6) * w;
+                let radius = rng.uniform(0.8, 3.0);
+                let (dx, dy) = circle_offset(index, reach, params.phase);
+                (x + dx, y + dy, angle, speed, radius)
+            })
+            .collect();
+        Self { comets }
+    }
+}
+
+/// (x0, y0, x1, y1, control x, control y, brush, alpha, steps). `steps` is a
+/// whole number held as a float: Python's `max(8, ceil(length * 2))` is an
+/// unbounded int, which outgrows `i64` on sides near 2**64 but is always a
+/// float's exact value.
+type Stroke = (f64, f64, f64, f64, f64, f64, f64, f64, f64);
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -182,11 +226,17 @@ pub struct Ink {
 impl Style for Ink {
     fn validate(&self, canvas: &Canvas) -> Result<f64, SceneError> {
         check_numbers!(self, strokes);
+        if self.strokes.iter().any(|s| s.8 < 1.0 || s.8.fract() != 0.0) {
+            return Err(SceneError::Range {
+                field: "strokes",
+                rule: "has a stroke whose steps are not a whole number of at least 1",
+            });
+        }
         let mut work = canvas.pixels();
         for &(_, _, _, _, _, _, brush, _, steps) in &self.strokes {
             // `steps + 1` stamps; the radius never exceeds max(brush, 0.5), and each
             // stamp's square is clipped to the canvas.
-            let stamps = (steps as f64 + 1.0).max(0.0);
+            let stamps = steps + 1.0;
             let side = 2.0 * (brush.max(0.5) * 2.0).ceil() + 1.0;
             let area = side.min(canvas.width as f64) * side.min(canvas.height as f64);
             work += SEQUENTIAL_WEIGHT * stamps * area;
@@ -198,8 +248,9 @@ impl Style for Ink {
         let mut glow = vec![0.0; width * height];
         let (w, h) = (width as i64, height as i64);
         for &(x0, y0, x1, y1, cx, cy, brush, alpha, steps) in &self.strokes {
-            for i in 0..=steps {
-                let t = i as f64 / steps as f64;
+            // A whole number of at most 2**40 (validated), so the cast is exact.
+            for i in 0..=steps as i64 {
+                let t = i as f64 / steps;
                 let u = 1.0 - t;
                 let px = u * u * x0 + 2.0 * u * t * cx + t * t * x1;
                 let py = u * u * y0 + 2.0 * u * t * cy + t * t * y1;
@@ -219,6 +270,33 @@ impl Style for Ink {
             }
         }
         glow_pixels(width, height, palette, &glow)
+    }
+}
+
+impl BuildScene for Ink {
+    /// `_ink_scene`: 5 to 9 strokes whose control points circle, so the curves
+    /// flex while their ends stay put.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height) = (params.width, params.height);
+        let mut rng = PyRandom::new(params.seed);
+        let small = width.min(height) as f64;
+        let (last_x, last_y) = (last_index(width), last_index(height));
+        let count = rng.randint(5, 9);
+        let strokes = (0..count as usize)
+            .map(|index| {
+                let (x0, y0) = (rng.uniform(0.0, last_x), rng.uniform(0.0, last_y));
+                let (x1, y1) = (rng.uniform(0.0, last_x), rng.uniform(0.0, last_y));
+                let (cx, cy) = (rng.uniform(0.0, last_x), rng.uniform(0.0, last_y));
+                let brush = (small * rng.uniform(0.008, 0.025)).max(0.8);
+                let alpha = rng.uniform(0.35, 0.9);
+                let (dx, dy) = circle_offset(index, 0.15 * small, params.phase);
+                let (cx, cy) = (cx + dx, cy + dy);
+                let length = py_hypot(cx - x0, cy - y0) + py_hypot(x1 - cx, y1 - cy);
+                let steps = (length * 2.0).ceil().max(8.0);
+                (x0, y0, x1, y1, cx, cy, brush, alpha, steps)
+            })
+            .collect();
+        Self { strokes }
     }
 }
 
@@ -268,6 +346,38 @@ impl Style for Ember {
             }
         }
         glow_pixels(width, height, palette, &glow_sum)
+    }
+}
+
+impl BuildScene for Ember {
+    /// `_ember_scene`: 60 to 110 embers that sway on small circles while their
+    /// flicker runs one cycle per loop.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let (width, height, phase) = (params.width, params.height, params.phase);
+        let mut rng = PyRandom::new(params.seed);
+        let (w, h) = (width as f64, height as f64);
+        let sway = 0.03 * width.min(height) as f64;
+        let count = rng.randint(60, 110);
+        let embers = (0..count as usize)
+            .map(|index| {
+                let x = rng.uniform(0.0, w - 1.0);
+                let y = rng.uniform(0.0, h - 1.0);
+                let rise = rng.uniform(0.15, 0.55) * h;
+                let size = rng.uniform(0.6, 2.4);
+                let flicker_phase = rng.uniform(0.0, ROUGH_TAU);
+                let flicker = rng.uniform(0.5, 1.0);
+                let (dx, dy) = circle_offset(index, sway, phase);
+                (
+                    x + dx,
+                    y + dy,
+                    rise,
+                    size,
+                    flicker_phase + loop_angle(phase, 1),
+                    flicker,
+                )
+            })
+            .collect();
+        Self { embers }
     }
 }
 

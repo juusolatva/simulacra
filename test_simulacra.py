@@ -1201,7 +1201,7 @@ def _scene_differences(rust, python, path='scene', tolerance=0.0):
     JSON turns tuples into lists, so sequences compare element by element. Floats
     must have the same bits (so 0.0 and -0.0 differ), or with a ``tolerance`` lie
     within ``tolerance * max(1, |python|)``. An integer equals a float only when the
-    Rust field is a float holding the same value (``Petals.count``).
+    Rust field is a float holding the same value (``Petals.count``, ink's steps).
     """
     if isinstance(python, dict):
         if not isinstance(rust, dict) or rust.keys() != python.keys():
@@ -1372,7 +1372,7 @@ class StandaloneCliTests(unittest.TestCase):
                               (['--phase', 'inf'], 'phase must be a finite number'),
                               (['--palette-stops', 'ff0000'], 'at least two colors'),
                               (['--out', 'image.gif'], 'GIF output'),
-                              (['--style', 'ink'], 'ink'),
+                              (['--style', 'torus'], 'torus'),
                               (['--seed', '3', '--random-seed'], 'cannot be used with')):
             with self.subTest(args=args):
                 result = self.run_cli(*args, check=False)

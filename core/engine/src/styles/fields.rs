@@ -1307,6 +1307,32 @@ impl Style for Cymatics {
     }
 }
 
+impl BuildScene for Cymatics {
+    /// `_cymatics_scene`: a circular or square plate and three modes, each with
+    /// two phases turning at different rates.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let phase = params.phase;
+        let mut rng = PyRandom::new(params.seed);
+        let circular = rng.random() < 0.5;
+        let modes = (0..3)
+            .map(|i| {
+                let n = rng.randint(2, 5) as f64;
+                let mut m = rng.randint(1, 6) as f64;
+                if !circular && n == m {
+                    m = n + 1.0;
+                }
+                let weight = rng.uniform(0.45, 0.75);
+                let turns_a = if i % 2 == 0 { 1 } else { -1 };
+                let phase_a = rng.uniform(0.0, TAU) + loop_angle(phase, turns_a);
+                let turns_b = if i == 1 { -2 } else { 1 };
+                let phase_b = rng.uniform(0.0, TAU) + loop_angle(phase, turns_b);
+                (n, m, weight, phase_a, phase_b)
+            })
+            .collect();
+        Self { circular, modes }
+    }
+}
+
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Optics {
@@ -1358,6 +1384,52 @@ impl Style for Optics {
     }
 }
 
+impl BuildScene for Optics {
+    /// `_optics_scene`: four caustic waves, a thin film, an aperture's blades
+    /// and three circling flares.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let phase = params.phase;
+        let mut rng = PyRandom::new(params.seed);
+        let waves = (0..4_i32)
+            .map(|i| {
+                let angle = f64::from(i) * (PI / 4.0) + rng.uniform(-0.25, 0.25);
+                let freq = rng.uniform(2.2, 3.8) * PI;
+                let turns = if i % 2 == 0 { 1 } else { -1 };
+                let wave_phase = rng.uniform(0.0, TAU) + loop_angle(phase, turns);
+                (freq * angle.m_cos(), freq * angle.m_sin(), wave_phase)
+            })
+            .collect();
+        let film = (
+            rng.uniform(-2.4, 2.4),
+            rng.uniform(-2.4, 2.4),
+            rng.uniform(2.6, 4.2),
+            rng.uniform(0.0, TAU) + loop_angle(phase, 1),
+        );
+        let blades = *rng.choice(&[4.0, 6.0, 8.0]);
+        let spin = rng.uniform(0.0, TAU) + loop_angle(phase, -1);
+        let flares = (0..3)
+            .map(|i| {
+                let fx = rng.uniform(-0.55, 0.55);
+                let fy = rng.uniform(-0.55, 0.55);
+                let (dx, dy) = circle_offset(i, 0.14, phase);
+                (
+                    fx + dx,
+                    fy + dy,
+                    rng.uniform(0.22, 0.36),
+                    rng.uniform(0.55, 0.85),
+                )
+            })
+            .collect();
+        Self {
+            waves,
+            film,
+            blades,
+            spin,
+            flares,
+        }
+    }
+}
+
 const CONTOUR_LEVELS: f64 = 14.0;
 
 #[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
@@ -1393,6 +1465,15 @@ impl Style for Contour {
             let ink = if major { 0.95 } else { 0.78 };
             base * (1.0 - line) + ink * line
         })
+    }
+}
+
+impl BuildScene for Contour {
+    /// `_contour_scene`: only the phase, which the looping terrain noise takes.
+    fn build(params: &SceneParams<'_>) -> Self {
+        Self {
+            phase: params.phase,
+        }
     }
 }
 
@@ -1441,6 +1522,40 @@ impl Style for Opart {
             let sharp = 1.0 / (1.0 + ((-steep) * wave).m_exp());
             0.04 + 0.8 * sharp + 0.16 * glow.min(1.0)
         })
+    }
+}
+
+/// Python's `_OPART_PATTERNS`, whose length `_opart_scene` draws below.
+const OPART_PATTERNS: i64 = 3;
+
+impl BuildScene for Opart {
+    /// `_opart_scene`: one of the stripe, checker and ring patterns, warped by
+    /// two or three circling bulges.
+    fn build(params: &SceneParams<'_>) -> Self {
+        let phase = params.phase;
+        let mut rng = PyRandom::new(params.seed);
+        let pattern = rng.randrange(OPART_PATTERNS);
+        let angle = rng.uniform(0.0, PI);
+        let freq = rng.uniform(3.0, 5.0);
+        let shift = rng.uniform(0.0, TAU) + loop_angle(phase, 1);
+        let count = rng.randint(2, 3);
+        let bulges = (0..count as usize)
+            .map(|i| {
+                let bx = rng.uniform(-0.8, 0.8);
+                let by = rng.uniform(-0.8, 0.8);
+                let radius = rng.uniform(0.32, 0.6);
+                let strength = rng.uniform(0.5, 0.85);
+                let (dx, dy) = circle_offset(i, 0.18, phase);
+                (bx + dx, by + dy, radius, strength)
+            })
+            .collect();
+        Self {
+            pattern,
+            angle,
+            freq,
+            shift,
+            bulges,
+        }
     }
 }
 
