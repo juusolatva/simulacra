@@ -31,11 +31,15 @@ pub fn value_noise(x: f64, y: f64, seed: u32) -> f64 {
     let mut fy = y / CELL - gy;
     fx = fx * fx * (3.0 - 2.0 * fx);
     fy = fy * fy * (3.0 - 2.0 * fy);
+    // Shaders can derive huge coordinates from valid scenes (blackhole's
+    // lensing), which saturate here; the neighbours wrap like the hash's own
+    // arithmetic instead of overflowing, and are unchanged for any other value.
     let (ix, iy) = (gx as i64, gy as i64);
+    let (ix1, iy1) = (ix.wrapping_add(1), iy.wrapping_add(1));
     let n00 = hash(ix, iy, seed);
-    let n10 = hash(ix + 1, iy, seed);
-    let n01 = hash(ix, iy + 1, seed);
-    let n11 = hash(ix + 1, iy + 1, seed);
+    let n10 = hash(ix1, iy, seed);
+    let n01 = hash(ix, iy1, seed);
+    let n11 = hash(ix1, iy1, seed);
     n00 * (1.0 - fx) * (1.0 - fy) + n10 * fx * (1.0 - fy) + n01 * (1.0 - fx) * fy + n11 * fx * fy
 }
 
@@ -125,6 +129,14 @@ mod tests {
         assert_eq!(hash(0, 0, 0), 0.0);
         assert_eq!(hash(-1, -2, 5), 0.8618520523565477);
         assert_eq!(hash(123, 456, 4_294_967_295), 0.8277825722069905);
+    }
+
+    #[test]
+    fn huge_and_non_finite_coordinates_do_not_overflow() {
+        for x in [f64::MAX, -f64::MAX, 1e300, f64::INFINITY, f64::NAN] {
+            let _ = value_noise(x, x, 3);
+            let _ = fbm(x, -x, 3, 4);
+        }
     }
 
     #[test]

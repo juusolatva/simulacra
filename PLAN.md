@@ -450,8 +450,10 @@ scene builders use, across the supported seed range.
   pixel). Measured over sizes from 1 x 1 to 3840 x 2160 and 4000 x 1 strips,
   built-in scenes use at most 8.3% of the limit (`ink` at 4K); a test holds
   them to an eighth. On a 12-thread machine the limit is roughly 20 to 30
-  seconds of rendering at 4K. `marbling`'s band arithmetic was rewritten to
-  avoid overflow with identical results. Tests: every number in every
+  seconds of rendering at 4K. `marbling`'s band arithmetic and the noise
+  lattice's neighbour indices were rewritten to avoid overflow with identical
+  results (a valid `blackhole` scene's lensing can derive coordinates that
+  saturate the lattice). Tests: every number in every
   fixture set to 1e300 must be rejected (which catches a field missing from a
   style's checks), and each structural rule and work limit has a
   malformed-scene case (`core/engine/tests/validation.rs`, and

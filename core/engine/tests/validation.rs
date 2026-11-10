@@ -341,6 +341,24 @@ fn scenes_that_would_stall_are_rejected() {
     }));
 }
 
+/// A valid scene can still lead a shader to huge derived coordinates:
+/// blackhole's lensing multiplies sky coordinates by `1 - 1.6 / r**2`. The
+/// noise must not overflow (a panic in overflow-checked builds). Found by
+/// Codex on PR #37.
+#[test]
+fn huge_derived_coordinates_render() {
+    let fixture = load("blackhole");
+    let mut scene = fixture.scene.clone();
+    scene["center"] = json!([1_000_000.0, 0.0]);
+    scene["radius"] = json!(1e12);
+    scene["roll"] = json!([1.0, 0.0]);
+    scene["tilt"] = json!(0.5);
+    scene["stars"] = json!([]);
+    let loaded = scene_from_json("blackhole", &scene.to_string()).expect("loads");
+    let rgb = render(loaded.as_ref(), 1, 1, 3, &fixture.palette).expect("valid scene");
+    assert_eq!(rgb.len(), 3);
+}
+
 /// `render` reports an invalid scene as an error instead of panicking.
 #[test]
 fn render_returns_the_scene_error() {
