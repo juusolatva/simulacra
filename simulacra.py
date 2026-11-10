@@ -3734,8 +3734,12 @@ def write_png(path, pixels, width, height):
 # ---------------------------------------------------------------- cli
 
 # Limits the CLI enforces unless --no-limits is given. A frame is held as packed
-# RGB (3 bytes per pixel), and an animation keeps every frame in memory.
+# RGB (3 bytes per pixel), and an animation keeps every frame in memory. Some
+# scenes grow with a side alone (a height per column, curve points about a pixel
+# apart), so a very thin canvas within the pixel limit could still need far more
+# memory for its scene than for its frame; the side limit bounds that.
 MAX_FRAME_PIXELS = 100_000_000
+MAX_SIDE = 100_000
 MAX_ANIMATION_BYTES = 1 << 30
 
 
@@ -3744,6 +3748,9 @@ def check_limits(width, height, frames):
     if width * height > MAX_FRAME_PIXELS:
         raise ValueError("%d x %d is %d pixels; the limit is %d (use --no-limits to override)"
                          % (width, height, width * height, MAX_FRAME_PIXELS))
+    if max(width, height) > MAX_SIDE:
+        raise ValueError("%d x %d has a side over %d pixels, the limit (use --no-limits to override)"
+                         % (width, height, MAX_SIDE))
     total = width * height * 3 * frames
     if frames > 1 and total > MAX_ANIMATION_BYTES:
         raise ValueError("%d frames of %d x %d need %d bytes in memory; the limit is %d "

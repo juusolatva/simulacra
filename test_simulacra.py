@@ -905,6 +905,9 @@ class RenderingTests(unittest.TestCase):
         code, _, err = self.run_cli('--width', '20000', '--height', '20000')
         self.assertEqual(code, 2)
         self.assertIn('--no-limits', err)
+        code, _, err = self.run_cli('--width', '100000000', '--height', '1')
+        self.assertEqual(code, 2)
+        self.assertIn('has a side over 100000 pixels', err)
         code, _, err = self.run_cli('--width', '5000', '--height', '5000', '--frames', '20')
         self.assertEqual(code, 2)
         self.assertIn('frames', err)
@@ -1371,6 +1374,7 @@ class StandaloneCliTests(unittest.TestCase):
         self.assertEqual(self.run_cli('--list-palettes').stdout.split(), sorted(art.PALETTES))
         for args, message in ((['--width', '0'], 'width and height must be positive'),
                               (['--width', '10001', '--height', '10000'], 'the limit is 100000000'),
+                              (['--width', '1', '--height', '100000000'], '1 x 100000000 has a side over 100000 pixels'),
                               (['--no-limits', '--width', str(2 ** 32), '--height', '1'], 'cannot exceed 4294967295'),
                               (['--phase', 'inf'], 'phase must be a finite number'),
                               (['--palette-stops', 'ff0000'], 'at least two colors'),

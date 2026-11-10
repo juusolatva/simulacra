@@ -72,7 +72,7 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 
 Names are case-sensitive. Options can appear in any order.
 
-The CLI refuses renders over 100 million pixels per frame, and animations whose frames would need more than 1 GiB of memory in total (`width × height × 3 × frames` bytes). Pass `--no-limits` to override. The limits live in `MAX_FRAME_PIXELS`, `MAX_ANIMATION_BYTES` and `check_limits()`; the Python API does not enforce them.
+The CLI refuses renders over 100 million pixels per frame or with a side over 100,000 pixels, and animations whose frames would need more than 1 GiB of memory in total (`width × height × 3 × frames` bytes). Pass `--no-limits` to override. The limits live in `MAX_FRAME_PIXELS`, `MAX_SIDE`, `MAX_ANIMATION_BYTES` and `check_limits()`; the Python API does not enforce them.
 
 A `--out` ending in `.gif` (any case) writes a looping GIF, still or animated. Any other name writes PNG data: `--frames` decides between a static PNG and an APNG, so use `.png` or `.apng` for clarity, and a `.jpg` filename still gets PNG data. A GIF holds 256 colors, so all frames share one table of 240 colors sampled evenly along the palette plus 16 greys for glows; gradients can show slight banding, and the APNG is the higher-quality choice. The Python API is `write_gif(path, frames, width, height, fps=12, stops=None)`.
 
@@ -331,7 +331,7 @@ Without the Rust core, rendering runs on the CPU in Python loops: the original 3
 - Styles such as `quasar`, `circuit`, and `drift` perform many noise or geometry calculations per pixel. Actual speed depends on style, size, seed, and hardware.
 - `render()` returns Python lists and tuples, which use far more memory than the packed RGB size of `width * height * 3` bytes. The CLI and `render_rgb()` use packed bytes.
 - The CLI holds all uncompressed animation frames in memory before writing them, so memory use grows with frame count and pixel count. It refuses renders past the limits above unless you pass `--no-limits`.
-- The CLI limits are fixed constants (changing them means editing `MAX_FRAME_PIXELS` and `MAX_ANIMATION_BYTES`), and they only estimate the packed frame size. The Python API validates positive dimensions only and has no size cap or memory estimate, so check sizes yourself before calling `render()` on large canvases.
+- The CLI limits are fixed constants (changing them means editing `MAX_FRAME_PIXELS`, `MAX_SIDE` and `MAX_ANIMATION_BYTES`), and they only estimate the packed frame size. The Python API validates positive dimensions only and has no size cap or memory estimate, so check sizes yourself before calling `render()` on large canvases.
 - Features still based on fixed pixel sizes, such as star dots and some brush widths, become relatively small at large resolutions. Very small images can lose detail through sampling and color quantization.
 
 Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no built-in viewer.

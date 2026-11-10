@@ -20,6 +20,13 @@ use simulacra_engine::{
 /// `--no-limits` is given.
 const MAX_FRAME_PIXELS: u128 = 100_000_000;
 
+/// `MAX_SIDE` in Python: the longest side a frame may have unless
+/// `--no-limits` is given. Some scenes grow with a side alone (`woodblock`'s
+/// heights per column, `lissajous`'s curve points), and they are built before
+/// rendering validates them, so a thin canvas within the pixel limit could
+/// otherwise need gigabytes for its scene.
+const MAX_SIDE: usize = 100_000;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "simulacra",
@@ -121,6 +128,11 @@ fn check_limits(width: usize, height: usize) -> Result<(), String> {
     if pixels > MAX_FRAME_PIXELS {
         return Err(format!(
             "{width} x {height} is {pixels} pixels; the limit is {MAX_FRAME_PIXELS} (use --no-limits to override)"
+        ));
+    }
+    if width.max(height) > MAX_SIDE {
+        return Err(format!(
+            "{width} x {height} has a side over {MAX_SIDE} pixels, the limit (use --no-limits to override)"
         ));
     }
     Ok(())
@@ -240,6 +252,12 @@ mod tests {
         assert_eq!(
             err,
             "10001 x 10000 is 100010000 pixels; the limit is 100000000 (use --no-limits to override)"
+        );
+        assert!(check_limits(100_000, 1000).is_ok());
+        let err = check_limits(1, 100_000_000).unwrap_err();
+        assert_eq!(
+            err,
+            "1 x 100000000 has a side over 100000 pixels, the limit (use --no-limits to override)"
         );
     }
 

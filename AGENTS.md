@@ -47,7 +47,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 | Rust rewrite, Phase 4 batch 1: freeze policy for ported styles; `BuildScene` and one `scene_builders!` list; Rust scenes compared with Python field by field (`_core.build_scene`, `RustSceneBuilderTests`); 19 builders ported (the per-pixel fields and `orbits`), 22 of 48 in all | Done | PR #38 |
 | Rust rewrite, Phase 4 batch 2: the geometry and object builders (12): the space styles with a shared `sky_stars`, `circuit`, `geo`, `mandala`, `prism`, `shard`, `quasar`, `cosmic`, `constellations` (`drift_stars`, `last_index`); 34 of 48 in all | Done | PR #39 |
 | Rust rewrite, Phase 4 batch 3: the remaining per-pixel fields (`contour`, `cymatics`, `opart`, `optics`) and the brush builders (`comet`, `ember`, `flowfield`, `ink`; `ink`'s `steps` is now a whole-number float, validated, since Python's int outgrows `i64` on huge sides); 42 of 48 in all | Done | PR #40 |
-| Rust rewrite, Phase 4 batch 4: the sampled and prepared builders: `torus` and `lissajous` (a shared `sample_by_length`), `woodblock` (`Libm::m_tanh`) and `mosaic` (regions and tile patterns, with the noise `hash`); 46 of 48 in all | Done | PR #41 |
+| Rust rewrite, Phase 4 batch 4: the sampled and prepared builders: `torus` and `lissajous` (a shared `sample_by_length`), `woodblock` (`Libm::m_tanh`) and `mosaic` (regions and tile patterns, with the noise `hash`); both CLIs now refuse a side over 100,000 pixels (`MAX_SIDE`), since these scenes grow with a side alone; 46 of 48 in all | Done | PR #41 |
 | Rust rewrite, Phase 3 onward: distribution (route, signing), the remaining scene builders, streaming encoders | In progress. `PLAN.md` holds the status and the checklists | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
@@ -157,7 +157,7 @@ Pure Python took about 178 s for the original 36 styles at 640×480 (see `bench_
 - **Python numeric semantics in ports:** `x ** n` with a float base is libm `pow`, so use `powf` (not `powi`, which multiplies repeatedly and can differ in the last bit). `round()` is half-to-even (`round_ties_even`), `int()` truncates (`as i64`, fine for non-negative values), and sorting `(distance, value)` tuples breaks distance ties by value (see `Voronoi`).
 - **Python `sum()` is compensated since 3.12.** Rust must use `geometry::py_sum` wherever Python sums floats with `sum()` (currently `render_geo`), and `geometry::py_mod` for Python's float `%`.
 - **PNG encoding:** `_packed_rgb` has a fast `bytes()` path for in-range integer channels (about 0.03 s at 640×480), and `zlib` level 9 compression dominates the encoding time at 4K.
-- **Resource guards:** the CLI enforces `MAX_FRAME_PIXELS` (100 M) and `MAX_ANIMATION_BYTES` (1 GiB of packed frames) through `check_limits()`; `--no-limits` skips them and the Python API does not enforce them. The CLI still holds all animation frames in memory; streaming them to the writer would need `write_animated_png` to accept an iterator with a known count.
+- **Resource guards:** the CLI enforces `MAX_FRAME_PIXELS` (100 M), `MAX_SIDE` (100,000, because some scenes grow with a side alone and are built before validation) and `MAX_ANIMATION_BYTES` (1 GiB of packed frames) through `check_limits()`; `--no-limits` skips them and the Python API does not enforce them. The CLI still holds all animation frames in memory; streaming them to the writer would need `write_animated_png` to accept an iterator with a known count.
 
 ### Rendering quirks (not bugs, but worth knowing)
 

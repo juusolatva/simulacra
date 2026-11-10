@@ -669,9 +669,12 @@ Batch 4 (2026-11-10): the sampled and prepared scenes (`torus`, `lissajous`,
   column and a value per tile. The tile values take at most about 2.7 times
   the frame's bytes, while the curve points and column heights grow with a
   side alone, so they outweigh the frame only on thin canvases (under about
-  60 pixels across for `lissajous`, 19 for `woodblock`). The CLI's pixel limit
-  applies before any scene is built, but under `--no-limits` a side near
-  `u32::MAX` asks for memory in proportion. The huge-side tests (Rust's
+  60 pixels across for `lissajous`, 19 for `woodblock`). Within the pixel
+  limit a 100,000,000 × 1 canvas would have needed gigabytes for these scenes
+  before validation could refuse anything (found by Qodo's review), so both
+  CLIs now also refuse a side over 100,000 pixels (`MAX_SIDE`), which keeps
+  these scenes to tens of megabytes; under `--no-limits` a long side still
+  asks for memory in proportion. The huge-side tests (Rust's
   `huge_sides_do_not_overflow` and `test_rust_scenes_match_python_at_huge_sizes`)
   skip these three; Python could not build those scenes either.
 - Checks: `RustSceneBuilderTests` (exact on the default core; on a portable
