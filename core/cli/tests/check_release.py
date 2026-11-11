@@ -12,7 +12,7 @@ that has neither Python nor a Rust toolchain.
     acceptance test of PLAN.md Phase 3. Styles join the check as their scene
     builders are ported, through ``--list-styles``. With ``--hashes FILE`` it
     also renders larger workloads (sizes, negative and large seeds, phases,
-    palettes, custom stops, and a short APNG animation) and writes their
+    palettes, custom stops, a short APNG animation and a GIF) and writes their
     hashes to ``FILE`` for ``compare``.
 
 ``compare FILE...``
@@ -33,22 +33,32 @@ import subprocess
 import sys
 import tempfile
 import zlib
+from fractions import Fraction
 from pathlib import Path
 
 FIXTURES = Path(__file__).resolve().parents[2] / "engine" / "tests" / "fixtures"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
+# The frame rate the workloads ask for, and the frame delay in seconds each
+# format must then store: 1/12 in an APNG's fcTL, and in a GIF whole
+# hundredths of a second, round(100 / fps) but at least 2 (_gif_delay).
+FPS = 12
+APNG_DELAY = Fraction(1, FPS)
+GIF_DELAY = Fraction(max(2, round(100 / FPS)), 100)
+
 # (width, height, seed, phase, palette, custom stops, frames). Sizes are not
 # multiples of one another, include a tall canvas, and the seeds cover negative
 # and 64-bit values (seed32 folds them), so the comparison is not just the
-# fixture again at a larger scale. The last workload is an APNG animation,
-# hashed over all of its frames in order.
+# fixture again at a larger scale. The last two are animations, an APNG and a
+# GIF (the format follows the output name), hashed over all of their frames in
+# order; a GIF frame is hashed as the RGB its colour table maps it to.
 WORKLOADS = [
     (640, 480, 1, 0.0, "deep", None, 1),
     (640, 480, 17, 0.37, "lagoon", None, 1),
     (301, 517, -7, 1.25, "ember", None, 1),
     (517, 301, 2**40 + 3, -0.6, None, "0c061c,5814a8,ff8800", 1),
     (160, 120, 5, 0.8, "neon", None, 4),
+    (150, 110, -3, 0.2, "sunset", None, 3, "gif"),
 ]
 
 
@@ -57,7 +67,7 @@ def decode_png(data):
 
     For an APNG this is the first frame (its ``IDAT``); see ``decode_frames``.
     """
-    width, height, frames = decode_frames(data)
+    width, height, frames, _ = decode_frames(data)
     return width, height, frames[0]
 
 
@@ -91,6 +101,8 @@ class _FrameReader:
     def __init__(self):
         self.header = None
         self.frame_count = None  # from acTL
+        self.loops = False  # acTL asks to play forever
+        self.delays = []  # each fcTL's delay in seconds
         self.sequence = 0  # fcTL and fdAT chunks seen so far
         self.controls = 0  # fcTL chunks seen so far
         self.frames = [[]]
@@ -99,7 +111,8 @@ class _FrameReader:
         if tag == b"IHDR":
             self.header = struct.unpack(">IIBBBBB", body)
         elif tag == b"acTL":
-            self.frame_count = struct.unpack(">II", body)[0]
+            self.frame_count, plays = struct.unpack(">II", body)
+            self.loops = plays == 0
         elif tag == b"IDAT":
             if self.frame_count is not None and self.controls != 1:
                 raise ValueError("the APNG's IDAT image is not its first frame")
@@ -121,6 +134,9 @@ class _FrameReader:
             return
         if self.header is None or struct.unpack(">II", body[4:12]) != self.header[:2]:
             raise ValueError("an APNG frame does not cover the canvas")
+        numerator, denominator = struct.unpack(">HH", body[20:24])
+        # A zero denominator means hundredths of a second (APNG specification).
+        self.delays.append(Fraction(numerator, denominator or 100))
         self.controls += 1
         if self.controls > 1:
             self.frames.append([])
@@ -142,7 +158,9 @@ class _FrameReader:
 
 
 def decode_frames(data):
-    """Return (width, height, [packed RGB per frame]) of a PNG or APNG.
+    """Return (width, height, [packed RGB per frame], (loops, delays)) of a PNG
+    or APNG; ``loops`` is whether it plays forever and ``delays`` holds each
+    frame's delay in seconds (both empty for a still PNG).
 
     The image must be 8-bit RGB without interlace. An APNG needs ``acTL``
     before any ``fcTL`` or ``fdAT``, exactly one ``fcTL`` before ``IDAT`` (which
@@ -161,7 +179,106 @@ def decode_frames(data):
         if len(raw) != height * (stride + 1):
             raise ValueError("image data has the wrong length")
         decoded.append(_unfilter(raw, stride, height))
-    return width, height, decoded
+    return width, height, decoded, (reader.loops, reader.delays)
+
+
+def _lzw_decode(data):
+    """Decode GIF LZW data with minimum code size 8 into colour indices."""
+    clear, end = 256, 257
+    fresh = [bytes([i]) for i in range(256)] + [b"", b""]
+    table, out = list(fresh), bytearray()
+    width, bits, buffer, position, previous = 9, 0, 0, 0, None
+    while True:
+        while bits < width:
+            if position == len(data):
+                raise ValueError("LZW data ends without an end code")
+            buffer |= data[position] << bits
+            position += 1
+            bits += 8
+        code = buffer & ((1 << width) - 1)
+        buffer >>= width
+        bits -= width
+        if code == clear:
+            table, width, previous = list(fresh), 9, None
+            continue
+        if code == end:
+            return bytes(out)
+        if code < len(table):
+            entry = table[code]
+        elif previous is not None and code == len(table):
+            entry = previous + previous[:1]
+        else:
+            raise ValueError(f"LZW code {code} is not in the table")
+        if previous is not None and len(table) < 4096:
+            table.append(previous + entry[:1])
+            if len(table) == 1 << width and width < 12:
+                width += 1
+        out += entry
+        previous = entry
+
+
+def _skip_sub_blocks(data, pos):
+    """Return (the joined data sub-blocks starting at ``pos``, the position after them)."""
+    pieces = []
+    while data[pos]:
+        pieces.append(data[pos + 1 : pos + 1 + data[pos]])
+        pos += 1 + data[pos]
+    return b"".join(pieces), pos + 1
+
+
+def _gif_image(data, pos, size, table):
+    """Decode the image at ``pos`` (after 0x2C); return (packed RGB, next position)."""
+    left, top, width, height, flags = struct.unpack("<HHHHB", data[pos : pos + 9])
+    if (left, top, width, height) != (0, 0, *size) or flags & 0xC0:
+        raise ValueError("expected full-canvas GIF frames without a local table or interlace")
+    if data[pos + 9] != 8:
+        raise ValueError("expected LZW minimum code size 8")
+    packed, pos = _skip_sub_blocks(data, pos + 10)
+    indices = _lzw_decode(packed)
+    if len(indices) != width * height:
+        raise ValueError("a GIF frame has the wrong number of pixels")
+    return b"".join(table[i] for i in indices), pos
+
+
+def _gif_extension(data, pos, timing):
+    """Read the extension at ``pos`` (0x21) into ``timing``; return the next position.
+
+    A graphics control block adds its frame delay (seconds) to ``timing[1]``;
+    a NETSCAPE2.0 block with loop count 0 sets ``timing[0]`` (plays forever).
+    Other extensions are skipped.
+    """
+    label = data[pos + 1]
+    payload, pos = _skip_sub_blocks(data, pos + 2)
+    if label == 0xF9:
+        timing[1].append(Fraction(struct.unpack("<H", payload[1:3])[0], 100))
+    elif label == 0xFF and payload[:11] == b"NETSCAPE2.0":
+        timing[0] = payload[11:14] == b"\x01\x00\x00"
+    return pos
+
+
+def decode_gif(data):
+    """Return (width, height, [packed RGB per frame], (loops, delays)) of a GIF
+    with a global table, timing as ``decode_frames`` gives it.
+
+    Every frame must cover the canvas without a local table or interlacing, as
+    the binary writes them.
+    """
+    if data[:6] != b"GIF89a":
+        raise ValueError("not a GIF89a file")
+    width, height, flags = struct.unpack("<HHB", data[6:11])
+    if flags != 0xF7:
+        raise ValueError("expected a global table of 256 colours")
+    table = [data[13 + 3 * i : 16 + 3 * i] for i in range(256)]
+    pos, frames, timing = 13 + 768, [], [False, []]
+    while data[pos] != 0x3B:
+        if data[pos] == 0x21:
+            pos = _gif_extension(data, pos, timing)
+        elif data[pos] == 0x2C:
+            rgb, pos = _gif_image(data, pos + 1, (width, height), table)
+            frames.append(rgb)
+        else:
+            raise ValueError(f"unexpected GIF block {data[pos]:#x}")
+    return width, height, frames, tuple(timing)
 
 
 def _paeth(a, b, c):
@@ -239,21 +356,41 @@ class Runner:
             )
         return result.stdout
 
-    def render(self, name, width, height, seed, phase, palette, stops, frames=1):
+    def render(self, name, width, height, seed, phase, palette, stops, frames=1, kind="png"):
         """Render one image or animation; return the SHA-256 of all its frames' RGB."""
+        out = f"out.{kind}"
         args = [
             "--style", name, "--width", str(width), "--height", str(height),
-            "--seed", str(seed), "--phase", repr(phase), "--out", "out.png",
-            "--frames", str(frames),
+            "--seed", str(seed), "--phase", repr(phase), "--out", out,
+            "--frames", str(frames), "--fps", str(FPS),
         ]
         args += ["--palette-stops", stops] if stops else ["--palette", palette]
         self.run(*args)
-        got_width, got_height, rgb = decode_frames((self.workdir / "out.png").read_bytes())
+        decode = decode_gif if kind == "gif" else decode_frames
+        got_width, got_height, rgb, timing = decode((self.workdir / out).read_bytes())
         if (got_width, got_height) != (width, height):
             raise SystemExit(f"{name}: wrote {got_width} x {got_height}, asked for {width} x {height}")
         if len(rgb) != frames:
             raise SystemExit(f"{name}: wrote {len(rgb)} frames, asked for {frames}")
+        if timing != expected_timing(kind, frames):
+            raise SystemExit(
+                f"{name}: wrote looping and delays {timing}, expected {expected_timing(kind, frames)}"
+            )
         return hashlib.sha256(b"".join(rgb)).hexdigest()
+
+
+def expected_timing(kind, frames):
+    """(loops, delays) a file of ``frames`` frames must store at ``FPS``.
+
+    Python writes a GIF's loop block only for more than one frame, but a
+    graphics control block (with the delay) for every frame; a still PNG has
+    neither, and an APNG loops forever with a delay in every fcTL.
+    """
+    if kind == "gif":
+        return frames > 1, [GIF_DELAY] * frames
+    if frames > 1:
+        return True, [APNG_DELAY] * frames
+    return False, []
 
 
 def workload_key(name, workload):

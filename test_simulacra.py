@@ -1427,6 +1427,31 @@ class StandaloneCliTests(unittest.TestCase):
                     self.assertGreater(len(set(animation['frames'])), 1)
                     self.assertEqual(dict(chunks(rust))[b'IHDR'], dict(chunks(python))[b'IHDR'])
 
+    def test_gifs_match_the_python_cli_byte_for_byte(self):
+        cases = (['--style', 'waves'],
+                 ['--style', 'plasma', '--frames', '4', '--fps', '30'],
+                 ['--style', 'mandelbrot', '--frames', '3', '--phase', '-0.6', '--fps', '7'],
+                 ['--style', 'ink', '--frames', '2', '--slideshow', '--seed', '-7'],
+                 ['--style', 'blobs', '--frames', '2', '--palette-stops', '0c061c,5814a8,ff8800'],
+                 ['--style', 'nebula', '--frames', '2', '--width', '173', '--height', '97'])
+        with tempfile.TemporaryDirectory() as directory:
+            for extra in cases:
+                with self.subTest(extra=extra):
+                    # Upper case too: the format follows the suffix in any case.
+                    rust = pathlib.Path(directory) / 'rust.GIF'
+                    python = pathlib.Path(directory) / 'python.gif'
+                    size = [] if '--width' in extra else ['--width', '40', '--height', '30']
+                    result = self.run_cli(*size, *extra, '--out', str(rust))
+                    with mock.patch('sys.argv', ['simulacra.py', *size, *extra, '--out', str(python)]), \
+                            mock.patch('sys.stdout', new_callable=io.StringIO) as printed:
+                        art.main()
+                    self.assertEqual(result.stdout, printed.getvalue().replace(str(python), str(rust)))
+                    self.assertEqual(result.stderr, '')
+                    self.assertEqual(rust.read_bytes(), python.read_bytes())
+                    frames = read_gif(rust)[3]
+                    self.assertEqual(len(frames), int(extra[extra.index('--frames') + 1])
+                                     if '--frames' in extra else 1)
+
     def test_lists_and_errors(self):
         styles = self.listed_styles()
         self.assertEqual(styles, sorted(styles))
@@ -1449,7 +1474,8 @@ class StandaloneCliTests(unittest.TestCase):
                               (['--width', '1000', '--height', '1000', '--frames', '358'],
                                '358 frames of 1000 x 1000 need 1074000000 bytes in memory'),
                               (['--palette-stops', 'ff0000'], 'at least two colors'),
-                              (['--out', 'image.gif'], 'GIF output'),
+                              (['--out', 'image.gif', '--width', '65536'],
+                               'GIF width and height cannot exceed 65535 pixels'),
                               (['--style', 'no-such-style'], 'no-such-style'),
                               (['--seed', '3', '--random-seed'], 'cannot be used with')):
             with self.subTest(args=args):
