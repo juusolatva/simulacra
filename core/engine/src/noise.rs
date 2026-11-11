@@ -4,8 +4,8 @@
 //! fuse multiply-adds by default), so results agree bit-for-bit apart from
 //! any differences in the platform math library.
 
-use crate::math::Libm;
 use crate::geometry::py_mod;
+use crate::math::Libm;
 
 /// Integer lattice hash in [0, 1]. Python ints are unbounded, but every step
 /// is masked to 32 bits, so wrapping 64-bit arithmetic gives the same result.
@@ -161,6 +161,15 @@ mod tests {
             assert_eq!(fbm_loop(-3.7, 12.25, 77, 4, phase), fbm(-3.7, 12.25, 77, 4));
         }
         assert_ne!(fbm_loop(-3.7, 12.25, 77, 4, 0.3), fbm(-3.7, 12.25, 77, 4));
+    }
+
+    #[test]
+    fn polar_noise_is_continuous_across_the_angle_seam() {
+        for r in [0.0, 3.0, 40.0] {
+            let a = polar_noise(r, std::f64::consts::PI - 1e-9, 2, 3.0, 2);
+            let b = polar_noise(r, -std::f64::consts::PI + 1e-9, 2, 3.0, 2);
+            assert!((a - b).abs() < 5e-7, "r = {r}: {a} vs {b}");
+        }
     }
 
     #[test]
