@@ -18,6 +18,8 @@ pub mod scenes;
 pub mod styles;
 pub mod validate;
 
+/// Python's float `%`, for callers that compute phases as `simulacra.py` does.
+pub use geometry::py_mod;
 pub use palette::{Palette, PaletteError};
 pub use palettes::{PALETTES, palette_stops};
 pub use random::PyRandom;

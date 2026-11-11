@@ -20,9 +20,9 @@ every scene before rendering it. Phase 3 has the distribution route, Windows
 signing and clean-machine smoke tests left, which wait for the first release.
 Phase 4 is done: style experimentation has stopped, ported styles are frozen
 in Python (see "Freeze policy"), and batches 1 to 5 ported the remaining 45
-builders, so the binary renders all 48 styles (still images only until
-Phase 5).
-Phases 5 and 6 have not started.
+builders, so the binary renders all 48 styles.
+Phase 5 is in progress: the binary writes APNG animations, one frame at a
+time; GIF output and the streaming review are left. Phase 6 has not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -419,8 +419,8 @@ scene builders use, across the supported seed range.
   and static PNG output for the initial subset. Done in `core/cli` (binary
   `simulacra`, clap): the options, defaults, limits and messages of
   `simulacra.py` for still images, plus `--random-seed`, `--no-limits`,
-  `--list-styles` and `--list-palettes`. `--frames` and GIF output come with
-  Phase 5. The 24 built-in palettes are an engine table (`palettes.rs`) that
+  `--list-styles` and `--list-palettes`. `--frames` (APNG) came with
+  Phase 5; GIF output comes later in that phase. The 24 built-in palettes are an engine table (`palettes.rs`) that
   a Python test keeps equal to `PALETTES` through `_core.palettes()`. PNG
   encoding (`flate2`, level 9, filter None) gives the same decoded scanlines
   as Python, not the same compressed bytes. `StandaloneCliTests` (when
@@ -482,9 +482,10 @@ scene builders use, across the supported seed range.
   published. A separate job downloads each package on a fresh runner and
   runs `core/cli/tests/check_release.py`: every style in `--list-styles`
   must render its fixture's SHA-256 from the decoded PNG, so ported styles
-  join automatically. A last job requires 12 larger workloads (640 × 480 and
+  join automatically. A last job requires the larger workloads (640 × 480 and
   non-square sizes, negative and 64-bit seeds, phases outside [0, 1), custom
-  stops) to hash identically on all three targets. The Linux binaries link
+  stops, and a 4-frame APNG hashed over all frames), 5 per style, to hash
+  identically on all three targets. The Linux binaries link
   glibc from the build runner (Ubuntu 24.04); the oldest glibc to support,
   or a static musl build instead, is part of choosing the distribution
   route.
@@ -754,7 +755,9 @@ Python, with compatibility and visual checks passing.
 Begin the pipeline design with the small application; complete all formats
 before application cutover.
 
-- [ ] Render, encode, and release frames incrementally.
+- [ ] Render, encode, and release frames incrementally. APNG done: each
+  frame is rendered, compressed and written to the temporary output file
+  (`output::atomic_write_with`) before the next one is rendered; GIF left.
 - [ ] If stages overlap, use a small bounded queue rather than retaining the
   entire animation. Coordinate frame-level work with Rayon to avoid excessive
   concurrency and memory use.
@@ -763,22 +766,29 @@ before application cutover.
 - [ ] Reuse buffers where practical and avoid the full-frame copy currently
   needed when Rust returns a `Vec<u8>` as Python `bytes`.
 - [ ] Preserve PNG/APNG/GIF dimensions, frame ordering, looping, and timing.
-- [ ] Compute frame phases as the Python CLI does (`args.phase % 1.0 + i /
+- [x] Compute frame phases as the Python CLI does (`args.phase % 1.0 + i /
   frames`, with Python's float `%` from `py_mod`), so animation frames match.
 - [ ] Preserve GIF palette construction and color mapping unless an intentional
   change is documented; an encoder's default quantization may differ. Feed
   the `gif` crate the existing 256-entry table and indexed frames rather than
   letting it quantize.
-- [ ] Write PNG and APNG with the `png` crate. Matching the size of zlib
+- [x] Write PNG and APNG with the `png` crate. Matching the size of zlib
   level 9 output is not a goal; record size and time tradeoffs instead.
-  Phase 3's still-image writer (`core/cli/src/png.rs`) uses `flate2` directly
-  instead (filter None, level 9, as Python); decide here whether APNG
-  extends it or both move to the `png` crate.
+  Decided: APNG extends Phase 3's `flate2` writer (`core/cli/src/png.rs`,
+  filter None, level 9, as Python) rather than moving to the `png` crate, so
+  sizes and timings stay as they are and the encoder stays small (`Apng`
+  returns each frame's `fcTL` and `IDAT`/`fdAT` chunks without doing I/O).
+  The `png` crate's filters could shrink files; that is open, not needed.
 - [ ] Preserve atomic output replacement and cleanup on encoding failures.
+  APNG done: a failed frame removes the temporary file and leaves an
+  existing output untouched (unit-tested in `output.rs`); GIF left.
 - [ ] Review resource limits for the streaming design: bounded frame retention
   does not by itself bound total render work or output size.
 - [ ] Validate decoded pixels, metadata, and frame timing with independent
-  decoders. Identical compressed file bytes are not required.
+  decoders. APNG: `StandaloneCliTests` compares every frame, `acTL` and
+  `fcTL` with `simulacra.py`'s output, `check_release.py` decodes the frames
+  itself, and ffmpeg decoded a binary-written APNG to Python's pixels
+  (checked once by hand, not in CI). GIF left. Identical compressed file bytes are not required.
 
 Acceptance: retained animation frame buffers remain bounded as frame count
 grows, with existing output behavior preserved.
@@ -999,5 +1009,8 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 8. Done: Phase 4, porting the scene builders. Style experimentation has
    stopped and ported styles are frozen in Python (decided 2026-11-10, see
    "Freeze policy"). Batches 1 to 5 ported every builder, so the standalone
-   binary renders all 48 styles. Phase 5 (animation and native encoding) is
-   next.
+   binary renders all 48 styles.
+9. In progress: Phase 5, animation and native encoding. Done: APNG output in
+   the binary (`--frames`, `--fps`, `--slideshow`), streamed to the output
+   file one frame at a time. Next: GIF, then the limits and a bounded,
+   parallel frame pipeline.

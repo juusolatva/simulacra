@@ -1,8 +1,10 @@
 //! `simulacra`: the standalone command-line tool, rendering without Python.
 //!
 //! The options, defaults and messages follow `simulacra.py`'s command line for
-//! still images, for every style (`--list-styles`); animation output (APNG and
-//! GIF) comes later.
+//! every style (`--list-styles`): still PNG images and looping APNG animations
+//! (`--frames`). GIF output comes later. Each animation frame is rendered,
+//! compressed and written to the temporary output file before the next one, so
+//! only one frame's pixels are held at a time.
 
 mod output;
 mod png;
@@ -13,7 +15,7 @@ use std::process::ExitCode;
 
 use clap::{ArgGroup, Parser};
 use simulacra_engine::{
-    PALETTES, Palette, SCENE_BUILDERS, build_scene, palette_stops, render, seed32,
+    PALETTES, Palette, SCENE_BUILDERS, build_scene, palette_stops, py_mod, render, seed32,
 };
 
 /// `MAX_FRAME_PIXELS` in Python: the most pixels a frame may have unless
@@ -26,6 +28,12 @@ const MAX_FRAME_PIXELS: u128 = 100_000_000;
 /// rendering validates them, so a thin canvas within the pixel limit could
 /// otherwise need gigabytes for its scene.
 const MAX_SIDE: usize = 100_000;
+
+/// `MAX_ANIMATION_BYTES` in Python: the most bytes of packed frames an
+/// animation may need unless `--no-limits` is given. The binary holds only one
+/// frame at a time, but keeps Python's limit so both tools accept the same
+/// commands (PLAN.md Phase 5 reviews the limits for streaming).
+const MAX_ANIMATION_BYTES: u128 = 1 << 30;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -56,13 +64,26 @@ struct Args {
     width: i64,
     #[arg(long, default_value_t = 256, allow_negative_numbers = true)]
     height: i64,
-    /// Output PNG file, replaced only after a successful write
+    /// Output PNG file (APNG with --frames), replaced only after a successful
+    /// write
     #[arg(long, default_value = "art.png")]
     out: PathBuf,
-    /// Loop position for styles with motion; 1.0 repeats 0.0 (default 0)
+    /// Number of frames (default 1). Styles with motion animate one scene in a
+    /// seamless loop
+    #[arg(long, default_value_t = 1, allow_negative_numbers = true)]
+    frames: i64,
+    /// Loop position for styles with motion; 1.0 repeats 0.0 (default 0).
+    /// With --frames, the first frame's position
     #[arg(long, default_value_t = 0.0, allow_negative_numbers = true, value_parser = finite)]
     phase: f64,
-    /// Skip the size limit on pixels
+    /// Make every frame an unrelated scene with consecutive seeds, even for
+    /// styles with motion
+    #[arg(long)]
+    slideshow: bool,
+    /// Animation frame rate with --frames > 1 (default 12)
+    #[arg(long, default_value_t = 12, allow_negative_numbers = true, value_parser = fps)]
+    fps: u16,
+    /// Skip the size limits on pixels and animation memory
     #[arg(long)]
     no_limits: bool,
     /// Print the style names, one per line, and exit
@@ -95,6 +116,18 @@ fn finite(text: &str) -> Result<f64, String> {
     }
 }
 
+/// `_fps` in Python: a whole number from 1 to 65535.
+fn fps(text: &str) -> Result<u16, String> {
+    let value: i64 = text
+        .trim()
+        .parse()
+        .map_err(|err: std::num::ParseIntError| err.to_string())?;
+    u16::try_from(value)
+        .ok()
+        .filter(|&fps| fps >= 1)
+        .ok_or_else(|| "fps must be between 1 and 65535".into())
+}
+
 /// `parse_hex_palette` in Python: comma-separated `rrggbb` or `rgb` colors, each
 /// with an optional leading `#`; at least two.
 fn parse_hex_palette(text: &str) -> Result<Stops, String> {
@@ -122,8 +155,8 @@ fn parse_hex_palette(text: &str) -> Result<Stops, String> {
     Ok(Stops(stops))
 }
 
-/// `check_limits` in Python, for one frame.
-fn check_limits(width: usize, height: usize) -> Result<(), String> {
+/// `check_limits` in Python.
+fn check_limits(width: usize, height: usize, frames: usize) -> Result<(), String> {
     let pixels = width as u128 * height as u128;
     if pixels > MAX_FRAME_PIXELS {
         return Err(format!(
@@ -133,6 +166,12 @@ fn check_limits(width: usize, height: usize) -> Result<(), String> {
     if width.max(height) > MAX_SIDE {
         return Err(format!(
             "{width} x {height} has a side over {MAX_SIDE} pixels, the limit (use --no-limits to override)"
+        ));
+    }
+    let total = pixels * 3 * frames as u128;
+    if frames > 1 && total > MAX_ANIMATION_BYTES {
+        return Err(format!(
+            "{frames} frames of {width} x {height} need {total} bytes in memory; the limit is {MAX_ANIMATION_BYTES} (use --no-limits to override)"
         ));
     }
     Ok(())
@@ -161,10 +200,15 @@ fn list_names(args: &Args) -> Option<Vec<&'static str>> {
     Some(names)
 }
 
-fn dimensions(args: &Args) -> Result<(usize, usize), String> {
-    let side = |v: i64| usize::try_from(v).ok().filter(|&v| v > 0);
-    let (Some(width), Some(height)) = (side(args.width), side(args.height)) else {
+/// Checks the arguments in `_check_args`'s order; returns width, height and
+/// the frame count.
+fn dimensions(args: &Args) -> Result<(usize, usize, usize), String> {
+    let positive = |v: i64| usize::try_from(v).ok().filter(|&v| v > 0);
+    let (Some(width), Some(height)) = (positive(args.width), positive(args.height)) else {
         return Err("width and height must be positive".into());
+    };
+    let Some(frames) = positive(args.frames) else {
+        return Err("frames must be positive".into());
     };
     if args
         .out
@@ -180,13 +224,89 @@ fn dimensions(args: &Args) -> Result<(usize, usize), String> {
         return Err(format!("PNG width and height cannot exceed {}", u32::MAX));
     }
     if !args.no_limits {
-        check_limits(width, height)?;
+        check_limits(width, height, frames)?;
     }
-    Ok((width, height))
+    Ok((width, height, frames))
+}
+
+/// `_frame_plan` in Python: the seed and phase of frame `index`. Every style
+/// moves, so frames step through one loop from `--phase` (reduced with
+/// Python's float `%` so the steps survive huge phases), unless `--slideshow`
+/// gives each frame the next seed at the same phase.
+fn frame_plan(
+    seed: i64,
+    phase: f64,
+    frames: usize,
+    slideshow: bool,
+    index: usize,
+) -> Result<(i64, f64), String> {
+    if slideshow {
+        let seed = i64::try_from(index)
+            .ok()
+            .and_then(|i| seed.checked_add(i))
+            .ok_or("--slideshow seeds would pass 9223372036854775807")?;
+        return Ok((seed, phase));
+    }
+    // Python divides two ints exactly; both are far below 2**53 here.
+    Ok((seed, py_mod(phase, 1.0) + index as f64 / frames as f64))
+}
+
+/// One frame's palette, size and scene parameters.
+struct Frame<'a> {
+    style: &'a str,
+    width: usize,
+    height: usize,
+    palette: &'a Palette,
+}
+
+impl Frame<'_> {
+    fn render(&self, seed: i64, phase: f64) -> Result<Vec<u8>, String> {
+        let scene = build_scene(
+            self.style,
+            self.width,
+            self.height,
+            seed,
+            self.palette,
+            phase,
+        )
+        .ok_or_else(|| format!("no scene builder for {}", self.style))?;
+        render(
+            scene.as_ref(),
+            self.width,
+            self.height,
+            seed32(seed),
+            self.palette,
+        )
+        .map_err(|err| err.to_string())
+    }
+}
+
+/// Renders and writes an APNG of `frames` frames, one frame at a time.
+fn write_animation(args: &Args, frame: &Frame, seed: i64, frames: usize) -> Result<(), String> {
+    let count = u32::try_from(frames).map_err(|_| png::PngError::FrameCount.to_string())?;
+    let (mut apng, start) = png::Apng::new(frame.width, frame.height, count, args.fps)
+        .map_err(|err| err.to_string())?;
+    let cannot_write = |err: std::io::Error| format!("cannot write {}: {err}", args.out.display());
+    let written = output::atomic_write_with(&args.out, |out| {
+        out.write_all(&start).map_err(cannot_write)?;
+        for index in 0..frames {
+            let (frame_seed, phase) = frame_plan(seed, args.phase, frames, args.slideshow, index)?;
+            let rgb = frame.render(frame_seed, phase)?;
+            let chunks = apng.frame(&rgb).map_err(|err| err.to_string())?;
+            drop(rgb);
+            out.write_all(&chunks).map_err(cannot_write)?;
+        }
+        let end = apng.finish().map_err(|err| err.to_string())?;
+        out.write_all(&end).map_err(cannot_write)
+    });
+    written.map_err(|err| match err {
+        output::WriteError::Io(err) => cannot_write(err),
+        output::WriteError::Content(message) => message,
+    })
 }
 
 fn run(args: &Args) -> Result<String, String> {
-    let (width, height) = dimensions(args)?;
+    let (width, height, frames) = dimensions(args)?;
     let seed = if args.random_seed {
         random_seed()
     } else {
@@ -200,10 +320,22 @@ fn run(args: &Args) -> Result<String, String> {
         ),
     };
     let palette = Palette::new(stops).map_err(|err| err.to_string())?;
-    let scene = build_scene(&args.style, width, height, seed, &palette, args.phase)
-        .ok_or_else(|| format!("no scene builder for {}", args.style))?;
-    let rgb = render(scene.as_ref(), width, height, seed32(seed), &palette)
-        .map_err(|err| err.to_string())?;
+    let frame = Frame {
+        style: &args.style,
+        width,
+        height,
+        palette: &palette,
+    };
+    if frames > 1 {
+        write_animation(args, &frame, seed, frames)?;
+        return Ok(format!(
+            "wrote {frames} animation frames to {} ({}, seed={seed}, palette={palette_label}, {} fps)",
+            args.out.display(),
+            args.style,
+            args.fps
+        ));
+    }
+    let rgb = frame.render(seed, args.phase)?;
     let encoded = png::encode(&rgb, width, height).map_err(|err| err.to_string())?;
     output::atomic_write(&args.out, &encoded)
         .map_err(|err| format!("cannot write {}: {err}", args.out.display()))?;
@@ -234,7 +366,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_limits, parse_hex_palette, random_seed};
+    use super::{check_limits, fps, frame_plan, parse_hex_palette, random_seed};
 
     #[test]
     fn hex_palettes_parse_like_python() {
@@ -247,18 +379,71 @@ mod tests {
 
     #[test]
     fn limits_match_python() {
-        assert!(check_limits(10_000, 10_000).is_ok());
-        let err = check_limits(10_001, 10_000).unwrap_err();
+        assert!(check_limits(10_000, 10_000, 1).is_ok());
+        let err = check_limits(10_001, 10_000, 1).unwrap_err();
         assert_eq!(
             err,
             "10001 x 10000 is 100010000 pixels; the limit is 100000000 (use --no-limits to override)"
         );
-        assert!(check_limits(100_000, 1000).is_ok());
-        let err = check_limits(1, 100_000_000).unwrap_err();
+        assert!(check_limits(100_000, 1000, 1).is_ok());
+        let err = check_limits(1, 100_000_000, 1).unwrap_err();
         assert_eq!(
             err,
             "1 x 100000000 has a side over 100000 pixels, the limit (use --no-limits to override)"
         );
+    }
+
+    #[test]
+    fn animation_limits_match_python() {
+        assert!(check_limits(1000, 1000, 357).is_ok());
+        let err = check_limits(1000, 1000, 358).unwrap_err();
+        assert_eq!(
+            err,
+            "358 frames of 1000 x 1000 need 1074000000 bytes in memory; the limit is 1073741824 (use --no-limits to override)"
+        );
+        // One frame is a still image, held to the pixel limit only.
+        assert!(check_limits(10_000, 10_000, 1).is_ok());
+    }
+
+    #[test]
+    fn frame_rates_parse_like_python() {
+        assert_eq!(fps(" 24 "), Ok(24));
+        assert_eq!(fps("65535"), Ok(65535));
+        for text in ["0", "-3", "65536"] {
+            assert_eq!(
+                fps(text),
+                Err("fps must be between 1 and 65535".into()),
+                "{text}"
+            );
+        }
+        assert!(fps("1.5").is_err());
+    }
+
+    #[test]
+    fn frame_phases_match_python() {
+        // Expected values from simulacra.py's _frame_plan: (phase % 1.0) + i / frames.
+        let phases = |phase: f64, frames: usize| -> Vec<f64> {
+            (0..frames)
+                .map(|i| frame_plan(5, phase, frames, false, i).unwrap())
+                .inspect(|&(seed, _)| assert_eq!(seed, 5))
+                .map(|(_, phase)| phase)
+                .collect()
+        };
+        assert_eq!(phases(0.0, 4), [0.0, 0.25, 0.5, 0.75]);
+        assert_eq!(phases(-0.25, 2), [0.75, 1.25]);
+        assert_eq!(phases(1.25, 3), [0.25, 0.25 + 1.0 / 3.0, 0.25 + 2.0 / 3.0]);
+        assert_eq!(phases(1e300, 2), [0.0, 0.5], "1e300 % 1.0 == 0.0");
+        assert_eq!(phases(-1e-20, 1), [1.0], "-1e-20 % 1.0 == 1.0 in Python");
+    }
+
+    #[test]
+    fn slideshows_step_the_seed() {
+        assert_eq!(frame_plan(-1, 0.3, 3, true, 2), Ok((1, 0.3)));
+        assert_eq!(
+            frame_plan(i64::MAX - 1, 0.3, 3, true, 1),
+            Ok((i64::MAX, 0.3))
+        );
+        assert!(frame_plan(i64::MAX, 0.3, 3, true, 1).is_err());
     }
 
     #[test]
