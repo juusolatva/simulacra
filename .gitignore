@@ -5,3 +5,5 @@ core/target/
 *.so
 .coverage
 coverage.xml
+lcov.info
+*.profraw

@@ -881,9 +881,27 @@ writes the same files as before.
   operating systems and architectures.
 - [ ] Run Rust unit tests, Clippy, compatibility checks, writer failure tests,
   decoder checks, and representative performance checks before release.
-- [ ] Collect Rust coverage (for example with `cargo-llvm-cov`) and report it
+- [x] Collect Rust coverage (for example with `cargo-llvm-cov`) and report it
   alongside Python coverage, since SonarQube's Python-only figure loses
-  meaning as logic moves to Rust.
+  meaning as logic moves to Rust. Done (design in
+  `docs/superpowers/specs/2026-11-11-rust-coverage-design.md`): the
+  SonarQube job runs `core/coverage.sh`, which sources `cargo llvm-cov
+  show-env` (cargo-llvm-cov 0.9.1) and, in the dev profile, runs `cargo
+  test` (the workspace, and the engine with `json,portable`), the Python
+  suite against an instrumented core and `StandaloneCliTests` against an
+  instrumented binary, and writes `lcov.info` for
+  `sonar.rust.lcov.reportPaths`. Before, SonarQube counted 7,574 lines of
+  Rust code but no Rust lines to cover, so its 99.1% was Python alone.
+  Measured locally (2026-11-11): 98.6% of 5,507 Rust lines (regions 98.3%),
+  lowest `py/src/lib.rs` 92.8%, `cli/src/output.rs` 92.8% and
+  `palette.rs` 87.8%; the collection takes 48 s on 12 threads.
+  `core/cli/tests/check_coverage.py` fails the job if the CLI tests skipped
+  or ran none, if a report written right after the Python suite has no
+  hits in the PyO3 adapter (the binary's tests render through it too, so the
+  final report cannot tell; found by Qodo on PR #48), or if the final report
+  has none on the first statement of the binary's `main()` or in the
+  shaders (tried by hand with the binary's tests skipped and with
+  an uninstrumented extension).
 - [ ] Remove Python as an application runtime dependency only after full parity.
 - [ ] Retain the Python reference temporarily for regression testing.
 - [ ] Decide where new styles are authored after cutover: designed in Python
@@ -1089,6 +1107,6 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    the output file in order while several frames render and encode at once
    within a memory budget, and a limit on total pixels in place of the
    memory limit. Reusing buffers remains an option.
-10. Next: Phase 6, completing distribution: version reporting, Rust
-   coverage, and the distribution route, signing and clean-machine checks
+10. Next: Phase 6, completing distribution: version reporting (Rust
+   coverage is done), and the distribution route, signing and clean-machine checks
    left from Phase 3, which come with the first release.
