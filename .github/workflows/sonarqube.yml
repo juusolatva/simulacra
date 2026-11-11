@@ -29,16 +29,6 @@ jobs:
           fetch-depth: 0 # Full history for blame and new-code detection
           persist-credentials: false
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
-      - name: Run the tests without the Rust core
-        run: |
-          python -m venv .venv
-          .venv/bin/python -m pip install coverage maturin
-          .venv/bin/python -m coverage run -m unittest -v
-
       - name: Update the stable toolchain
         run: rustup update stable && rustup default stable && rustup component add llvm-tools-preview
 
@@ -48,13 +38,11 @@ jobs:
           fallback: none
 
       # One step, because core/coverage.sh sources `cargo llvm-cov show-env` into its
-      # own shell. It runs cargo test, then the Python suite again with an
-      # instrumented core (appending to the Python report, since building the core
-      # makes the native tests run and adds the Python lines that hand scenes to
-      # Rust), then StandaloneCliTests against an instrumented binary, and writes
-      # coverage.xml and lcov.info. check_coverage.py fails the step if the binary,
-      # the extension or the shaders contributed nothing.
-      - name: Collect Rust coverage and run the tests again with the Rust core
+      # own shell. It runs the workspace tests (the CLI integration tests run an
+      # instrumented binary) and the engine's portable fixtures, writes lcov.info,
+      # and fails if check_lcov.sh finds no hits in the binary's main() or in the
+      # shaders, so coverage that stopped contributing fails the step.
+      - name: Test with Rust coverage
         run: core/coverage.sh
 
       - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
