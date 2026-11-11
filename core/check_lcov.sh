@@ -25,6 +25,7 @@ fi
 awk -v main_line="$main_line" '
     /^SF:/ {
         file = substr($0, 4)
+        gsub(/\\/, "/", file)  # Windows paths
         in_main = file ~ /core\/cli\/src\/main\.rs$/
         in_styles = index(file, "core/engine/src/styles/") > 0
         next

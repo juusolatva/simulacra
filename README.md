@@ -296,11 +296,12 @@ Two sets of committed hashes pin the exact images of a `portable` build:
 
   ```bash
   cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable
+  DIR=$(mktemp -d)/golden   # golden.sh creates it; it must be empty or missing
   sh core/cli/tests/golden.sh check core/target/release/simulacra --keep "$DIR"
   SIMULACRA_GOLDEN_OUT="$DIR" cargo test --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable --test golden_pixels -- --ignored
   ```
 
-  `$DIR` must be empty or missing. `golden.sh bless` rewrites `SHA256SUMS`, and `SIMULACRA_BLESS=1` on the pixel test rewrites `PIXELS` (it refuses an incomplete directory). A change that alters file bytes but not images, such as a compression library update, re-blesses `SHA256SUMS` only, after the pixel test passes against the unchanged `PIXELS`; a deliberate visual change re-blesses both. `sh core/cli/tests/golden_selftest.sh` tests the checker itself.
+  `golden.sh bless` rewrites `SHA256SUMS`, and `SIMULACRA_BLESS=1` on the pixel test rewrites `PIXELS` (it refuses an incomplete directory). A change that alters file bytes but not images, such as a compression library update, re-blesses `SHA256SUMS` only, after the pixel test passes against the unchanged `PIXELS`; a deliberate visual change re-blesses both. `sh core/cli/tests/golden_selftest.sh` tests the checker itself.
 
 `core/coverage.sh` collects line coverage the way CI does (it needs [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) and `rustup component add llvm-tools-preview`) and writes `lcov.info`; `core/check_lcov.sh` fails if the program's or the shaders' coverage went missing.
 

@@ -74,7 +74,7 @@ cargo test $M -p simulacra_engine --features json,portable   # portable fixtures
 cargo test $M -p simulacra_engine --features json,portable --test fixtures -- --ignored --exact bless_fixtures   # regenerate changed fixtures (run alone, then the line above)
 cargo build --release $M -p simulacra_cli --features portable && core/target/release/simulacra --style waves --out waves.png
 sh core/cli/tests/golden.sh check core/target/release/simulacra   # a portable binary renders the golden hashes (add --container IMAGE to run it in a Python-free image)
-sh core/cli/tests/golden.sh check core/target/release/simulacra --keep "$DIR" && SIMULACRA_GOLDEN_OUT="$DIR" cargo test --release $M -p simulacra_cli --features portable --test golden_pixels -- --ignored   # also the frame hashes in PIXELS ($DIR empty or missing)
+DIR=$(mktemp -d)/golden && sh core/cli/tests/golden.sh check core/target/release/simulacra --keep "$DIR" && SIMULACRA_GOLDEN_OUT="$DIR" cargo test --release $M -p simulacra_cli --features portable --test golden_pixels -- --ignored   # also the frame hashes in PIXELS
 sh core/cli/tests/golden.sh bless core/target/release/simulacra   # rewrite SHA256SUMS (portable build only); SIMULACRA_BLESS=1 on the pixel test rewrites PIXELS
 sh core/cli/tests/golden_selftest.sh   # golden.sh against a stub binary
 cargo run --release $M -p simulacra_engine [--features portable] --example bench -- --width 640 --height 480 --phase 0.37 --repeat 3   # scene and shading time per style

@@ -18,9 +18,10 @@
 //! cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures
 //! ```
 //!
-//! It rewrites only a fixture that is missing, does not parse, holds a scene
-//! that no longer deserializes or validates, or whose Rust-built scene renders
-//! another hash; other files stay byte for byte as they are. A rewritten file
+//! It rewrites only a fixture that is missing or does not parse, whose
+//! settings (size, seed, phase, palette name and stops) differ from the ones
+//! below, whose stored scene no longer deserializes, validates or renders the
+//! recorded hash, or whose Rust-built scene renders another hash; other files stay byte for byte as they are. A rewritten file
 //! lists its keys alphabetically and formats numbers as `serde_json` does
 //! (`1e-5` rather than Python's `1e-05`), so the first bless of a
 //! Python-written fixture changes every line of that file; compare the
@@ -41,6 +42,7 @@ use simulacra_engine::{
 #[derive(Deserialize)]
 struct Fixture {
     style: String,
+    palette: String,
     width: usize,
     height: usize,
     seed: i64,
@@ -364,12 +366,33 @@ fn stored_render(fixture: &Fixture) -> Option<String> {
     Some(hex(&Sha256::digest(&rgb)))
 }
 
+/// What a fixture must hold besides its scene: the style, the settings, and
+/// the hash its Rust-built scene renders.
+struct Expected<'a> {
+    style: &'a str,
+    palette: &'a str,
+    stops: &'a [(i64, i64, i64)],
+    hash: &'a str,
+}
+
 /// Whether the fixture text needs rewriting: see the module docs.
-fn needs_bless(text: Option<&str>, style: &str, rust_hash: &str) -> bool {
+fn needs_bless(text: Option<&str>, expected: &Expected<'_>) -> bool {
     let Some(fixture) = text.and_then(|t| serde_json::from_str::<Fixture>(t).ok()) else {
         return true;
     };
-    fixture.style != style || stored_render(&fixture).is_none() || fixture.sha256 != rust_hash
+    let settings = (
+        fixture.width,
+        fixture.height,
+        fixture.seed,
+        fixture.core_seed,
+    );
+    fixture.style != expected.style
+        || fixture.palette != expected.palette
+        || fixture.stops != expected.stops
+        || settings != (WIDTH, HEIGHT, SEED, seed32(SEED))
+        || fixture.phase.to_bits() != PHASE.to_bits()
+        || fixture.sha256 != expected.hash
+        || stored_render(&fixture).as_deref() != Some(expected.hash)
 }
 
 /// Blesses the fixtures in `dir` from the Rust scene builders; returns the
@@ -400,7 +423,13 @@ fn bless_into(dir: &Path) -> Vec<String> {
         let hash = hex(&Sha256::digest(&rgb));
         let path = dir.join(format!("{style}.json"));
         let text = fs::read_to_string(&path).ok();
-        if !needs_bless(text.as_deref(), style, &hash) {
+        let expected = Expected {
+            style,
+            palette: palette_name,
+            stops,
+            hash: &hash,
+        };
+        if !needs_bless(text.as_deref(), &expected) {
             continue;
         }
         let scene_json = build_scene_json(style, WIDTH, HEIGHT, SEED, &palette, PHASE)
@@ -431,4 +460,42 @@ fn bless_into(dir: &Path) -> Vec<String> {
 fn bless_fixtures() {
     let rewritten = bless_into(&fixture_dir());
     println!("blessed {} fixture(s): {rewritten:?}", rewritten.len());
+}
+
+/// Blesses a copy in which `edit` changed waves.json; requires that only
+/// waves was rewritten and that it then renders its original hash.
+#[cfg(feature = "portable")]
+fn bless_after_editing_waves(name: &str, edit: impl Fn(&mut serde_json::Value)) {
+    let copy = fixture_copy(name);
+    let waves = copy.join("waves.json");
+    let mut value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&waves).unwrap()).unwrap();
+    edit(&mut value);
+    fs::write(&waves, write_fixture_json(&value)).unwrap();
+    assert_eq!(bless_into(&copy), ["waves"]);
+    let (hash, ok) = renders_its_hash(&copy, "waves");
+    assert!(ok);
+    assert_eq!(hash, renders_its_hash(&fixture_dir(), "waves").0);
+    let rewritten: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&waves).unwrap()).unwrap();
+    let original: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture_dir().join("waves.json")).unwrap())
+            .unwrap();
+    assert_eq!(rewritten["palette"], original["palette"]);
+}
+
+#[cfg(feature = "portable")]
+#[test]
+fn blessing_corrects_a_wrong_setting_label() {
+    // The palette name is a label only: the stops make the image, so the hash
+    // still matches, but the fixture would claim the wrong palette.
+    bless_after_editing_waves("label", |v| v["palette"] = "noir".into());
+}
+
+#[cfg(feature = "portable")]
+#[test]
+fn blessing_repairs_a_stored_scene_that_renders_another_image() {
+    // A valid scene whose image no longer matches its recorded hash, while the
+    // Rust builder still renders that hash.
+    bless_after_editing_waves("scene-image", |v| v["scene"]["layers"][0][0] = 31.0.into());
 }

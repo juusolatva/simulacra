@@ -15,6 +15,10 @@ use simulacra_engine::{
     PORTABLE, Palette, SCENE_BUILDERS, build_scene, palette_stops, render, seed32,
 };
 
+/// The binary's `MAX_SIDE` and `MAX_FRAME_PIXELS`.
+const MAX_SIDE: usize = 100_000;
+const MAX_FRAME_PIXELS: usize = 100_000_000;
+
 struct Options {
     width: usize,
     height: usize,
@@ -62,6 +66,16 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
     }
     if options.width == 0 || options.height == 0 {
         return Err("width and height must be positive".to_owned());
+    }
+    // The binary's limits: some scenes grow with a side alone and are built
+    // before the checked render can refuse the canvas.
+    if options.width.max(options.height) > MAX_SIDE
+        || options.width.saturating_mul(options.height) > MAX_FRAME_PIXELS
+    {
+        return Err(format!(
+            "{} x {} is over the limits ({MAX_SIDE} pixels a side, {MAX_FRAME_PIXELS} in all)",
+            options.width, options.height
+        ));
     }
     if let Some(style) = options
         .styles
