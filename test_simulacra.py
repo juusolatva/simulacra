@@ -1471,8 +1471,9 @@ class StandaloneCliTests(unittest.TestCase):
                                '--slideshow seeds would pass 9223372036854775807'),
                               (['--fps', '0'], 'fps must be between 1 and 65535'),
                               (['--fps', '65536'], 'fps must be between 1 and 65535'),
-                              (['--width', '1000', '--height', '1000', '--frames', '358'],
-                               '358 frames of 1000 x 1000 need 1074000000 bytes in memory'),
+                              (['--width', '1920', '--height', '1080', '--frames', '2072'],
+                               '2072 frames of 1920 x 1080 are 4296499200 pixels in all; '
+                               'the limit is 4294967296'),
                               (['--palette-stops', 'ff0000'], 'at least two colors'),
                               (['--out', 'image.gif', '--width', '65536'],
                                'GIF width and height cannot exceed 65535 pixels'),

@@ -31,11 +31,15 @@ const MAX_FRAME_PIXELS: u128 = 100_000_000;
 /// otherwise need gigabytes for its scene.
 const MAX_SIDE: usize = 100_000;
 
-/// `MAX_ANIMATION_BYTES` in Python: the most bytes of packed frames an
-/// animation may need unless `--no-limits` is given. The binary holds only one
-/// frame at a time, but keeps Python's limit so both tools accept the same
-/// commands (PLAN.md Phase 5 reviews the limits for streaming).
-const MAX_ANIMATION_BYTES: u128 = 1 << 30;
+/// The most pixels an animation may render in all frames together unless
+/// `--no-limits` is given. It replaces Python's `MAX_ANIMATION_BYTES` (1 GiB
+/// of packed frames, 358 million pixels), which guards memory: the binary
+/// holds one frame at a time, so its limit guards run time and output size
+/// instead. At the 4 to 49 million pixels per second and at most 0.7 bytes
+/// per pixel measured (PLAN.md Phase 5) that is up to about 18 minutes and
+/// 3 GB, or 517 frames at 3840 x 2160. The binary therefore accepts longer
+/// animations than `simulacra.py`.
+const MAX_TOTAL_PIXELS: u128 = 1 << 32;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -85,7 +89,7 @@ struct Args {
     /// Animation frame rate with --frames > 1 (default 12)
     #[arg(long, default_value_t = 12, allow_negative_numbers = true, value_parser = fps)]
     fps: u16,
-    /// Skip the size limits on pixels and animation memory
+    /// Skip the size limits on pixels per frame and in all frames
     #[arg(long)]
     no_limits: bool,
     /// Print the style names, one per line, and exit
@@ -157,7 +161,8 @@ fn parse_hex_palette(text: &str) -> Result<Stops, String> {
     Ok(Stops(stops))
 }
 
-/// `check_limits` in Python.
+/// `check_limits` in Python, with [`MAX_TOTAL_PIXELS`] in place of Python's
+/// limit on animation memory.
 fn check_limits(width: usize, height: usize, frames: usize) -> Result<(), String> {
     let pixels = width as u128 * height as u128;
     if pixels > MAX_FRAME_PIXELS {
@@ -170,10 +175,10 @@ fn check_limits(width: usize, height: usize, frames: usize) -> Result<(), String
             "{width} x {height} has a side over {MAX_SIDE} pixels, the limit (use --no-limits to override)"
         ));
     }
-    let total = pixels * 3 * frames as u128;
-    if frames > 1 && total > MAX_ANIMATION_BYTES {
+    let total = pixels * frames as u128;
+    if frames > 1 && total > MAX_TOTAL_PIXELS {
         return Err(format!(
-            "{frames} frames of {width} x {height} need {total} bytes in memory; the limit is {MAX_ANIMATION_BYTES} (use --no-limits to override)"
+            "{frames} frames of {width} x {height} are {total} pixels in all; the limit is {MAX_TOTAL_PIXELS} (use --no-limits to override)"
         ));
     }
     Ok(())
@@ -452,12 +457,19 @@ mod tests {
     }
 
     #[test]
-    fn animation_limits_match_python() {
-        assert!(check_limits(1000, 1000, 357).is_ok());
-        let err = check_limits(1000, 1000, 358).unwrap_err();
+    fn animations_are_limited_by_total_pixels() {
+        // Python refuses 358 frames of 1000 x 1000 (over 1 GiB of frames in
+        // memory); the binary keeps one frame, so its budget is 2**32 pixels.
+        assert!(check_limits(1000, 1000, 358).is_ok());
+        assert!(check_limits(3840, 2160, 517).is_ok());
+        assert!(
+            check_limits(65_536, 256, 256).is_ok(),
+            "exactly 2**32 pixels"
+        );
+        let err = check_limits(65_536, 256, 257).unwrap_err();
         assert_eq!(
             err,
-            "358 frames of 1000 x 1000 need 1074000000 bytes in memory; the limit is 1073741824 (use --no-limits to override)"
+            "257 frames of 65536 x 256 are 4311744512 pixels in all; the limit is 4294967296 (use --no-limits to override)"
         );
         // One frame is a still image, held to the pixel limit only.
         assert!(check_limits(10_000, 10_000, 1).is_ok());

@@ -22,7 +22,8 @@ Phase 4 is done: style experimentation has stopped, ported styles are frozen
 in Python (see "Freeze policy"), and batches 1 to 5 ported the remaining 45
 builders, so the binary renders all 48 styles.
 Phase 5 is in progress: the binary writes APNG and GIF animations, one frame
-at a time; the streaming review is left. Phase 6 has not started.
+at a time, under a limit on total pixels; a bounded, parallel frame pipeline
+is left. Phase 6 has not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -791,8 +792,22 @@ before application cutover.
 - [x] Preserve atomic output replacement and cleanup on encoding failures:
   a failed frame removes the temporary file and leaves an existing output
   untouched (unit-tested in `output.rs`), for APNG and GIF alike.
-- [ ] Review resource limits for the streaming design: bounded frame retention
-  does not by itself bound total render work or output size.
+- [x] Review resource limits for the streaming design: bounded frame retention
+  does not by itself bound total render work or output size. Measured with
+  the binary at 1920 × 1080, 12 frames, for `nebula`, `attractor`, `lunar`,
+  `ink` and `voronoi`, GIF and APNG: 4 (`attractor`) to 49 (`voronoi` GIF)
+  million pixels per second rendered and encoded, 0.06 to 0.68 bytes of
+  output per pixel, and 11 to 28 MB peak memory, which does not grow with the
+  frame count. Python's `MAX_ANIMATION_BYTES` (1 GiB of packed frames, so 358
+  million pixels) therefore no longer bounds memory in the binary; it would
+  only cap an animation at about 90 s and 250 MB, 43 frames at 4K. Decided
+  (2026-11-11): the binary replaces it with `MAX_TOTAL_PIXELS`, 2**32 pixels
+  in all frames (about 18 minutes and 3 GB at the slowest and largest
+  measured; 517 frames at 3840 × 2160, 2071 at 1920 × 1080), with a message
+  saying what it limits. Per frame, `MAX_FRAME_PIXELS`, `MAX_SIDE` and the
+  engine's work limit still bound memory and work. `simulacra.py` keeps its
+  memory limit, which is true for it, so the binary accepts longer
+  animations than Python does.
 - [x] Validate decoded pixels, metadata, and frame timing with independent
   decoders. APNG: `StandaloneCliTests` compares every frame, `acTL` and
   `fcTL` with `simulacra.py`'s output, `check_release.py` decodes the frames
@@ -1026,5 +1041,6 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    binary renders all 48 styles.
 9. In progress: Phase 5, animation and native encoding. Done: APNG and GIF
    output in the binary (`--frames`, `--fps`, `--slideshow`, a `.gif`
-   `--out`), streamed to the output file one frame at a time. Next: the
-   limits and a bounded, parallel frame pipeline.
+   `--out`), streamed to the output file one frame at a time, and a limit on
+   total pixels in place of the memory limit. Next: a bounded, parallel
+   frame pipeline.

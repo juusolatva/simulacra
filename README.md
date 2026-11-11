@@ -335,7 +335,7 @@ Without the Rust core, rendering runs on the CPU in Python loops: the original 3
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
 - Styles such as `quasar`, `circuit`, and `drift` perform many noise or geometry calculations per pixel. Actual speed depends on style, size, seed, and hardware.
 - `render()` returns Python lists and tuples, which use far more memory than the packed RGB size of `width * height * 3` bytes. The CLI and `render_rgb()` use packed bytes.
-- The CLI holds all uncompressed animation frames in memory before writing them, so memory use grows with frame count and pixel count. It refuses renders past the limits above unless you pass `--no-limits`.
+- The CLI (`simulacra.py`; the standalone binary streams frames instead) holds all uncompressed animation frames in memory before writing them, so memory use grows with frame count and pixel count. It refuses renders past the limits above unless you pass `--no-limits`.
 - The CLI limits are fixed constants (changing them means editing `MAX_FRAME_PIXELS`, `MAX_SIDE` and `MAX_ANIMATION_BYTES`), and they only estimate the packed frame size. The Python API validates positive dimensions only and has no size cap or memory estimate, so check sizes yourself before calling `render()` on large canvases.
 - Features still based on fixed pixel sizes, such as star dots and some brush widths, become relatively small at large resolutions. Very small images can lose detail through sampling and color quantization.
 
@@ -363,7 +363,7 @@ Rebuild with the same `maturin develop` command after changing Rust code. On an 
 
 ## Standalone binary (preview)
 
-`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py`, including `--frames`, `--fps` and `--slideshow` for animations, and draws the same pixels for every style (`--list-styles`). A `--out` ending in `.gif` writes a GIF byte for byte identical to the one `simulacra.py` writes. It writes each animation frame to the output as soon as it is rendered, so it keeps only one frame in memory.
+`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py`, including `--frames`, `--fps` and `--slideshow` for animations, and draws the same pixels for every style (`--list-styles`). A `--out` ending in `.gif` writes a GIF byte for byte identical to the one `simulacra.py` writes. It writes each animation frame to the output as soon as it is rendered, so it keeps only one frame in memory (tens of megabytes at 1080p, whatever the frame count). For the same reason it replaces the 1 GiB animation limit with a limit of 2³² pixels across all frames (about 2,070 frames at 1920 × 1080, or 517 at 3840 × 2160), which bounds run time and file size; `--no-limits` skips it as well.
 
 ```bash
 cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli
