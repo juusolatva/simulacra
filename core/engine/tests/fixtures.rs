@@ -20,7 +20,11 @@
 //!
 //! It rewrites only a fixture that is missing, does not parse, holds a scene
 //! that no longer deserializes or validates, or whose Rust-built scene renders
-//! another hash; other files stay byte for byte as they are.
+//! another hash; other files stay byte for byte as they are. A rewritten file
+//! lists its keys alphabetically and formats numbers as `serde_json` does
+//! (`1e-5` rather than Python's `1e-05`), so the first bless of a
+//! Python-written fixture changes every line of that file; compare the
+//! `sha256` and the scene values rather than the line diff.
 #![cfg(feature = "json")]
 
 use std::fmt::Write as _;
@@ -301,8 +305,9 @@ const SEED: i64 = 3;
 const PHASE: f64 = 0.37;
 
 /// One level per line with a one-space indent per level, a list of plain
-/// scalars on one line (as the Python-era `make_fixtures.py` wrote them),
-/// and a final newline. Numbers are written as `serde_json` writes them.
+/// scalars on one line, and a final newline: the line layout of the
+/// Python-era `make_fixtures.py`, but with keys in the map's (alphabetical)
+/// order and numbers as `serde_json` writes them.
 fn write_fixture_json(value: &serde_json::Value) -> String {
     fn dump(value: &serde_json::Value, indent: usize, out: &mut String) {
         use serde_json::Value;
