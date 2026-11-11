@@ -268,12 +268,15 @@ mod tests {
     use super::{PALETTES, palette_stops};
 
     #[test]
-    fn palettes_are_sorted_unique_and_have_two_stops() {
+    fn palettes_are_sorted_unique_and_have_five_stops_from_dark() {
         for pair in PALETTES.windows(2) {
             assert!(pair[0].0 < pair[1].0, "{} before {}", pair[0].0, pair[1].0);
         }
         for (name, stops) in PALETTES {
-            assert!(stops.len() >= 2, "{name}");
+            assert!(stops.len() >= 5, "{name} has {} stops", stops.len());
+            // Many styles take their background from the first stop.
+            let (r, g, b) = stops[0];
+            assert!(r.max(g).max(b) < 64, "{name} starts at {:?}", stops[0]);
             assert!(
                 stops
                     .iter()

@@ -66,14 +66,16 @@ impl Style for Mosaic {
         let xs = axis(width, self.tile, self.cols, self.grout);
         let ys = axis(height, self.tile, self.rows, self.grout);
         let mut rgb = vec![0u8; width * height * 3];
-        rgb.par_chunks_mut(width * 3).zip(ys.par_iter()).for_each(|(row, cell_y)| {
-            for (pixel, cell_x) in row.as_chunks_mut::<3>().0.iter_mut().zip(&xs) {
-                *pixel = match (cell_y, cell_x) {
-                    (Some(j), Some(i)) => colors[j * self.cols + i],
-                    _ => grout,
-                };
-            }
-        });
+        rgb.par_chunks_mut(width * 3)
+            .zip(ys.par_iter())
+            .for_each(|(row, cell_y)| {
+                for (pixel, cell_x) in row.as_chunks_mut::<3>().0.iter_mut().zip(&xs) {
+                    *pixel = match (cell_y, cell_x) {
+                        (Some(j), Some(i)) => colors[j * self.cols + i],
+                        _ => grout,
+                    };
+                }
+            });
         rgb
     }
 }

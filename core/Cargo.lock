@@ -441,6 +441,7 @@ dependencies = [
  "crc32fast",
  "flate2",
  "rayon",
+ "sha2",
  "simulacra_engine",
 ]
 

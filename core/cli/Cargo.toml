@@ -21,3 +21,6 @@ rayon = { workspace = true }
 # Build the engine with the pure-Rust libm crate, as release binaries will be:
 # the same image on every platform (see PLAN.md, "Compatibility policy").
 portable = ["simulacra_engine/portable"]
+
+[dev-dependencies]
+sha2 = { workspace = true }
