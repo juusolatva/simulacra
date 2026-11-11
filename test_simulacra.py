@@ -1442,6 +1442,8 @@ class StandaloneCliTests(unittest.TestCase):
                               (['--phase', 'inf'], 'phase must be a finite number'),
                               (['--frames', '0'], 'frames must be positive'),
                               (['--width', '0', '--frames', '0'], 'width and height must be positive'),
+                              (['--slideshow', '--frames', '4', '--seed', str(2 ** 63 - 2)],
+                               '--slideshow seeds would pass 9223372036854775807'),
                               (['--fps', '0'], 'fps must be between 1 and 65535'),
                               (['--fps', '65536'], 'fps must be between 1 and 65535'),
                               (['--width', '1000', '--height', '1000', '--frames', '358'],

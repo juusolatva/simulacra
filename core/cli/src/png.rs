@@ -51,11 +51,16 @@ fn chunk(out: &mut Vec<u8>, tag: &[u8; 4], data: &[u8]) {
     out.extend_from_slice(&crc.finalize().to_be_bytes());
 }
 
+/// The image's sides as PNG stores them, in 32 bits.
+fn sides(width: usize, height: usize) -> Result<(u32, u32), PngError> {
+    match (u32::try_from(width), u32::try_from(height)) {
+        (Ok(w), Ok(h)) => Ok((w, h)),
+        _ => Err(PngError::TooWide),
+    }
+}
+
 /// The signature and `IHDR` chunk for an 8-bit RGB image.
-fn header(width: usize, height: usize) -> Result<Vec<u8>, PngError> {
-    let (Ok(w), Ok(h)) = (u32::try_from(width), u32::try_from(height)) else {
-        return Err(PngError::TooWide);
-    };
+fn header(w: u32, h: u32) -> Vec<u8> {
     let mut ihdr = Vec::with_capacity(13);
     ihdr.extend_from_slice(&w.to_be_bytes());
     ihdr.extend_from_slice(&h.to_be_bytes());
@@ -63,15 +68,15 @@ fn header(width: usize, height: usize) -> Result<Vec<u8>, PngError> {
     let mut out = Vec::with_capacity(64);
     out.extend_from_slice(SIGNATURE);
     chunk(&mut out, b"IHDR", &ihdr);
-    Ok(out)
+    out
 }
 
 /// Compresses packed RGB (`width * height * 3` bytes, row-major) into the
 /// payload of an `IDAT` chunk, with room for `reserve` more bytes in a chunk.
-fn compress(rgb: &[u8], width: usize, height: usize, reserve: usize) -> Result<Vec<u8>, PngError> {
-    if u32::try_from(width).is_err() || u32::try_from(height).is_err() {
+fn compress(rgb: &[u8], w: u32, h: u32, reserve: usize) -> Result<Vec<u8>, PngError> {
+    let (Ok(width), Ok(height)) = (usize::try_from(w), usize::try_from(h)) else {
         return Err(PngError::TooWide);
-    }
+    };
     // On a 32-bit target width * 3 can overflow even when width fits in a u32.
     let stride = width.checked_mul(3).ok_or(PngError::TooWide)?;
     if Some(rgb.len()) != stride.checked_mul(height) {
@@ -95,8 +100,9 @@ fn compress(rgb: &[u8], width: usize, height: usize, reserve: usize) -> Result<V
 
 /// Encodes packed RGB (`width * height * 3` bytes, row-major) as a PNG file.
 pub fn encode(rgb: &[u8], width: usize, height: usize) -> Result<Vec<u8>, PngError> {
-    let mut out = header(width, height)?;
-    let idat = compress(rgb, width, height, 0)?;
+    let (w, h) = sides(width, height)?;
+    let idat = compress(rgb, w, h, 0)?;
+    let mut out = header(w, h);
     out.reserve(idat.len() + 24);
     chunk(&mut out, b"IDAT", &idat);
     chunk(&mut out, b"IEND", &[]);
@@ -108,8 +114,8 @@ pub fn encode(rgb: &[u8], width: usize, height: usize) -> Result<Vec<u8>, PngErr
 /// delay `1 / fps` seconds, no disposal, source blending) followed by `IDAT`
 /// for the first frame and `fdAT` for the others, sharing one sequence count.
 pub struct Apng {
-    width: usize,
-    height: usize,
+    width: u32,
+    height: u32,
     frames: u32,
     fps: u16,
     written: u32,
@@ -129,7 +135,8 @@ impl Apng {
         if frames == 0 || frames > 1 << 31 || fps == 0 {
             return Err(PngError::FrameCount);
         }
-        let mut out = header(width, height)?;
+        let (width, height) = sides(width, height)?;
+        let mut out = header(width, height);
         let mut actl = Vec::with_capacity(8);
         actl.extend_from_slice(&frames.to_be_bytes());
         actl.extend_from_slice(&0u32.to_be_bytes()); // loop forever
@@ -154,10 +161,8 @@ impl Apng {
         let data = compress(rgb, self.width, self.height, if first { 0 } else { 4 })?;
         let mut fctl = Vec::with_capacity(26);
         fctl.extend_from_slice(&self.sequence.to_be_bytes());
-        for value in [self.width, self.height] {
-            let value = u32::try_from(value).expect("checked by header");
-            fctl.extend_from_slice(&value.to_be_bytes());
-        }
+        fctl.extend_from_slice(&self.width.to_be_bytes());
+        fctl.extend_from_slice(&self.height.to_be_bytes());
         fctl.extend_from_slice(&[0; 8]); // x and y offsets
         fctl.extend_from_slice(&1u16.to_be_bytes());
         fctl.extend_from_slice(&self.fps.to_be_bytes());

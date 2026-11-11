@@ -283,6 +283,9 @@ impl Frame<'_> {
 
 /// Renders and writes an APNG of `frames` frames, one frame at a time.
 fn write_animation(args: &Args, frame: &Frame, seed: i64, frames: usize) -> Result<(), String> {
+    // Seeds only grow from frame to frame, so if the last frame's plan fits,
+    // every frame's does: refuse before rendering anything.
+    frame_plan(seed, args.phase, frames, args.slideshow, frames - 1)?;
     let count = u32::try_from(frames).map_err(|_| png::PngError::FrameCount.to_string())?;
     let (mut apng, start) = png::Apng::new(frame.width, frame.height, count, args.fps)
         .map_err(|err| err.to_string())?;

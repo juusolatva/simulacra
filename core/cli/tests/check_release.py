@@ -80,45 +80,75 @@ def _chunks(data):
     raise ValueError("missing IEND")
 
 
+class _FrameReader:
+    """Collects an image's compressed frames, chunk by chunk.
+
+    Frame 0 is the ``IDAT`` image. In an APNG it must be the first animation
+    frame (an ``fcTL`` before ``IDAT``); a default image outside the animation
+    is not supported, since the binary never writes one.
+    """
+
+    def __init__(self):
+        self.header = None
+        self.frame_count = None  # from acTL
+        self.sequence = 0  # fcTL and fdAT chunks seen so far
+        self.frames = [[]]
+
+    def add(self, tag, body):
+        if tag == b"IHDR":
+            self.header = struct.unpack(">IIBBBBB", body)
+        elif tag == b"acTL":
+            self.frame_count = struct.unpack(">II", body)[0]
+        elif tag == b"IDAT":
+            if self.frame_count is not None and self.sequence == 0:
+                raise ValueError("the APNG's IDAT image is not its first frame")
+            self.frames[0].append(body)
+        elif tag in (b"fcTL", b"fdAT"):
+            self._add_animation_chunk(tag, body)
+
+    def _add_animation_chunk(self, tag, body):
+        if self.frame_count is None:
+            raise ValueError(f"{tag!r} without acTL")
+        if struct.unpack(">I", body[:4])[0] != self.sequence:
+            raise ValueError(f"{tag!r} out of sequence")
+        self.sequence += 1
+        if tag == b"fdAT":
+            self.frames[-1].append(body[4:])
+            return
+        if self.header is None or struct.unpack(">II", body[4:12]) != self.header[:2]:
+            raise ValueError("an APNG frame does not cover the canvas")
+        if self.sequence > 1:
+            self.frames.append([])
+
+    def check(self):
+        """Return (width, height) once the whole file has been read."""
+        if self.header is None:
+            raise ValueError("missing IHDR")
+        width, height, depth, color, _, _, interlace = self.header
+        if (depth, color, interlace) != (8, 2, 0):
+            raise ValueError(f"expected 8-bit RGB without interlace, got {self.header}")
+        if self.frame_count is not None and self.sequence == 0:
+            raise ValueError("acTL without fcTL")
+        if self.frame_count is not None and self.frame_count != len(self.frames):
+            raise ValueError(f"acTL announces {self.frame_count} frames, found {len(self.frames)}")
+        return width, height
+
+
 def decode_frames(data):
     """Return (width, height, [packed RGB per frame]) of a PNG or APNG.
 
-    The image must be 8-bit RGB without interlace. In an APNG every frame must
-    cover the whole canvas, the frame count must match ``acTL`` and sequence
-    numbers must count up from 0; the first frame is the ``IDAT`` image.
+    The image must be 8-bit RGB without interlace. An APNG needs ``acTL``
+    before any ``fcTL`` or ``fdAT``, at least one ``fcTL`` (the first one before
+    ``IDAT``), every frame covering the whole canvas, the frame count ``acTL``
+    announces, and sequence numbers counting up from 0.
     """
-    header = None
-    frame_count = None
-    sequence = 0
-    frames = [[]]  # compressed pieces; frame 0 collects IDAT
+    reader = _FrameReader()
     for tag, body in _chunks(data):
-        if tag == b"IHDR":
-            header = struct.unpack(">IIBBBBB", body)
-        elif tag == b"acTL":
-            frame_count = struct.unpack(">II", body)[0]
-        elif tag in (b"fcTL", b"fdAT"):
-            if struct.unpack(">I", body[:4])[0] != sequence:
-                raise ValueError(f"{tag!r} out of sequence")
-            sequence += 1
-            if tag == b"fcTL":
-                if header is None or struct.unpack(">II", body[4:12]) != header[:2]:
-                    raise ValueError("an APNG frame does not cover the canvas")
-                if sequence > 1:
-                    frames.append([])
-            else:
-                frames[-1].append(body[4:])
-        elif tag == b"IDAT":
-            frames[0].append(body)
-    if header is None:
-        raise ValueError("missing IHDR")
-    width, height, depth, color, _, _, interlace = header
-    if (depth, color, interlace) != (8, 2, 0):
-        raise ValueError(f"expected 8-bit RGB without interlace, got {header}")
-    if frame_count is not None and frame_count != len(frames):
-        raise ValueError(f"acTL announces {frame_count} frames, found {len(frames)}")
+        reader.add(tag, body)
+    width, height = reader.check()
     stride = width * 3
     decoded = []
-    for pieces in frames:
+    for pieces in reader.frames:
         raw = zlib.decompress(b"".join(pieces))
         if len(raw) != height * (stride + 1):
             raise ValueError("image data has the wrong length")
