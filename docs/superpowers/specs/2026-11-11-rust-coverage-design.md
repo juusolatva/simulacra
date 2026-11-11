@@ -33,37 +33,82 @@ measured from every test set that exercises them.
 
 ## CI steps (`sonarqube.yml`)
 
-1. Install the Rust component and `cargo-llvm-cov`.
-2. Run the Python suite without the core under `coverage` (unchanged).
-3. Enable instrumentation: write the variables from `cargo llvm-cov show-env`
-   into `$GITHUB_ENV`, then run `cargo llvm-cov clean --workspace`.
-4. Run the two `cargo test` commands above.
-5. Build an instrumented core with `maturin develop -m core/py/Cargo.toml` and
-   run the Python suite again with `coverage run --append`, then write
-   `coverage.xml` (unchanged).
-6. Build an instrumented binary with `cargo build -p simulacra_cli` and run
-   `StandaloneCliTests` with `SIMULACRA_CLI=core/target/debug/simulacra`.
-7. Write `lcov.info` with `cargo llvm-cov report --lcov --output-path
-   lcov.info`, and print a per-file summary to the job log.
-8. The scanner reads `coverage.xml` and `lcov.info`.
+The job runs from the repository root; the Cargo workspace is `core/`. Every
+Cargo and `cargo llvm-cov` command passes `--manifest-path core/Cargo.toml`
+(maturin takes `-m core/py/Cargo.toml`, in the same workspace), so all builds
+share `core/target`, while reports (`coverage.xml`, `lcov.info`) are written
+relative to the repository root.
+
+1. Install the Rust component and `cargo-llvm-cov` (its own step).
+2. Run the Python suite without the core under `coverage` (unchanged, its own
+   step).
+3. **Collect Rust coverage in one step**, a single bash script that first
+   runs `source <(cargo llvm-cov show-env --sh --manifest-path
+   core/Cargo.toml)`, so every later command in the script inherits the
+   instrumentation variables as the shell decoded them. Nothing is written
+   to `$GITHUB_ENV`: `show-env` prints shell-quoted values (redirecting them
+   into `$GITHUB_ENV` would keep literal quotes in `RUSTFLAGS`), and
+   `$GITHUB_ENV` only reaches later steps anyway. In order:
+   1. `cargo llvm-cov clean --workspace --manifest-path core/Cargo.toml`;
+   2. `cargo test --manifest-path core/Cargo.toml` and
+      `cargo test --manifest-path core/Cargo.toml -p simulacra_engine
+      --features json,portable`;
+   3. `maturin develop -m core/py/Cargo.toml` (an instrumented core), then
+      the Python suite again with `coverage run --append`, then `coverage
+      xml`;
+   4. `cargo build --manifest-path core/Cargo.toml -p simulacra_cli` (an
+      instrumented binary), then the standalone CLI tests with
+      `SIMULACRA_CLI=core/target/debug/simulacra`, run through the check
+      script (below) so that zero tests run or any skip fails the step;
+   5. `cargo llvm-cov report --manifest-path core/Cargo.toml --lcov
+      --output-path lcov.info`, and a per-file summary to the job log;
+   6. the coverage check (below) on `lcov.info`.
+4. The scanner reads `coverage.xml` and `lcov.info`.
+
+**One profile.** `cargo llvm-cov report` reads the objects of one profile
+directory, so every instrumented build and test above uses the same profile:
+the dev profile (`cargo test`, `cargo build` and `maturin develop` without
+`--release`, and `report` without `--release`). If the CLI tests are too slow
+on a debug binary, the whole collection moves to the release profile
+together (`cargo test --release`, `maturin develop --release`, `cargo build
+--release`, `SIMULACRA_CLI=core/target/release/simulacra`, `report
+--release`), never one build alone.
 
 `sonar-project.properties` gains `sonar.rust.lcov.reportPaths=lcov.info`, and
 its comment saying Rust coverage is not collected is replaced.
 
+## Coverage check (`core/cli/tests/check_coverage.py`)
+
+A standard-library script, run in CI, so that a collection failure cannot
+silently lower coverage later. It has two commands:
+
+- `run-cli-tests`: loads `StandaloneCliTests` from `test_simulacra.py` through
+  the `unittest` API, runs them, and fails if any test fails, if none ran or
+  if any was skipped (for example because `SIMULACRA_CLI` was not set).
+- `lcov FILE`: fails unless `FILE` shows:
+  - a nonzero hit count on the first statement of `fn main()` in
+    `core/cli/src/main.rs` (`let args = Args::parse();`), which only the
+    binary executes (the CLI's unit tests call helpers, never `main`); the
+    script finds the line by its text, not a fixed number;
+  - nonzero hits in `core/py/src` (only the Python suite runs the adapter);
+  - nonzero hits in `core/engine/src/styles` (the shaders).
+
 ## Points to verify during implementation
 
-Each is checked locally before CI, by running the steps above end to end:
+Each is checked locally before CI, by running the collection script end to
+end:
 
-- maturin builds the extension with the instrumentation `RUSTFLAGS` from
-  `show-env` (otherwise the adapter shows no coverage).
+- `show-env`, `clean` and `report` accept `--manifest-path core/Cargo.toml`
+  and agree on `core/target`.
+- maturin builds the extension with the instrumentation `RUSTFLAGS` inherited
+  from the sourced environment (otherwise `core/py/src` has no hits and the
+  check fails).
 - `cargo llvm-cov report` merges the default and `portable` builds of the
   engine into one figure per source file.
 - `StandaloneCliTests` with a debug binary finishes in reasonable time (a few
-  minutes). If not, build the binary with `--release` and pass `--release` to
-  `report` as well, or build everything in one profile.
-- `lcov.info` holds covered lines from all three sources: nonzero hits in
-  `core/py/src`, in `core/cli/src/main.rs` and in the shaders under
-  `core/engine/src/styles`.
+  minutes); otherwise switch the whole collection to release as above.
+- The coverage check passes, and fails when the CLI tests are skipped or the
+  extension is built without instrumentation (tried once by hand).
 - The pull request's SonarQube analysis shows Rust coverage.
 
 ## Consequences
@@ -77,8 +122,8 @@ Each is checked locally before CI, by running the steps above end to end:
 
 ## Documentation
 
-- `AGENTS.md`: the CI section (SonarQube collects Rust coverage too, and how)
-  and a local command for producing `lcov.info`.
+- `AGENTS.md`: the CI section (SonarQube collects Rust coverage too, how, and
+  the coverage check) and a local command for producing `lcov.info`.
 - `README.md`: the testing paragraph.
 - `PLAN.md`: tick the Phase 6 coverage item with the measured figure and the
   job time.
