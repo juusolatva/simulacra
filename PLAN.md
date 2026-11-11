@@ -24,7 +24,9 @@ builders, so the binary renders all 48 styles.
 Phase 5 is done: the binary writes APNG and GIF animations under a limit on
 total pixels, rendering and encoding several frames at once within a memory
 budget and writing them in order; reusing buffers is left as an option.
-Phase 6 has not started.
+Phase 6 is under way: Rust coverage, the CLI parity audit and `cargo install`
+from GitHub are done, and the Python cutover has begun (golden hashes and Rust
+tests in place; see Phase 6).
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -937,6 +939,16 @@ writes the same files as before.
   shaders (tried by hand with the binary's tests skipped and with
   an uninstrumented extension).
 - [ ] Remove Python as an application runtime dependency only after full parity.
+  Under way, in three pull requests (design in
+  `docs/superpowers/specs/2026-11-11-python-cutover-design.md`). PR 1 (done):
+  golden hashes for the binary in `core/cli/tests/golden/` (343 workloads;
+  `SHA256SUMS` for files, `PIXELS` for 586 decoded frames) blessed from a
+  portable build while the Python suite and `StandaloneCliTests` passed
+  (blessing took 4.9 s on 12 threads), checked by `golden.sh` in a new
+  `golden` job and in the release verify job on every target (which no
+  longer needs Python; the compare job went), plus Rust CLI behavior tests
+  and engine invariants. Next: PR 2 removes Python, PR 3 measures the math
+  backends.
 - [ ] Retain the Python reference temporarily for regression testing.
 - [ ] Decide where new styles are authored after cutover: designed in Python
   through the binding and then ported, or written directly in Rust. Keep the
