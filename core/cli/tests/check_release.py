@@ -12,8 +12,8 @@ that has neither Python nor a Rust toolchain.
     acceptance test of PLAN.md Phase 3. Styles join the check as their scene
     builders are ported, through ``--list-styles``. With ``--hashes FILE`` it
     also renders larger workloads (sizes, negative and large seeds, phases,
-    palettes, custom stops) and writes their hashes to ``FILE`` for
-    ``compare``.
+    palettes, custom stops, and a short APNG animation) and writes their
+    hashes to ``FILE`` for ``compare``.
 
 ``compare FILE...``
     Requires every target's workload hashes to be identical. The portable
@@ -38,25 +38,34 @@ from pathlib import Path
 FIXTURES = Path(__file__).resolve().parents[2] / "engine" / "tests" / "fixtures"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
-# (width, height, seed, phase, palette, custom stops). Sizes are not multiples
-# of one another, include a tall canvas, and the seeds cover negative and
-# 64-bit values (seed32 folds them), so the comparison is not just the fixture
-# again at a larger scale.
+# (width, height, seed, phase, palette, custom stops, frames). Sizes are not
+# multiples of one another, include a tall canvas, and the seeds cover negative
+# and 64-bit values (seed32 folds them), so the comparison is not just the
+# fixture again at a larger scale. The last workload is an APNG animation,
+# hashed over all of its frames in order.
 WORKLOADS = [
-    (640, 480, 1, 0.0, "deep", None),
-    (640, 480, 17, 0.37, "lagoon", None),
-    (301, 517, -7, 1.25, "ember", None),
-    (517, 301, 2**40 + 3, -0.6, None, "0c061c,5814a8,ff8800"),
+    (640, 480, 1, 0.0, "deep", None, 1),
+    (640, 480, 17, 0.37, "lagoon", None, 1),
+    (301, 517, -7, 1.25, "ember", None, 1),
+    (517, 301, 2**40 + 3, -0.6, None, "0c061c,5814a8,ff8800", 1),
+    (160, 120, 5, 0.8, "neon", None, 4),
 ]
 
 
 def decode_png(data):
-    """Return (width, height, packed RGB) of an 8-bit RGB, non-interlaced PNG."""
+    """Return (width, height, packed RGB) of an 8-bit RGB, non-interlaced PNG.
+
+    For an APNG this is the first frame (its ``IDAT``); see ``decode_frames``.
+    """
+    width, height, frames = decode_frames(data)
+    return width, height, frames[0]
+
+
+def _chunks(data):
+    """Yield ``(tag, body)`` for each chunk after the signature, checking CRCs."""
     if not data.startswith(PNG_SIGNATURE):
         raise ValueError("not a PNG file")
     pos = len(PNG_SIGNATURE)
-    header = None
-    idat = []
     while pos < len(data):
         (length,) = struct.unpack(">I", data[pos : pos + 4])
         tag = data[pos + 4 : pos + 8]
@@ -65,22 +74,94 @@ def decode_png(data):
         if zlib.crc32(tag + body) != crc:
             raise ValueError(f"bad CRC in {tag!r}")
         pos += 12 + length
+        yield tag, body
+        if tag == b"IEND":
+            return
+    raise ValueError("missing IEND")
+
+
+class _FrameReader:
+    """Collects an image's compressed frames, chunk by chunk.
+
+    Frame 0 is the ``IDAT`` image. In an APNG it must be the first animation
+    frame (an ``fcTL`` before ``IDAT``); a default image outside the animation
+    is not supported, since the binary never writes one.
+    """
+
+    def __init__(self):
+        self.header = None
+        self.frame_count = None  # from acTL
+        self.sequence = 0  # fcTL and fdAT chunks seen so far
+        self.controls = 0  # fcTL chunks seen so far
+        self.frames = [[]]
+
+    def add(self, tag, body):
         if tag == b"IHDR":
-            header = struct.unpack(">IIBBBBB", body)
+            self.header = struct.unpack(">IIBBBBB", body)
+        elif tag == b"acTL":
+            self.frame_count = struct.unpack(">II", body)[0]
         elif tag == b"IDAT":
-            idat.append(body)
-        elif tag == b"IEND":
-            break
-    if header is None:
-        raise ValueError("missing IHDR")
-    width, height, depth, color, _, _, interlace = header
-    if (depth, color, interlace) != (8, 2, 0):
-        raise ValueError(f"expected 8-bit RGB without interlace, got {header}")
-    raw = zlib.decompress(b"".join(idat))
+            if self.frame_count is not None and self.controls != 1:
+                raise ValueError("the APNG's IDAT image is not its first frame")
+            self.frames[0].append(body)
+        elif tag in (b"fcTL", b"fdAT"):
+            self._add_animation_chunk(tag, body)
+
+    def _add_animation_chunk(self, tag, body):
+        if self.frame_count is None:
+            raise ValueError(f"{tag!r} without acTL")
+        if struct.unpack(">I", body[:4])[0] != self.sequence:
+            raise ValueError(f"{tag!r} out of sequence")
+        self.sequence += 1
+        if tag == b"fdAT":
+            # Frame 0's pixels are the IDAT image; fdAT belongs to later frames.
+            if self.controls < 2:
+                raise ValueError("fdAT outside a frame after the first")
+            self.frames[-1].append(body[4:])
+            return
+        if self.header is None or struct.unpack(">II", body[4:12]) != self.header[:2]:
+            raise ValueError("an APNG frame does not cover the canvas")
+        self.controls += 1
+        if self.controls > 1:
+            self.frames.append([])
+
+    def check(self):
+        """Return (width, height) once the whole file has been read."""
+        if self.header is None:
+            raise ValueError("missing IHDR")
+        width, height, depth, color, _, _, interlace = self.header
+        if (depth, color, interlace) != (8, 2, 0):
+            raise ValueError(f"expected 8-bit RGB without interlace, got {self.header}")
+        if self.frame_count is not None and self.controls == 0:
+            raise ValueError("acTL without fcTL")
+        if self.frame_count is not None and self.frame_count != len(self.frames):
+            raise ValueError(f"acTL announces {self.frame_count} frames, found {len(self.frames)}")
+        if not all(self.frames):
+            raise ValueError("a frame has no image data")
+        return width, height
+
+
+def decode_frames(data):
+    """Return (width, height, [packed RGB per frame]) of a PNG or APNG.
+
+    The image must be 8-bit RGB without interlace. An APNG needs ``acTL``
+    before any ``fcTL`` or ``fdAT``, exactly one ``fcTL`` before ``IDAT`` (which
+    holds the first frame), ``fdAT`` only in later frames, image data in every
+    frame, every frame covering the whole canvas, the frame count ``acTL``
+    announces, and sequence numbers counting up from 0.
+    """
+    reader = _FrameReader()
+    for tag, body in _chunks(data):
+        reader.add(tag, body)
+    width, height = reader.check()
     stride = width * 3
-    if len(raw) != height * (stride + 1):
-        raise ValueError("image data has the wrong length")
-    return width, height, _unfilter(raw, stride, height)
+    decoded = []
+    for pieces in reader.frames:
+        raw = zlib.decompress(b"".join(pieces))
+        if len(raw) != height * (stride + 1):
+            raise ValueError("image data has the wrong length")
+        decoded.append(_unfilter(raw, stride, height))
+    return width, height, decoded
 
 
 def _paeth(a, b, c):
@@ -158,17 +239,21 @@ class Runner:
             )
         return result.stdout
 
-    def render(self, name, width, height, seed, phase, palette, stops):
+    def render(self, name, width, height, seed, phase, palette, stops, frames=1):
+        """Render one image or animation; return the SHA-256 of all its frames' RGB."""
         args = [
             "--style", name, "--width", str(width), "--height", str(height),
             "--seed", str(seed), "--phase", repr(phase), "--out", "out.png",
+            "--frames", str(frames),
         ]
         args += ["--palette-stops", stops] if stops else ["--palette", palette]
         self.run(*args)
-        got_width, got_height, rgb = decode_png((self.workdir / "out.png").read_bytes())
+        got_width, got_height, rgb = decode_frames((self.workdir / "out.png").read_bytes())
         if (got_width, got_height) != (width, height):
             raise SystemExit(f"{name}: wrote {got_width} x {got_height}, asked for {width} x {height}")
-        return hashlib.sha256(rgb).hexdigest()
+        if len(rgb) != frames:
+            raise SystemExit(f"{name}: wrote {len(rgb)} frames, asked for {frames}")
+        return hashlib.sha256(b"".join(rgb)).hexdigest()
 
 
 def workload_key(name, workload):

@@ -9,7 +9,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::hash::{BuildHasher, Hasher};
-use std::io::{self, Write as _};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 /// Creates `.simulacra-<16 hex digits>.tmp` in `directory`, exclusively.
@@ -38,17 +38,44 @@ fn create_temporary(directory: &Path) -> io::Result<(PathBuf, File)> {
     ))
 }
 
+/// Why [`atomic_write_with`] failed.
+#[derive(Debug)]
+pub enum WriteError<E> {
+    /// Creating, writing, flushing or renaming the file failed.
+    Io(io::Error),
+    /// The caller's `write` function returned an error.
+    Content(E),
+}
+
 /// Writes `bytes` to `path` through a temporary file and a rename. On any
 /// error the temporary file is removed and an existing `path` is unchanged.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let absolute = std::path::absolute(path)?;
+    atomic_write_with(path, |out| out.write_all(bytes)).map_err(|err| match err {
+        WriteError::Io(err) | WriteError::Content(err) => err,
+    })
+}
+
+/// Lets `write` fill a temporary file next to `path` (through a buffer), then
+/// renames it over `path`, so content can be produced piece by piece, such as
+/// one animation frame at a time. If `write` or any file operation fails, the
+/// temporary file is removed and an existing `path` is unchanged.
+pub fn atomic_write_with<E>(
+    path: &Path,
+    write: impl FnOnce(&mut dyn Write) -> Result<(), E>,
+) -> Result<(), WriteError<E>> {
+    let absolute = std::path::absolute(path).map_err(WriteError::Io)?;
     let directory = absolute.parent().unwrap_or(Path::new("."));
-    let (temporary, mut file) = create_temporary(directory)?;
-    let written = file.write_all(bytes).and_then(|()| file.flush());
+    let (temporary, file) = create_temporary(directory).map_err(WriteError::Io)?;
+    let mut out = BufWriter::new(file);
+    let written = write(&mut out)
+        .map_err(WriteError::Content)
+        .and_then(|()| out.flush().map_err(WriteError::Io));
     // Close the file before renaming or removing it: Windows refuses both while
     // a handle is open, which would leak the temporary file after a failure.
-    drop(file);
-    let result = written.and_then(|()| fs::rename(&temporary, &absolute));
+    // (After a failed flush the buffer's drop tries once more and ignores the
+    // result; the file is removed below either way.)
+    drop(out);
+    let result = written.and_then(|()| fs::rename(&temporary, &absolute).map_err(WriteError::Io));
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
     }
@@ -57,7 +84,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::atomic_write;
+    use super::{WriteError, atomic_write, atomic_write_with};
     use std::fs;
 
     fn scratch_dir(name: &str) -> std::path::PathBuf {
@@ -97,6 +124,40 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(names, ["busy"]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn content_written_in_pieces_replaces_the_file() {
+        let dir = scratch_dir("pieces");
+        let path = dir.join("out.png");
+        atomic_write_with(&path, |out| -> std::io::Result<()> {
+            for piece in [&b"ab"[..], b"cd", b"e"] {
+                out.write_all(piece)?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"abcde");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_failure_while_writing_leaves_the_destination_and_no_temporary() {
+        let dir = scratch_dir("content");
+        let path = dir.join("out.png");
+        fs::write(&path, b"old").unwrap();
+        let result = atomic_write_with(&path, |out| {
+            out.write_all(b"partial").unwrap();
+            Err("frame 2 failed")
+        });
+        assert!(matches!(result, Err(WriteError::Content("frame 2 failed"))));
+        assert_eq!(fs::read(&path).unwrap(), b"old");
+        let names: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["out.png"]);
         fs::remove_dir_all(&dir).unwrap();
     }
 

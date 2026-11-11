@@ -1394,6 +1394,39 @@ class StandaloneCliTests(unittest.TestCase):
                     self.assertEqual(self.scanlines(rust), self.scanlines(python))
                     self.assertEqual(dict(chunks(rust))[b'IHDR'], dict(chunks(python))[b'IHDR'])
 
+    @staticmethod
+    def animation(path):
+        """The tags, acTL, fcTL payloads and decompressed scanlines of each frame."""
+        parts = chunks(path)
+        frames = [zlib.decompress(data if tag == b'IDAT' else data[4:])
+                  for tag, data in parts if tag in (b'IDAT', b'fdAT')]
+        return {'tags': [tag for tag, _ in parts],
+                'acTL': [data for tag, data in parts if tag == b'acTL'],
+                'fcTL': [data for tag, data in parts if tag == b'fcTL'],
+                'frames': frames}
+
+    def test_animations_match_the_python_cli(self):
+        cases = (['--style', 'waves', '--frames', '4'],
+                 ['--style', 'mandelbrot', '--frames', '3', '--phase', '-0.6', '--fps', '30'],
+                 ['--style', 'marbling', '--frames', '3', '--phase', '2.25', '--seed', str(2 ** 40 + 3)],
+                 ['--style', 'ink', '--frames', '3', '--slideshow', '--seed', '-7', '--phase', '0.37'],
+                 ['--style', 'blobs', '--frames', '2', '--palette-stops', '0c061c,5814a8,ff8800'])
+        with tempfile.TemporaryDirectory() as directory:
+            rust, python = pathlib.Path(directory) / 'rust.png', pathlib.Path(directory) / 'python.png'
+            for extra in cases:
+                with self.subTest(extra=extra):
+                    size = ['--width', '24', '--height', '18']
+                    result = self.run_cli(*size, *extra, '--out', str(rust))
+                    with mock.patch('sys.argv', ['simulacra.py', *size, *extra, '--out', str(python)]), \
+                            mock.patch('sys.stdout', new_callable=io.StringIO) as printed:
+                        art.main()
+                    self.assertEqual(result.stdout, printed.getvalue().replace(str(python), str(rust)))
+                    self.assertEqual(result.stderr, '')
+                    animation = self.animation(rust)
+                    self.assertEqual(animation, self.animation(python))
+                    self.assertGreater(len(set(animation['frames'])), 1)
+                    self.assertEqual(dict(chunks(rust))[b'IHDR'], dict(chunks(python))[b'IHDR'])
+
     def test_lists_and_errors(self):
         styles = self.listed_styles()
         self.assertEqual(styles, sorted(styles))
@@ -1407,6 +1440,14 @@ class StandaloneCliTests(unittest.TestCase):
                               (['--width', '1', '--height', '100000000'], '1 x 100000000 has a side over 100000 pixels'),
                               (['--no-limits', '--width', str(2 ** 32), '--height', '1'], 'cannot exceed 4294967295'),
                               (['--phase', 'inf'], 'phase must be a finite number'),
+                              (['--frames', '0'], 'frames must be positive'),
+                              (['--width', '0', '--frames', '0'], 'width and height must be positive'),
+                              (['--slideshow', '--frames', '4', '--seed', str(2 ** 63 - 2)],
+                               '--slideshow seeds would pass 9223372036854775807'),
+                              (['--fps', '0'], 'fps must be between 1 and 65535'),
+                              (['--fps', '65536'], 'fps must be between 1 and 65535'),
+                              (['--width', '1000', '--height', '1000', '--frames', '358'],
+                               '358 frames of 1000 x 1000 need 1074000000 bytes in memory'),
                               (['--palette-stops', 'ff0000'], 'at least two colors'),
                               (['--out', 'image.gif'], 'GIF output'),
                               (['--style', 'no-such-style'], 'no-such-style'),
