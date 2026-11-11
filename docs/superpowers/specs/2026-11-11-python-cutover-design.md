@@ -54,12 +54,18 @@ default backend; within the accepted `portable` drift in `attractor` and
   (its missing hashes fail the check until blessed). Other lines are single
   workloads, such as the palette sweep.
 - `SHA256SUMS` (generated): the SHA-256 of each output file in `sha256sum`
-  format, so `sha256sum -c` checks it directly. Whole files are hashed: the
-  PNG/APNG (`flate2` with the pure-Rust `miniz_oxide` backend) and GIF
-  encoders are deterministic and pinned by `Cargo.lock`, so a file hash also
-  checks the encoders. A dependency update that changes compressed bytes
-  without changing pixels is re-blessed after the decoded-pixel check below
-  confirms the pixels.
+  format. Whole files are hashed: the PNG/APNG (`flate2` with the pure-Rust
+  `miniz_oxide` backend) and GIF encoders are deterministic and pinned by
+  `Cargo.lock`, so a file hash also checks the encoders.
+- `PIXELS` (generated): the SHA-256 of every decoded frame's packed RGB, one
+  line per frame (`name#0`, `name#1`, ...), so a record of the images
+  themselves exists apart from their encoding. It is checked and written by
+  the pixel test below, never by `golden.sh bless`.
+- **Re-blessing:** a change that alters file bytes but not images (a
+  `flate2` or `miniz_oxide` update, say) re-blesses `SHA256SUMS` only; the
+  pixel test must pass against the unchanged `PIXELS` first, and the pull
+  request's diff then shows `PIXELS` untouched. A deliberate visual change
+  rewrites both, and its diff shows which workloads and frames changed.
 - **Workloads:** every style (from `--list-styles`) at the six sizes, seeds,
   phases and palettes of today's `check_release.py` `WORKLOADS` (640 × 480,
   non-square sizes, negative and 64-bit seeds, phases outside [0, 1), a
@@ -68,20 +74,37 @@ default backend; within the accepted `portable` drift in `attractor` and
   across styles; custom palettes with 2 and 7 stops for `orbits` (it draws
   `randrange(n_stops)`) and a few other styles; `--slideshow`. About 350
   renders, measured in CI time before finalizing.
-- **Checker:** `core/cli/tests/golden.sh check BINARY [--container IMAGE]`
-  renders every workload into a temporary directory and runs `sha256sum -c`;
-  `golden.sh bless BINARY` rewrites `SHA256SUMS`. POSIX shell and coreutils
-  only, so it runs on the Linux and Windows (Git Bash) runners and inside the
-  Python-free container image. The hashes hold only for `portable` builds;
-  a default-backend binary fails in `attractor` (and possibly `cymatics`),
-  which the failure message names as the likely cause.
-- **Where it runs:** in `tests.yml` against a release `portable` binary on
-  every pull request, and in `release-binaries.yml`'s verify job against
-  each downloaded package (replacing `check_release.py check`); the compare
-  job is no longer needed, since every target is checked against the same
-  committed hashes.
-- **Recording:** blessed once in PR 1 from a portable build, after the
-  Python suite (including `StandaloneCliTests`) passes on the same commit.
+- **Checker:** `core/cli/tests/golden.sh check BINARY [--container IMAGE]
+  [--keep DIR]` expands the workloads, renders each into a temporary
+  directory (or `DIR`, kept for the pixel test) and compares. `sha256sum -c`
+  alone would ignore an output with no manifest line, so the check first
+  requires the expanded workload names and the manifest names to be the same
+  set: it fails on an empty inventory, on a duplicate name in either list, on
+  a workload with no hash and on a hash with no workload, naming each; then
+  it compares every hash. `golden.sh bless BINARY` rewrites `SHA256SUMS`
+  (after the same duplicate and empty checks on the workloads). POSIX shell
+  and coreutils only, so it runs on the Linux and Windows (Git Bash) runners
+  and inside the Python-free container image. The hashes hold only for
+  `portable` builds; a default-backend binary fails in `attractor` (and
+  possibly `cymatics`), which the failure message names as the likely cause.
+- **Pixel test:** `core/cli/tests/golden_pixels.rs`, an ignored test run
+  explicitly (`cargo test -p simulacra_cli --test golden_pixels -- --ignored`)
+  with `SIMULACRA_GOLDEN_OUT` pointing at a `golden.sh --keep` directory. It
+  decodes every output with the test decoders below (every APNG and GIF
+  frame) and requires the frame names to equal `PIXELS`' names exactly (same
+  inventory rules) and every frame hash to match; with `SIMULACRA_BLESS=1` it
+  rewrites `PIXELS`. Run without `SIMULACRA_GOLDEN_OUT`, it fails rather than
+  passing vacuously.
+- **Where it runs:** in `tests.yml` on every pull request, `golden.sh check
+  --keep` against a release `portable` binary and then the pixel test on
+  that directory; in `release-binaries.yml`'s verify job, `golden.sh check`
+  against each downloaded package (replacing `check_release.py check`; no
+  Rust there, and the file hashes imply the pixel hashes). The compare job is
+  no longer needed, since every target is checked against the same committed
+  hashes.
+- **Recording:** both manifests blessed once in PR 1 from a portable build,
+  after the Python suite (including `StandaloneCliTests`) passes on the same
+  commit.
 
 ### Rust integration tests
 
@@ -109,9 +132,42 @@ default backend; within the accepted `portable` drift in `attractor` and
   - every style moves (phase 0.25 differs from 0) and loops (phases 1, -1 and
     3 within 3 levels of phase 0);
   - built-in scenes stay within an eighth of the work limit at sizes up to
-    4K (today's `test_native_scenes_stay_well_within_the_work_limit`).
+    4K (today's `test_native_scenes_stay_well_within_the_work_limit`);
+  - huge finite phases reduce to the same loop position: every style renders
+    phase `1e308` exactly as phase 0, and `2**40 + 0.25` exactly as 0.25
+    (`test_huge_phases_are_reduced_to_a_loop_position`);
+  - every style renders at 1 × 1, 1 × 9 and 9 × 1 (generalizing
+    `test_galaxy_single_pixel`; all 48 pass today);
+  - wave frequencies stay below Nyquist: `plasma`, `spiral`,
+    `interference`, `cymatics`, `optics` and `opart` are less than half as
+    rough at 128 × 128 as at 32 × 32 (`test_wave_styles_are_not_aliased`);
+  - `rings` and `gems` cover a similar share of the canvas at 48 and 144
+    pixels (`test_formerly_fixed_size_styles_scale_with_canvas`);
+  - `mandelbrot`, `petals`, `starburst`, `kaleidoscope`, `horizon` and `ink`
+    keep spatial detail (`test_previously_flat_styles_have_spatial_detail`).
+- **Engine unit tests added next to the code:** `polar_noise` is continuous
+  across the ±π seam at several radii (`noise.rs`;
+  `test_polar_noise_is_continuous_across_the_angle_seam`), and every built-in
+  palette has at least 5 stops and a dark first stop, every channel below 64,
+  since many styles take their background from it (`palettes.rs`, extending
+  `palettes_are_sorted_unique_and_have_two_stops`;
+  `test_every_palette_is_valid_and_starts_dark`).
 - Existing Rust tests (engine units, `validation.rs`, `py_random.rs`,
-  `fixtures.rs`, CLI units) stay.
+  `fixtures.rs`, CLI units) stay. Several already cover Python tests: `fbm`'s
+  range and the looping noise (`noise.rs`), the GIF encoder and its table
+  (`gif.rs`), atomic writes and the umask-default mode (`output.rs`), frame
+  phases including huge ones (`main.rs`), scene rejection (`validation.rs`).
+- **Accepted reductions** (Python tests with no Rust replacement):
+  - the Python-versus-Rust comparisons (native renders, Rust scenes,
+    `StandaloneCliTests`, noise and palettes), which go with the reference;
+  - style-specific tests: flowfield and comet trails, quasar jets, the
+    mandelbrot interior, lissajous span, woodblock, mosaic, cymatics, optics,
+    contour, opart, marbling, the attractor table criteria and framing, the
+    space styles, constellation lines and cosmos bands;
+  - Python-API-only tests: global random state, packed-RGB clamping and
+    conversion, the writers' row input, `inspect.signature`, the pruned
+    nearest-segment helper, open-curve sampling and the styles-without-motion
+    check (every style moves).
 
 ## PR 2: Remove Python
 
@@ -138,7 +194,15 @@ default backend; within the accepted `portable` drift in `attractor` and
   and drops the Python matrix; `slow-tests.yml` is deleted (its checks
   compared with Python); `sonarqube.yml` runs `cargo llvm-cov` over the
   workspace tests (the CLI integration tests run the instrumented binary) and
-  sends `lcov.info`; `core/coverage.sh` shrinks accordingly;
+  sends `lcov.info`; `core/coverage.sh` shrinks accordingly, and its LCOV
+  safeguards move from `check_coverage.py` into a POSIX shell and `awk`
+  check (`core/check_lcov.sh`) so that lost subprocess instrumentation fails
+  CI instead of lowering the figure: it fails on a malformed `DA` line, if
+  the line holding `let args = Args::parse();` in `main()` of
+  `core/cli/src/main.rs` (found by its text; only the binary runs it, not
+  the unit tests) has no hit, or if nothing under `core/engine/src/styles`
+  has a hit. Its own negative cases (a report without those hits, a
+  malformed line) are run once by hand and recorded in the PR;
   `release-binaries.yml` drops `setup-python`. `sonar-project.properties`
   lists only the Rust sources and drops the Python settings.
 - **CodeQL:** default setup in the repository settings lists `actions`,
@@ -179,8 +243,9 @@ Either way the golden hashes stay unchanged, since they are recorded from
   every style at many sizes, seeds and phases). Mitigation: the workload set
   above, the engine fixtures, and the invariants; and no style changes are
   planned.
-- **Encoder byte changes** from a dependency update need a re-bless; the
-  decoded-pixel tests show whether pixels changed.
+- **Encoder byte changes** from a dependency update need a re-bless of
+  `SHA256SUMS`; the pixel test against the unchanged `PIXELS` shows whether
+  any image changed.
 - **Windows shell:** `golden.sh` must run under Git Bash on the Windows
   runner (`shell: bash` is already the workflow default).
 
