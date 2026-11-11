@@ -54,10 +54,12 @@ fn nearest_entry(table: &[[u8; 3]], color: [u8; 3]) -> u8 {
             .map(|c| (i32::from(entry[c]) - i32::from(color[c])).pow(2))
             .sum()
     };
-    let mut best = 0;
+    let (mut best, mut best_distance) = (0, distance(&table[0]));
     for (index, entry) in table.iter().enumerate().skip(1) {
-        if distance(entry) < distance(&table[best]) {
-            best = index;
+        let entry_distance = distance(entry);
+        // Strictly less, so the first of equal distances wins, as in `min`.
+        if entry_distance < best_distance {
+            (best, best_distance) = (index, entry_distance);
         }
     }
     u8::try_from(best).expect("the table has 256 entries")
@@ -133,7 +135,7 @@ impl BitWriter {
         self.buffer |= u32::try_from(code).expect("codes fit 12 bits") << self.bits;
         self.bits += width;
         while self.bits >= 8 {
-            self.out.push(self.buffer.to_le_bytes()[0]);
+            self.out.push(self.buffer as u8); // the low 8 bits
             self.buffer >>= 8;
             self.bits -= 8;
         }
@@ -141,7 +143,7 @@ impl BitWriter {
 
     fn finish(mut self) -> Vec<u8> {
         if self.bits > 0 {
-            self.out.push(self.buffer.to_le_bytes()[0]);
+            self.out.push(self.buffer as u8); // the low 8 bits
         }
         self.out
     }

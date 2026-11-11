@@ -204,11 +204,14 @@ fn list_names(args: &Args) -> Option<Vec<&'static str>> {
 
 /// `_wants_gif` in Python: `--out` ends in `.gif`, in any case.
 fn wants_gif(args: &Args) -> bool {
-    args.out
-        .as_os_str()
-        .to_string_lossy()
-        .to_lowercase()
-        .ends_with(".gif")
+    name_wants_gif(args.out.as_os_str())
+}
+
+/// Compares the whole name, not `Path::extension`, which is `None` for a file
+/// named `.gif` (Python's `'.gif'.lower().endswith('.gif')` is true) and
+/// would need UTF-8; a lossy string keeps the ASCII suffix of any name.
+fn name_wants_gif(name: &std::ffi::OsStr) -> bool {
+    name.to_string_lossy().to_lowercase().ends_with(".gif")
 }
 
 /// Checks the arguments in `_check_args`'s order; returns width, height and
@@ -421,7 +424,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_limits, fps, frame_plan, parse_hex_palette, random_seed};
+    use super::{check_limits, fps, frame_plan, name_wants_gif, parse_hex_palette, random_seed};
 
     #[test]
     fn hex_palettes_parse_like_python() {
@@ -499,6 +502,31 @@ mod tests {
             Ok((i64::MAX, 0.3))
         );
         assert!(frame_plan(i64::MAX, 0.3, 3, true, 1).is_err());
+    }
+
+    #[test]
+    fn gif_names_match_python() {
+        // Python: [n.lower().endswith('.gif') for n in names]
+        let wants = |name: &str| name_wants_gif(std::ffi::OsStr::new(name));
+        for name in [
+            "a.gif",
+            "a.GIF",
+            "dir/b.GiF",
+            ".gif",
+            "dir/.gif",
+            "c.png.gif",
+        ] {
+            assert!(wants(name), "{name}");
+        }
+        for name in ["a.png", "gif", "a.gif.png", "a.gi", "a_gif"] {
+            assert!(!wants(name), "{name}");
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let name = std::ffi::OsStr::from_bytes(b"\xff\xfe.gif");
+            assert!(name_wants_gif(name), "a name that is not UTF-8");
+        }
     }
 
     #[test]
