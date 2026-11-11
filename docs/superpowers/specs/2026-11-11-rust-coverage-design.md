@@ -55,7 +55,8 @@ relative to the repository root.
       --features json,portable`;
    3. `maturin develop -m core/py/Cargo.toml` (an instrumented core), then
       the Python suite again with `coverage run --append`, then `coverage
-      xml`;
+      xml`, then an intermediate report (`core/target/lcov-python.info`)
+      and the `python-lcov` check (below);
    4. `cargo build --manifest-path core/Cargo.toml -p simulacra_cli` (an
       instrumented binary), then the standalone CLI tests with
       `SIMULACRA_CLI=core/target/debug/simulacra`, run through the check
@@ -85,12 +86,15 @@ silently lower coverage later. It has two commands:
 - `run-cli-tests`: loads `StandaloneCliTests` from `test_simulacra.py` through
   the `unittest` API, runs them, and fails if any test fails, if none ran or
   if any was skipped (for example because `SIMULACRA_CLI` was not set).
-- `lcov FILE`: fails unless `FILE` shows:
+- `python-lcov FILE`: run on a report written right after the Python suite
+  and before the binary's tests (which also render through the extension, so
+  the final report cannot show whether the suite reached it); fails unless
+  it shows hits in `core/py/src`, which `cargo test` never loads.
+- `lcov FILE`: fails unless the final report shows:
   - a nonzero hit count on the first statement of `fn main()` in
     `core/cli/src/main.rs` (`let args = Args::parse();`), which only the
     binary executes (the CLI's unit tests call helpers, never `main`); the
     script finds the line by its text, not a fixed number;
-  - nonzero hits in `core/py/src` (only the Python suite runs the adapter);
   - nonzero hits in `core/engine/src/styles` (the shaders).
 
 ## Points to verify during implementation

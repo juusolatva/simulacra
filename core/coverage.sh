@@ -31,6 +31,10 @@ cargo test --locked --manifest-path "$manifest" -p simulacra_engine --features j
 "$python" -m maturin develop -m core/py/Cargo.toml
 "$python" -m coverage run --append -m unittest -q
 "$python" -m coverage xml
+# The binary's tests below render through the extension too, so check now that
+# the Python suite itself reached the adapter.
+cargo llvm-cov report --manifest-path "$manifest" --lcov --output-path core/target/lcov-python.info
+"$python" core/cli/tests/check_coverage.py python-lcov core/target/lcov-python.info
 
 # The standalone binary, instrumented. check_coverage.py fails if no test ran
 # or any was skipped.

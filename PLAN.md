@@ -896,9 +896,11 @@ writes the same files as before.
   lowest `py/src/lib.rs` 92.8%, `cli/src/output.rs` 92.8% and
   `palette.rs` 87.8%; the collection takes 48 s on 12 threads.
   `core/cli/tests/check_coverage.py` fails the job if the CLI tests skipped
-  or ran none, or if the report has no hits on the first statement of the
-  binary's `main()`, in the PyO3 adapter or in the shaders (each reached by
-  only one test set; tried by hand with the binary's tests skipped and with
+  or ran none, if a report written right after the Python suite has no
+  hits in the PyO3 adapter (the binary's tests render through it too, so the
+  final report cannot tell; found by Qodo on PR #48), or if the final report
+  has none on the first statement of the binary's `main()` or in the
+  shaders (tried by hand with the binary's tests skipped and with
   an uninstrumented extension).
 - [ ] Remove Python as an application runtime dependency only after full parity.
 - [ ] Retain the Python reference temporarily for regression testing.
