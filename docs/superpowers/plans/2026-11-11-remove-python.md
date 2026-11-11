@@ -30,7 +30,7 @@ Then delete the Python reference, the PyO3 adapter and the engine's `python` fea
 
 ## Review Focus
 
-1. **Bless run with nothing changed:** `SIMULACRA_BLESS=1` must leave every fixture byte-identical, including the 47 Python-built scenes whose floats a Rust builder reproduces only to the last bit. Test: `blessing_leaves_matching_fixtures_untouched` (Task 1).
+1. **Bless run with nothing changed:** `bless_fixtures` must leave every fixture byte-identical, including the 47 Python-built scenes whose floats a Rust builder reproduces only to the last bit. Test: `blessing_leaves_matching_fixtures_untouched` (Task 1).
 2. **Coverage collection that silently stops contributing:** an uninstrumented binary, or the engine tests skipped, must fail `check_lcov.sh`, not just lower the figure. Test: the hand-run negative cases recorded in the PR (Task 3), as the spec requires.
 3. **A Python reference left behind:** a workflow, doc or command still naming a deleted file must fail review. Test: the `git grep` sweep in Task 5, with an empty result expected outside `docs/superpowers/` and the history sections.
 4. **A Rust-written fixture that loads back differently:** a float written by the bless mode must parse back to the same bits. Test: `fixture_writer_round_trips_every_number` (Task 1).
@@ -45,7 +45,7 @@ Then delete the Python reference, the PyO3 adapter and the engine's `python` fea
 - Create `core/check_lcov.sh`. Rewrite `core/coverage.sh`.
 - Modify `.github/workflows/sonarqube.yml`, `sonar-project.properties`, `.github/workflows/tests.yml` and `.github/workflows/release-binaries.yml`. Delete `.github/workflows/slow-tests.yml`.
 - Delete `simulacra.py`, `test_simulacra.py`, `bench_simulacra.py`, `.coveragerc`, `core/py/`, `core/cli/tests/check_release.py`, `core/cli/tests/check_coverage.py`, `core/engine/tests/make_fixtures.py` and `core/engine/tests/make_random_reference.py`.
-- Modify `core/Cargo.toml` (members, `pyo3`), `core/engine/Cargo.toml` (`python` feature), `core/Cargo.lock`, the engine sources that carry the PyO3 derive (49 lines), `core/engine/src/lib.rs` (crate docs), `core/engine/tests/py_random.rs` (docs), `core/cli/src/main.rs` (user-facing help and module docs) and `.gitignore`.
+- Modify `core/Cargo.toml` (members, `pyo3`), `core/engine/Cargo.toml` (`python` feature), `core/Cargo.lock`, the engine sources that carry the PyO3 derive (49 lines), `core/engine/src/lib.rs` (crate docs), `core/engine/tests/py_random.rs` (docs), and `core/cli/src/main.rs` (user-facing help and module docs). `.gitignore` keeps its Python rules: working copies still hold `.venv/`, caches and coverage files from before the cutover.
 - Rewrite `README.md` and `AGENTS.md`. Update `PLAN.md`. Check `GLOSSARY.md`, which has no Python references today.
 
 **Comment policy (decided here):** about 30 source comments name the Python function a piece of code was ported from (for example, "`_mosaic_scene` in Python"). They stay. One paragraph in `core/engine/src/lib.rs`'s crate docs says that such names refer to the Python reference retired in this PR, which can be read in git history before it. Text a user sees (`--help`, README) must not mention `simulacra.py` except in history.
@@ -61,11 +61,14 @@ Then delete the Python reference, the PyO3 adapter and the engine's `python` fea
 **Interfaces:**
 
 - Produces:
-  - Running `SIMULACRA_BLESS=1 cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures` rewrites a fixture only when it is missing, or when its scene built by the Rust builder renders a hash other than the recorded one. The rewritten file gets the Rust-built scene and the new hash, at the existing settings: 48 × 36, seed 3, phase 0.37, and the palette at `sorted(PALETTES)[index % 24]`, where `index` is the style's position in sorted `STYLES`. All other fixtures are left untouched. It also deletes fixture files whose style no longer exists. Blessing on a non-`portable` build panics with `blessing needs --features portable`.
-  - `fn bless_into(dir: &Path) -> Vec<String>` returns the styles it rewrote. The environment-variable test calls it on `fixture_dir()`, and the tests below call it on a copy.
+  - Blessing is a dedicated ignored test, `bless_fixtures`, run on its own so that no other test reads the fixtures while it writes them: `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures -- --ignored --exact bless_fixtures`, followed by the normal fixture tests. No environment variable is needed. It rewrites a fixture when any of these holds:
+    - the fixture is missing;
+    - its file does not parse, or its stored scene does not deserialize (`scene_from_json` fails, for example after a scene field is renamed) or does not pass the checked `render`;
+    - its scene built by the Rust builder renders a hash other than the recorded one. The rewritten file gets the Rust-built scene and the new hash, at the existing settings: 48 × 36, seed 3, phase 0.37, and the palette at `sorted(PALETTES)[index % 24]`, where `index` is the style's position in sorted `STYLES`. All other fixtures are left untouched. It also deletes fixture files whose style no longer exists. Blessing on a non-`portable` build panics with `blessing needs --features portable`. Each file is written to a temporary file in the same directory and then renamed over the old one.
+  - `fn bless_into(dir: &Path) -> Vec<String>` returns the styles it rewrote, sorted. `bless_fixtures` calls it on `fixture_dir()`, and the tests below call it on a copy in their own directory under `CARGO_TARGET_TMPDIR`, so they never touch the real fixtures.
   - `fn write_fixture_json(value: &serde_json::Value) -> String` writes one level per line with a one-space indent per level, a list of plain scalars on one line, and keys in the order given. That is the layout of the deleted `make_fixtures.py:_dump`, with `serde_json`'s number formatting, plus a trailing newline. Rewritten files may format numbers differently from the Python-written ones; that is accepted.
   - Read the scene through `simulacra_engine::build_scene_json` and parse it into a `serde_json::Value`. Without `serde_json`'s `preserve_order` feature (not enabled; no new dependency), a `Value` map sorts its keys, so a rewritten fixture lists its fields and scene keys alphabetically. That is accepted: key order carries no meaning, and only deliberately changed fixtures are rewritten. The fields are the same as now: `style, width, height, seed, core_seed, phase, palette, stops, sha256, scene`.
-  - The module docs: the committed scenes came from the Python builders (the Rust builder for `attractor`) before the cutover. Blessing is how a deliberate change updates them. The failure messages point at `SIMULACRA_BLESS=1` instead of `make_fixtures.py`.
+  - The module docs: the committed scenes came from the Python builders (the Rust builder for `attractor`) before the cutover. Blessing is how a deliberate change updates them. The failure messages point at the `bless_fixtures` command instead of `make_fixtures.py`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -96,6 +99,15 @@ fn blessing_rewrites_a_changed_or_missing_fixture() {
     // bless_into(copy) == ["blobs", "waves"]; both load, render their new recorded hash,
     // and that hash equals the original files' hash. The other 46 are byte-identical.
 }
+
+#[cfg(feature = "portable")]
+#[test]
+fn blessing_repairs_a_scene_that_no_longer_loads() {
+    // In a copy: rename one key of waves.json's "scene" object (for example the first key,
+    // with "_old" appended), keeping "sha256" as it was, so the image hash alone would not
+    // trigger a rewrite. bless_into(copy) == ["waves"]; the rewritten scene loads through
+    // scene_from_json and renders the recorded hash. The other 47 are byte-identical.
+}
 ```
 
 - [ ] **Step 2: Run them to make sure they fail**
@@ -103,12 +115,18 @@ fn blessing_rewrites_a_changed_or_missing_fixture() {
 Run: `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures`
 Expected: a compile error, because `write_fixture_json` and `bless_into` don't exist.
 
-- [ ] **Step 3: Implement `write_fixture_json`, `bless_into` and the `SIMULACRA_BLESS` branch**
+- [ ] **Step 3: Implement `write_fixture_json`, `bless_into` and the ignored `bless_fixtures` test**
 
-- [ ] **Step 4: Run the tests, then bless the real directory to show that nothing changes**
+- [ ] **Step 4: Run the tests, then try the bless command on the real directory**
 
-Run: `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures && SIMULACRA_BLESS=1 cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures && git status --short core/engine/tests/fixtures`
-Expected: all pass, and `git status` prints nothing.
+Run: `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures`
+Expected: all pass.
+
+Then the bless command, three ways, with `B="cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures"`:
+
+1. **Nothing changed:** `$B -- --ignored --exact bless_fixtures && $B && git status --short core/engine/tests/fixtures`. Expected: passes, and `git status` prints nothing.
+2. **A missing and a changed fixture:** delete `blobs.json` and set `waves.json`'s `sha256` to 64 zeros, then run `$B -- --ignored --exact bless_fixtures && $B`. Expected: both files are rewritten and the normal tests pass (both now render their recorded hashes, equal to the hashes in `git show HEAD:core/engine/tests/fixtures/<style>.json`).
+3. Then restore both with `git checkout -- core/engine/tests/fixtures`, because a rewritten file has sorted keys and is not byte-identical to the committed one.
 
 Also confirm that the default backend still passes: `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json --test fixtures`, and Clippy with `--features json,portable`.
 
@@ -116,7 +134,7 @@ Also confirm that the default backend still passes: `cargo test --manifest-path 
 
 ```bash
 git add core/engine/tests/fixtures.rs
-git commit -m "Regenerate the portable fixtures from Rust with SIMULACRA_BLESS"
+git commit -m "Regenerate the portable fixtures from Rust with an ignored bless test"
 ```
 
 ---
@@ -217,7 +235,6 @@ git commit -m "Collect Rust coverage without Python"
   - `core/cli/src/main.rs`: the `--seed` help becomes `Seed; the same seed gives the same image`, and the module docs describe the options without comparing them with `simulacra.py`.
   - `.github/workflows/tests.yml`: remove the `python` job; in `rust`, remove `setup-python` and the PyO3 `cargo tree` check (keep the engine-alone test and Clippy steps); update the comments.
   - `.github/workflows/release-binaries.yml`: remove the step "The binary does not depend on PyO3".
-  - `.gitignore`: drop `__pycache__/`, `*.pyc`, `.venv/`, `*.so`, `.coverage` and `coverage.xml`.
 
 - [ ] **Step 1: Delete the files and edit the manifests and derives**
 
@@ -249,8 +266,13 @@ Expected: everything passes, `343 workloads match`, and the last command prints 
 
 - [ ] **Step 4: Commit**
 
+Stage explicitly, never with `git add -A` or `git add .`: working copies still hold `.venv/`, `__pycache__/` and coverage output. Delete with `git rm` (the listed files and `git rm -r core/py`), stage the edited files by path, then check `git status --short` for nothing unintended before committing.
+
 ```bash
-git add -A
+git rm simulacra.py test_simulacra.py bench_simulacra.py .coveragerc core/cli/tests/check_release.py core/cli/tests/check_coverage.py core/engine/tests/make_fixtures.py core/engine/tests/make_random_reference.py .github/workflows/slow-tests.yml
+git rm -r core/py
+git add core/Cargo.toml core/Cargo.lock core/engine/Cargo.toml core/engine/src core/engine/tests/py_random.rs core/engine/tests/fixtures.rs core/cli/src/main.rs .github/workflows/tests.yml .github/workflows/release-binaries.yml
+git status --short   # only the intended deletions and edits
 git commit -m "Remove the Python reference, its tests and the PyO3 extension"
 ```
 
@@ -276,7 +298,7 @@ Lead with the binary. The sections are:
 - performance and limits (the binary's limits, plus the benchmark example and `hyperfine --warmup 1 'simulacra --style ink --width 1920 --height 1080 --out /tmp/x.png'` or a `time` loop for whole runs);
 - testing (`cargo test`, Clippy, the portable fixtures and bless, the golden check, the pixel test and the bless rules, `core/coverage.sh`);
 - project files;
-- "Adding a style" in Rust, which says that styles are not being added for now and lists the steps: scene struct and shader, `BuildScene`, `for_each_style!`, `scene_builders!`, `validate`, a fixture through `SIMULACRA_BLESS=1`, the golden bless and the style table.
+- "Adding a style" in Rust, which says that styles are not being added for now and lists the steps: scene struct and shader, `BuildScene`, `for_each_style!`, `scene_builders!`, `validate`, a fixture through `bless_fixtures`, the golden bless and the style table.
 
 Remove "Python API", the Python quick start, "Optional Rust core", "Extending the script" and the Python suite's test list. Keep "Differences from simulacra.py" only as a short history note, or drop it.
 
