@@ -492,8 +492,18 @@ scene builders use, across the supported seed range.
   glibc from the build runner (Ubuntu 24.04); the oldest glibc to support,
   or a static musl build instead, is part of choosing the distribution
   route.
-- [ ] Choose a distribution route, for example GitHub Releases built with
-  `cargo-dist`, plus `cargo install`.
+- [x] Choose a distribution route, for example GitHub Releases built with
+  `cargo-dist`, plus `cargo install`. Decided (2026-11-11): for now,
+  `cargo install --locked --features portable --git
+  https://github.com/juusolatva/simulacra simulacra_cli` (or `--path
+  core/cli` from a clone), documented per platform in the README. Not
+  crates.io (every crate has `publish = false`, and the name would have to
+  change). `release-binaries.yml` builds its binaries with that same `cargo
+  install` (which uses the workspace's release profile, fat LTO included),
+  so the binaries checked against the fixtures on every target are the ones
+  users get.
+- [ ] Publish prebuilt binaries as GitHub Releases (later), with release
+  versions and tags; until then `--version` prints the crate version.
 - [ ] Check Windows SmartScreen behavior and decide whether to sign Windows
   binaries. (macOS signing and notarization are dropped with the target.)
 - [ ] Smoke-test those binaries in environments without Python installed.
@@ -895,9 +905,12 @@ writes the same files as before.
   would make every new option a possible break), alphabetical
   `--list-styles`, clap's wording for malformed values, and the limits and
   messages already decided in Phase 5.
-- [ ] Add version reporting and platform-specific installation instructions.
-  (`simulacra --version` exists, from the crate version 0.1.0; nothing sets
-  release versions yet.)
+- [x] Add version reporting and platform-specific installation instructions.
+  Done (2026-11-11): the README's "Installing the binary" covers rustup, the
+  C linker on Linux, the MSVC build tools on Windows, `--locked`,
+  `--features portable` and updating and removing. `simulacra --version`
+  prints the crate version (0.1.0); decided not to add the git commit, so
+  versions only gain meaning with tagged releases (see Phase 3).
 - [ ] Automate release builds and packaged-executable smoke tests for supported
   operating systems and architectures.
 - [ ] Run Rust unit tests, Clippy, compatibility checks, writer failure tests,
@@ -1128,6 +1141,7 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    the output file in order while several frames render and encode at once
    within a memory budget, and a limit on total pixels in place of the
    memory limit. Reusing buffers remains an option.
-10. Next: Phase 6, completing distribution: version reporting (Rust
-   coverage and the CLI parity audit are done), and the distribution route, signing and clean-machine checks
-   left from Phase 3, which come with the first release.
+10. Next: Phase 6, completing distribution. Done: Rust coverage, the CLI
+   parity audit, and installing with `cargo install` from GitHub. Left:
+   GitHub Releases, signing and clean-machine checks (Phase 3), which come
+   with the first release, and the cutover decisions.
