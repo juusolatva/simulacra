@@ -15,6 +15,7 @@ simulacra_engine = { path = "../engine" }
 clap = { workspace = true }
 flate2 = { workspace = true }
 crc32fast = { workspace = true }
+rayon = { workspace = true }
 
 [features]
 # Build the engine with the pure-Rust libm crate, as release binaries will be:

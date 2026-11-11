@@ -21,9 +21,10 @@ signing and clean-machine smoke tests left, which wait for the first release.
 Phase 4 is done: style experimentation has stopped, ported styles are frozen
 in Python (see "Freeze policy"), and batches 1 to 5 ported the remaining 45
 builders, so the binary renders all 48 styles.
-Phase 5 is in progress: the binary writes APNG and GIF animations, one frame
-at a time, under a limit on total pixels; a bounded, parallel frame pipeline
-is left. Phase 6 has not started.
+Phase 5 is done: the binary writes APNG and GIF animations under a limit on
+total pixels, rendering and encoding several frames at once within a memory
+budget and writing them in order; reusing buffers is left as an option.
+Phase 6 has not started.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -760,11 +761,46 @@ before application cutover.
 - [x] Render, encode, and release frames incrementally: each frame is
   rendered, encoded (APNG or GIF) and written to the temporary output file
   (`output::atomic_write_with`) before the next one is rendered.
-- [ ] If stages overlap, use a small bounded queue rather than retaining the
+- [x] If stages overlap, use a small bounded queue rather than retaining the
   entire animation. Coordinate frame-level work with Rayon to avoid excessive
-  concurrency and memory use.
-- [ ] Separate fixed seeded scene content from phase-dependent updates where
-  this avoids repeated work without changing output.
+  concurrency and memory use. Measured first (2026-11-11, 12 threads,
+  WSL2, all 48 styles, seed 7): at 1920 x 1080 with 12 frames, building
+  scenes took 0.01 s in all, shading 27.6 s and encoding 30.0 s as APNG
+  (8.7 s as GIF); APNG's zlib level 9 ran longer than shading for 36 styles.
+  Encoding ran on one thread, and so did shading in `attractor`, `ink` and
+  `lissajous` (CPU time over wall time 1.0 to 1.1; under 2 for `comet`,
+  `ember`, `flowfield` and `mosaic`), so the binary used about 6.9 of 12
+  threads. Overlapping a render stage with an encode stage would have saved
+  at most 30%. Decided: render and encode whole frames as jobs on Rayon's
+  pool, `in_order` in `core/cli/src/main.rs`, at most `frames_in_flight` at
+  once (one per thread, within `FRAMES_IN_FLIGHT_BYTES`, 1 GiB, by
+  `frame_bytes`: `FRAME_BYTES_PER_PIXEL`, 32 bytes per pixel, for
+  `lissajous`'s 27, plus `FRAME_BYTES_PER_SIDE`, 320 bytes per pixel of
+  width + 2 x height, for `lissajous`'s curve points, which grow with the
+  sides (found by review on PR #47: a 10 x 100,000 canvas with 64 threads
+  ran 33 frames at once and peaked at 1.29 GiB; now 11 frames, 484 MB): 15
+  frames at 1080p, 4 at 4K, one however large), and write them in frame
+  order from a reorder buffer. Shading inside a frame stays parallel
+  (Rayon nests the work). Results are handled in frame order, so the error
+  reported is the first failing frame's, as before; a panicking job
+  propagates its panic. The encoders split for it: `Apng::compress` runs on
+  any thread and `Apng::frame` adds the chunks in order (sequence numbers
+  follow from the frame index), and `Gif::frame` encodes complete frames
+  in parallel, each thread with its own cell cache and LZW dictionary from a
+  pool. Files are byte for byte the same as before (192 files compared:
+  every style as APNG and GIF of 13 frames, still GIF and slideshow).
+  Speedups (old / new wall time, all 48 styles in turn): 1.78x as APNG and
+  1.46x as GIF at 1920 x 1080 x 12 frames (57.7 s to 32.4 s, 36.6 s to
+  25.1 s), 2.12x and 1.51x at 640 x 480 x 24, 1.43x and 1.29x at
+  3840 x 2160 x 6 (4 frames at once, up to 2.7x for `ink`); per style at
+  1080p up to 6.4x as APNG (`lissajous`) and 5.5x as GIF (`attractor`).
+  Peak memory grows with the frames in progress, not with the frame count: at 1080p a median of 77 MB (APNG) and 92 MB
+  (GIF), at most 618 MB (`lissajous`, 12 frames); at 4K at most 834 MB
+  (`lissajous`, 4 frames), where one frame at a time needed 221 MB.
+- [x] Separate fixed seeded scene content from phase-dependent updates where
+  this avoids repeated work without changing output. Decided not to:
+  building every scene of 12 frames for all 48 styles takes 0.01 s in all
+  at 1920 x 1080 (measured above).
 - [ ] Reuse buffers where practical and avoid the full-frame copy currently
   needed when Rust returns a `Vec<u8>` as Python `bytes`.
 - [x] Preserve PNG/APNG/GIF dimensions, frame ordering, looping, and timing.
@@ -827,7 +863,9 @@ before application cutover.
   Identical compressed file bytes are not required.
 
 Acceptance: retained animation frame buffers remain bounded as frame count
-grows, with existing output behavior preserved.
+grows, with existing output behavior preserved. Met: the binary holds at most
+`frames_in_flight` frames, set by the thread count and a memory budget, and
+writes the same files as before.
 
 ## Phase 6: Complete distribution and retire duplication
 
@@ -1046,8 +1084,11 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    stopped and ported styles are frozen in Python (decided 2026-11-10, see
    "Freeze policy"). Batches 1 to 5 ported every builder, so the standalone
    binary renders all 48 styles.
-9. In progress: Phase 5, animation and native encoding. Done: APNG and GIF
-   output in the binary (`--frames`, `--fps`, `--slideshow`, a `.gif`
-   `--out`), streamed to the output file one frame at a time, and a limit on
-   total pixels in place of the memory limit. Next: a bounded, parallel
-   frame pipeline.
+9. Done: Phase 5, animation and native encoding. APNG and GIF output in the
+   binary (`--frames`, `--fps`, `--slideshow`, a `.gif` `--out`), streamed to
+   the output file in order while several frames render and encode at once
+   within a memory budget, and a limit on total pixels in place of the
+   memory limit. Reusing buffers remains an option.
+10. Next: Phase 6, completing distribution: version reporting, Rust
+   coverage, and the distribution route, signing and clean-machine checks
+   left from Phase 3, which come with the first release.
