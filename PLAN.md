@@ -773,8 +773,12 @@ before application cutover.
   threads. Overlapping a render stage with an encode stage would have saved
   at most 30%. Decided: render and encode whole frames as jobs on Rayon's
   pool, `in_order` in `core/cli/src/main.rs`, at most `frames_in_flight` at
-  once (one per thread, within `FRAMES_IN_FLIGHT_BYTES`, 1 GiB at
-  `FRAME_BYTES_PER_PIXEL`, 32 bytes per pixel, for `lissajous`'s 27: 16
+  once (one per thread, within `FRAMES_IN_FLIGHT_BYTES`, 1 GiB, by
+  `frame_bytes`: `FRAME_BYTES_PER_PIXEL`, 32 bytes per pixel, for
+  `lissajous`'s 27, plus `FRAME_BYTES_PER_SIDE`, 320 bytes per pixel of
+  width + 2 x height, for `lissajous`'s curve points, which grow with the
+  sides (found by review on PR #47: a 10 x 100,000 canvas with 64 threads
+  ran 33 frames at once and peaked at 1.29 GiB; now 11 frames, 484 MB): 15
   frames at 1080p, 4 at 4K, one however large), and write them in frame
   order from a reorder buffer. Shading inside a frame stays parallel
   (Rayon nests the work). Results are handled in frame order, so the error

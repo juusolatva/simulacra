@@ -60,19 +60,42 @@ const MAX_FRAMES: usize = 1 << 16;
 /// memory until it is written.
 const FRAME_BYTES_PER_PIXEL: usize = 32;
 
+/// The scene memory one frame in progress may need per pixel of `width + 2 *
+/// height`, for scenes that grow with the sides rather than the area.
+/// `lissajous` samples each curve about once per pixel of its length, 16
+/// bytes per point: its x moves at most `width` pixels per radian (`cx * ax *
+/// fx`, at most `width / 2 * 0.8 * 2.5`) and its y at most `1.8 * height`, so
+/// its 3 curves hold at most `3 * 16 * 2 pi * (width + 1.8 * height)` bytes
+/// (plus 66 points each), under 302 bytes per pixel of `width + 2 * height`.
+/// Measured on 10 x 100,000 and 100,000 x 10 canvases, no other style
+/// needs more than [`FRAME_BYTES_PER_PIXEL`] covers.
+const FRAME_BYTES_PER_SIDE: usize = 320;
+
 /// The memory the frames in progress may use together, by
-/// [`FRAME_BYTES_PER_PIXEL`]: up to 16 frames of 1920 x 1080 or 4 of
-/// 3840 x 2160, and one frame however large.
+/// [`frame_bytes`]: up to 15 frames of 1920 x 1080 or 4 of 3840 x 2160, and
+/// one frame however large (a single frame needs what it needs, within
+/// `MAX_FRAME_PIXELS` and `MAX_SIDE`, as when frames render one by one).
 const FRAMES_IN_FLIGHT_BYTES: usize = 1 << 30;
+
+/// The memory one frame of `width` x `height` may need while it is in
+/// progress: [`FRAME_BYTES_PER_PIXEL`] for each pixel plus
+/// [`FRAME_BYTES_PER_SIDE`] for each pixel of `width + 2 * height`.
+fn frame_bytes(width: usize, height: usize) -> usize {
+    let area = width
+        .saturating_mul(height)
+        .saturating_mul(FRAME_BYTES_PER_PIXEL);
+    let sides = height
+        .saturating_mul(2)
+        .saturating_add(width)
+        .saturating_mul(FRAME_BYTES_PER_SIDE);
+    area.saturating_add(sides)
+}
 
 /// How many frames of `width` x `height` to render and encode at once: one
 /// per thread in the pool, within [`FRAMES_IN_FLIGHT_BYTES`], at least one and
 /// at most `frames`.
 fn frames_in_flight(width: usize, height: usize, frames: usize, threads: usize) -> usize {
-    let per_frame = width
-        .saturating_mul(height)
-        .saturating_mul(FRAME_BYTES_PER_PIXEL)
-        .max(1);
+    let per_frame = frame_bytes(width, height).max(1);
     (FRAMES_IN_FLIGHT_BYTES / per_frame)
         .min(threads)
         .min(frames)
@@ -799,10 +822,14 @@ mod tests {
 
     #[test]
     fn frames_in_flight_follow_threads_and_the_memory_budget() {
-        // 1 GiB at 32 bytes per pixel.
+        // 1 GiB at 32 bytes per pixel plus 320 per pixel of width + 2 * height.
         assert_eq!(frames_in_flight(1920, 1080, 100, 12), 12);
-        assert_eq!(frames_in_flight(1920, 1080, 100, 64), 16);
+        assert_eq!(frames_in_flight(1920, 1080, 100, 64), 15);
         assert_eq!(frames_in_flight(3840, 2160, 100, 64), 4);
+        // Thin canvases are bounded by their scene's points, not their area:
+        // 32 MB of pixels but 64 MB of lissajous points at most.
+        assert_eq!(frames_in_flight(10, 100_000, 64, 64), 11);
+        assert_eq!(frames_in_flight(100_000, 10, 64, 64), 16);
         assert_eq!(frames_in_flight(100_000, 1_000, 100, 64), 1);
         assert_eq!(frames_in_flight(usize::MAX, usize::MAX, 100, 64), 1);
         assert_eq!(frames_in_flight(64, 64, 3, 12), 3);
