@@ -6,8 +6,9 @@ name: Release binaries
 # finished Rust rewrite, so the packages are workflow artifacts kept 14 days.
 #
 # build:   on a native runner per target, check that the binary does not pull in
-#          PyO3, run the portable fixtures and the CLI tests, build with the
-#          `portable` math backend and package the binary.
+#          PyO3, run the portable fixtures and the CLI tests, build with
+#          `cargo install --locked --features portable` (as the README tells
+#          users to install it) and package the binary.
 # verify:  on a fresh runner, download the package as a user would, unpack it and
 #          run core/cli/tests/check_release.py: every style the binary lists must
 #          render its portable fixture's hash. On Linux the binary runs in a
@@ -86,8 +87,11 @@ jobs:
       - name: CLI tests
         run: cargo test --locked --manifest-path core/Cargo.toml -p simulacra_cli --features portable
 
-      - name: Build the release binary
-        run: cargo build --locked --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable --target "$TARGET"
+      # Built the way the README tells users to install it (cargo install with
+      # --locked and portable), so the binary the jobs below check is the one
+      # users get. cargo install uses the workspace's release profile.
+      - name: Build the release binary with cargo install
+        run: cargo install --locked --path core/cli --features portable --target "$TARGET" --root install
 
       # tar keeps the executable bit, which artifact zips would drop.
       - name: Package
@@ -95,10 +99,10 @@ jobs:
           mkdir package
           cp LICENSE package/
           if [ "$RUNNER_OS" = Windows ]; then
-            cp "core/target/$TARGET/release/simulacra.exe" package/
+            cp install/bin/simulacra.exe package/
             (cd package && 7z a "../simulacra-$TARGET.zip" .)
           else
-            cp "core/target/$TARGET/release/simulacra" package/
+            cp install/bin/simulacra package/
             tar -czf "simulacra-$TARGET.tar.gz" -C package .
           fi
 

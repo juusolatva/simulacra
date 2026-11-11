@@ -365,12 +365,31 @@ Rebuild with the same `maturin develop` command after changing Rust code. On an 
 
 `core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py`, including `--frames`, `--fps` and `--slideshow` for animations, and draws the same pixels for every style (`--list-styles`). A `--out` ending in `.gif` writes a GIF byte for byte identical to the one `simulacra.py` writes. It renders and encodes several animation frames at once, about one per processor thread, and writes them to the output in order as they finish, so its memory depends on the frames in progress rather than the frame count: it renders at most as many at once as fit in about 1 GiB (one at a time when a single frame needs more). That is a ceiling: usually the thread count sets the number, and at 1080p on 12 threads most styles peak around 100 MB. Since it never holds the whole animation, it replaces the 1 GiB animation limit with a limit of 2³² pixels across all frames (about 2,070 frames at 1920 × 1080, or 517 at 3840 × 2160), and to 65,536 frames, since each frame has a fixed cost however small it is. Together they bound run time and file size; `--no-limits` skips them as well.
 
+### Installing the binary
+
+Install it with Cargo, straight from this repository (it is not published on crates.io):
+
 ```bash
-cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli
-core/target/release/simulacra --style waves --palette lagoon --seed 17 --width 1280 --height 720 --out waves.png
-core/target/release/simulacra --style mandelbrot --frames 48 --fps 24 --out zoom.png
-core/target/release/simulacra --style plasma --frames 36 --out plasma.gif
+cargo install --locked --features portable --git https://github.com/juusolatva/simulacra simulacra_cli
+simulacra --style waves --palette lagoon --seed 17 --width 1280 --height 720 --out waves.png
+simulacra --style mandelbrot --frames 48 --fps 24 --out zoom.png
+simulacra --style plasma --frames 36 --out plasma.gif
 ```
+
+From a clone, `cargo install --locked --features portable --path core/cli` does the same. Cargo puts `simulacra` (`simulacra.exe` on Windows) in `~/.cargo/bin`, which the Rust installer adds to `PATH`.
+
+- **Rust:** install a recent stable toolchain with [rustup](https://rustup.rs); run `rustup update` first if an older one fails to build (the crates use the 2024 edition, and CI builds with the latest stable release).
+- **Linux:** Rust needs a C linker; on Debian and Ubuntu, `sudo apt install build-essential`.
+- **Windows:** Rust needs the Microsoft C++ build tools, which rustup offers to install; follow its prompts.
+- **macOS:** not a tested target; the build may work.
+- **Options:** `--locked` builds with the dependency versions in the repository's `Cargo.lock`, the ones CI tests. `--features portable` uses the pure-Rust math library, so every platform renders the same image (the released binaries will be built this way); without it, the binary uses the platform's math library and matches `simulacra.py` on the same machine exactly, where `portable` can differ slightly in two styles (see [Optional Rust core](#optional-rust-core)).
+- **Updating and removing:** run the same command again to update to the latest commit on `main` (Cargo says the package is already installed if nothing changed), and `cargo uninstall simulacra_cli` to remove it.
+
+`simulacra --version` prints the crate version, which does not change between commits yet. To build without installing, run `cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli` and use `core/target/release/simulacra`.
+
+CI builds the binary with this same `cargo install` command for Linux (x86_64, aarch64) and Windows (x86_64) and checks each one against the committed fixtures with `core/cli/tests/check_release.py`, on Linux in a container without Python; no prebuilt binaries are published yet. See [`PLAN.md`](PLAN.md), Phases 3 and 6, for what comes next.
+
+### Differences from simulacra.py
 
 Where the binary differs from `simulacra.py`'s command line:
 
@@ -380,8 +399,6 @@ Where the binary differs from `simulacra.py`'s command line:
 - Options must be spelled out: `--wid` does not abbreviate `--width` (the error suggests the full name). A repeated option takes its last value, as in `simulacra.py`.
 - A failure while rendering or writing, such as an `--out` in a missing directory, prints `simulacra: error: …` and exits with status 1, where `simulacra.py` stops with a traceback (also status 1). Refused arguments and limits exit with status 2 in both; the binary's messages for malformed values are worded by its parser ([clap](https://docs.rs/clap)) rather than by argparse.
 - `--version` prints the version.
-
-Building with `--features portable` gives the same image on every platform, as planned for released binaries; such a build can differ slightly from Python (see [Optional Rust core](#optional-rust-core)). CI builds such test binaries for Linux (x86_64, aarch64) and Windows (x86_64) and checks each one against the committed fixtures with `core/cli/tests/check_release.py`; they are not published yet. See [`PLAN.md`](PLAN.md), Phases 3 and 5, for what comes next.
 
 ## Testing
 
