@@ -372,6 +372,15 @@ core/target/release/simulacra --style mandelbrot --frames 48 --fps 24 --out zoom
 core/target/release/simulacra --style plasma --frames 36 --out plasma.gif
 ```
 
+Where the binary differs from `simulacra.py`'s command line:
+
+- It limits animations by total pixels and frame count instead of memory (above), and refuses PNG sides over 4,294,967,295, the format's limit.
+- Seeds are 64-bit integers (±9.2 × 10¹⁸); `simulacra.py` accepts any integer.
+- `--list-styles` prints the styles in alphabetical order rather than in `simulacra.py`'s registry order.
+- Options must be spelled out: `--wid` does not abbreviate `--width` (the error suggests the full name). A repeated option takes its last value, as in `simulacra.py`.
+- A failure while rendering or writing, such as an `--out` in a missing directory, prints `simulacra: error: …` and exits with status 1, where `simulacra.py` stops with a traceback (also status 1). Refused arguments and limits exit with status 2 in both; the binary's messages for malformed values are worded by its parser ([clap](https://docs.rs/clap)) rather than by argparse.
+- `--version` prints the version.
+
 Building with `--features portable` gives the same image on every platform, as planned for released binaries; such a build can differ slightly from Python (see [Optional Rust core](#optional-rust-core)). CI builds such test binaries for Linux (x86_64, aarch64) and Windows (x86_64) and checks each one against the committed fixtures with `core/cli/tests/check_release.py`; they are not published yet. See [`PLAN.md`](PLAN.md), Phases 3 and 5, for what comes next.
 
 ## Testing
