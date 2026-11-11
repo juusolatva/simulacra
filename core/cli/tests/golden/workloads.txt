@@ -1,0 +1,82 @@
+# Golden workloads for golden.sh: one per line, an output name and the binary's
+# arguments (golden.sh adds --out NAME). A line holding {style} is expanded once
+# for every style --list-styles prints, so a new style is covered automatically
+# (its missing hashes fail the check until blessed). Names: letters, digits,
+# '.', '_' and '-'. After editing, bless both manifests (see AGENTS.md).
+
+# Every style, as check_release.py's WORKLOADS: sizes that are not multiples of
+# one another, a tall canvas, negative and 64-bit seeds, phases outside [0, 1),
+# a custom palette, a 4-frame APNG and a 3-frame GIF.
+{style}-640x480-s1.png    --style {style} --width 640 --height 480 --seed 1 --phase 0.0 --palette deep
+{style}-640x480-s17.png   --style {style} --width 640 --height 480 --seed 17 --phase 0.37 --palette lagoon
+{style}-301x517-sm7.png   --style {style} --width 301 --height 517 --seed -7 --phase 1.25 --palette ember
+{style}-517x301-s2p40.png --style {style} --width 517 --height 301 --seed 1099511627779 --phase -0.6 --palette-stops 0c061c,5814a8,ff8800
+{style}-160x120-f4.png    --style {style} --width 160 --height 120 --seed 5 --phase 0.8 --palette neon --frames 4 --fps 12
+{style}-150x110-f3.gif    --style {style} --width 150 --height 110 --seed -3 --phase 0.2 --palette sunset --frames 3 --fps 12
+
+# The portable fixtures' settings (core/engine/tests/fixtures): 48 x 36, seed 3,
+# phase 0.37 and each fixture's own palette, which cycle through all 24
+# built-in palettes. golden_pixels.rs checks these frames against the
+# fixtures' hashes.
+fixture-asteroids.png --style asteroids --width 48 --height 36 --seed 3 --phase 0.37 --palette candy
+fixture-attractor.png --style attractor --width 48 --height 36 --seed 3 --phase 0.37 --palette crimson
+fixture-aurora.png --style aurora --width 48 --height 36 --seed 3 --phase 0.37 --palette deep
+fixture-blackhole.png --style blackhole --width 48 --height 36 --seed 3 --phase 0.37 --palette ember
+fixture-blobs.png --style blobs --width 48 --height 36 --seed 3 --phase 0.37 --palette forest
+fixture-bloom.png --style bloom --width 48 --height 36 --seed 3 --phase 0.37 --palette gold
+fixture-circuit.png --style circuit --width 48 --height 36 --seed 3 --phase 0.37 --palette jewel
+fixture-comet.png --style comet --width 48 --height 36 --seed 3 --phase 0.37 --palette lagoon
+fixture-constellations.png --style constellations --width 48 --height 36 --seed 3 --phase 0.37 --palette neon
+fixture-contour.png --style contour --width 48 --height 36 --seed 3 --phase 0.37 --palette noir
+fixture-cosmic.png --style cosmic --width 48 --height 36 --seed 3 --phase 0.37 --palette ocean
+fixture-cosmos.png --style cosmos --width 48 --height 36 --seed 3 --phase 0.37 --palette patina
+fixture-crystal.png --style crystal --width 48 --height 36 --seed 3 --phase 0.37 --palette phosphor
+fixture-cymatics.png --style cymatics --width 48 --height 36 --seed 3 --phase 0.37 --palette rainbow
+fixture-drift.png --style drift --width 48 --height 36 --seed 3 --phase 0.37 --palette risoprint
+fixture-ember.png --style ember --width 48 --height 36 --seed 3 --phase 0.37 --palette sepia
+fixture-flowfield.png --style flowfield --width 48 --height 36 --seed 3 --phase 0.37 --palette sherbet
+fixture-galaxy.png --style galaxy --width 48 --height 36 --seed 3 --phase 0.37 --palette sunset
+fixture-gems.png --style gems --width 48 --height 36 --seed 3 --phase 0.37 --palette thermal
+fixture-geo.png --style geo --width 48 --height 36 --seed 3 --phase 0.37 --palette tropical
+fixture-horizon.png --style horizon --width 48 --height 36 --seed 3 --phase 0.37 --palette tundra
+fixture-ink.png --style ink --width 48 --height 36 --seed 3 --phase 0.37 --palette ultraviolet
+fixture-interference.png --style interference --width 48 --height 36 --seed 3 --phase 0.37 --palette vaporwave
+fixture-kaleidoscope.png --style kaleidoscope --width 48 --height 36 --seed 3 --phase 0.37 --palette watercolor
+fixture-lissajous.png --style lissajous --width 48 --height 36 --seed 3 --phase 0.37 --palette candy
+fixture-lunar.png --style lunar --width 48 --height 36 --seed 3 --phase 0.37 --palette crimson
+fixture-mandala.png --style mandala --width 48 --height 36 --seed 3 --phase 0.37 --palette deep
+fixture-mandelbrot.png --style mandelbrot --width 48 --height 36 --seed 3 --phase 0.37 --palette ember
+fixture-marbling.png --style marbling --width 48 --height 36 --seed 3 --phase 0.37 --palette forest
+fixture-mosaic.png --style mosaic --width 48 --height 36 --seed 3 --phase 0.37 --palette gold
+fixture-nebula.png --style nebula --width 48 --height 36 --seed 3 --phase 0.37 --palette jewel
+fixture-opart.png --style opart --width 48 --height 36 --seed 3 --phase 0.37 --palette lagoon
+fixture-optics.png --style optics --width 48 --height 36 --seed 3 --phase 0.37 --palette neon
+fixture-orbits.png --style orbits --width 48 --height 36 --seed 3 --phase 0.37 --palette noir
+fixture-petals.png --style petals --width 48 --height 36 --seed 3 --phase 0.37 --palette ocean
+fixture-pinwheel.png --style pinwheel --width 48 --height 36 --seed 3 --phase 0.37 --palette patina
+fixture-plasma.png --style plasma --width 48 --height 36 --seed 3 --phase 0.37 --palette phosphor
+fixture-prism.png --style prism --width 48 --height 36 --seed 3 --phase 0.37 --palette rainbow
+fixture-quasar.png --style quasar --width 48 --height 36 --seed 3 --phase 0.37 --palette risoprint
+fixture-rings.png --style rings --width 48 --height 36 --seed 3 --phase 0.37 --palette sepia
+fixture-shard.png --style shard --width 48 --height 36 --seed 3 --phase 0.37 --palette sherbet
+fixture-spiral.png --style spiral --width 48 --height 36 --seed 3 --phase 0.37 --palette sunset
+fixture-starburst.png --style starburst --width 48 --height 36 --seed 3 --phase 0.37 --palette thermal
+fixture-supernova.png --style supernova --width 48 --height 36 --seed 3 --phase 0.37 --palette tropical
+fixture-torus.png --style torus --width 48 --height 36 --seed 3 --phase 0.37 --palette tundra
+fixture-voronoi.png --style voronoi --width 48 --height 36 --seed 3 --phase 0.37 --palette ultraviolet
+fixture-waves.png --style waves --width 48 --height 36 --seed 3 --phase 0.37 --palette vaporwave
+fixture-woodblock.png --style woodblock --width 48 --height 36 --seed 3 --phase 0.37 --palette watercolor
+
+# orbits draws randrange(n_stops), so its scene depends on the stop count:
+# custom palettes of 2 and 7 stops.
+orbits-stops2.png --style orbits --width 96 --height 72 --seed 2 --palette-stops 101010,f0e0c0
+orbits-stops7.png --style orbits --width 96 --height 72 --seed 2 --palette-stops 000000,0a2840,145078,1e78b4,50a0dc,a0d0f0,ffffff
+
+# Four stops in the 3-digit form (test_native_matches_python_for_custom_stops).
+plasma-stops4.png --style plasma --width 96 --height 72 --seed 4 --palette-stops 000,0f0,f0f,fff
+rings-stops4.png  --style rings  --width 96 --height 72 --seed 4 --palette-stops 000,0f0,f0f,fff
+torus-stops4.png  --style torus  --width 96 --height 72 --seed 4 --palette-stops 000,0f0,f0f,fff
+
+# --slideshow: consecutive seeds, as APNG and GIF.
+slideshow-ink-f3.png --style ink --width 64 --height 48 --frames 3 --slideshow --seed -7 --phase 0.37
+slideshow-ink-f2.gif --style ink --width 64 --height 48 --frames 2 --slideshow --seed -7
