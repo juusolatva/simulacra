@@ -5,10 +5,13 @@
 //! decoded pixels are the same.
 //!
 //! The encoder does no I/O: [`encode`] returns a whole PNG file, and [`Apng`]
-//! returns an animation piece by piece, so a caller can write each frame as
-//! soon as it is rendered and keep only one frame in memory.
+//! returns an animation piece by piece. [`Apng::compress`] compresses a frame
+//! and may run on several threads at once; [`Apng::frame`] then wraps the
+//! compressed frames, in order, in their chunks, so a caller can compress
+//! several frames together and write each one as soon as it is ready.
 
 use std::io::Write as _;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
@@ -72,8 +75,8 @@ fn header(w: u32, h: u32) -> Vec<u8> {
 }
 
 /// Compresses packed RGB (`width * height * 3` bytes, row-major) into the
-/// payload of an `IDAT` chunk, with room for `reserve` more bytes in a chunk.
-fn compress(rgb: &[u8], w: u32, h: u32, reserve: usize) -> Result<Vec<u8>, PngError> {
+/// payload of an `IDAT` chunk, refusing data that a chunk cannot hold.
+fn compress(rgb: &[u8], w: u32, h: u32) -> Result<Vec<u8>, PngError> {
     let (Ok(width), Ok(height)) = (usize::try_from(w), usize::try_from(h)) else {
         return Err(PngError::TooWide);
     };
@@ -88,11 +91,7 @@ fn compress(rgb: &[u8], w: u32, h: u32, reserve: usize) -> Result<Vec<u8>, PngEr
         encoder.write_all(row).map_err(PngError::Io)?;
     }
     let data = encoder.finish().map_err(PngError::Io)?;
-    if data
-        .len()
-        .checked_add(reserve)
-        .is_none_or(|size| u32::try_from(size).is_err())
-    {
+    if u32::try_from(data.len()).is_err() {
         return Err(PngError::TooWide);
     }
     Ok(data)
@@ -101,7 +100,7 @@ fn compress(rgb: &[u8], w: u32, h: u32, reserve: usize) -> Result<Vec<u8>, PngEr
 /// Encodes packed RGB (`width * height * 3` bytes, row-major) as a PNG file.
 pub fn encode(rgb: &[u8], width: usize, height: usize) -> Result<Vec<u8>, PngError> {
     let (w, h) = sides(width, height)?;
-    let idat = compress(rgb, w, h, 0)?;
+    let idat = compress(rgb, w, h)?;
     let mut out = header(w, h);
     out.reserve(idat.len() + 24);
     chunk(&mut out, b"IDAT", &idat);
@@ -113,7 +112,7 @@ pub fn encode(rgb: &[u8], width: usize, height: usize) -> Result<Vec<u8>, PngErr
 /// 2i - 1 and 2i, which must fit a u32.
 pub const APNG_MAX_FRAMES: usize = 1 << 31;
 
-/// A looping APNG built one frame at a time, laid out as `write_animated_png`
+/// A looping APNG built frame by frame, laid out as `write_animated_png`
 /// writes it: `acTL` after `IHDR`, then for each frame an `fcTL` (full canvas,
 /// delay `1 / fps` seconds, no disposal, source blending) followed by `IDAT`
 /// for the first frame and `fdAT` for the others, sharing one sequence count.
@@ -122,8 +121,9 @@ pub struct Apng {
     height: u32,
     frames: u32,
     fps: u16,
-    written: u32,
-    sequence: u32,
+    /// Frames added so far. Atomic so that threads compressing frames can
+    /// share the encoder while one thread adds the compressed frames in order.
+    written: AtomicU32,
 }
 
 impl Apng {
@@ -149,21 +149,43 @@ impl Apng {
             height,
             frames,
             fps,
-            written: 0,
-            sequence: 0,
+            written: AtomicU32::new(0),
         };
         Ok((apng, out))
     }
 
-    /// Encodes the next frame from packed RGB and returns its chunks.
-    pub fn frame(&mut self, rgb: &[u8]) -> Result<Vec<u8>, PngError> {
-        if self.written == self.frames {
-            return Err(PngError::FrameCount);
+    /// Compresses one frame from packed RGB into the payload of its `IDAT`
+    /// or `fdAT` chunk, for [`Apng::frame`]. Frames can be compressed in any
+    /// order and on several threads at once.
+    pub fn compress(&self, rgb: &[u8]) -> Result<Vec<u8>, PngError> {
+        compress(rgb, self.width, self.height)
+    }
+
+    /// Wraps the next frame's compressed data (from [`Apng::compress`]) in its
+    /// `fcTL` chunk and an `IDAT` (first frame) or `fdAT` chunk. Frames must
+    /// be added in order: the sequence numbers follow from the frame's index,
+    /// `fcTL` 0 and `IDAT` for the first frame, `fcTL` 2i - 1 and `fdAT` 2i
+    /// for frame i > 0.
+    pub fn frame(&self, data: &[u8]) -> Result<Vec<u8>, PngError> {
+        let index = self
+            .written
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                (n < self.frames).then_some(n + 1)
+            })
+            .map_err(|_| PngError::FrameCount)?;
+        let first = index == 0;
+        // An fdAT chunk holds a 4-byte sequence number before the data.
+        if !first
+            && data
+                .len()
+                .checked_add(4)
+                .is_none_or(|size| u32::try_from(size).is_err())
+        {
+            return Err(PngError::TooWide);
         }
-        let first = self.written == 0;
-        let data = compress(rgb, self.width, self.height, if first { 0 } else { 4 })?;
         let mut fctl = Vec::with_capacity(26);
-        fctl.extend_from_slice(&self.sequence.to_be_bytes());
+        let fctl_sequence = if first { 0 } else { 2 * index - 1 };
+        fctl.extend_from_slice(&fctl_sequence.to_be_bytes());
         fctl.extend_from_slice(&self.width.to_be_bytes());
         fctl.extend_from_slice(&self.height.to_be_bytes());
         fctl.extend_from_slice(&[0; 8]); // x and y offsets
@@ -172,23 +194,20 @@ impl Apng {
         fctl.extend_from_slice(&[0, 0]); // dispose none, blend source
         let mut out = Vec::with_capacity(data.len() + 64);
         chunk(&mut out, b"fcTL", &fctl);
-        self.sequence += 1;
         if first {
-            chunk(&mut out, b"IDAT", &data);
+            chunk(&mut out, b"IDAT", data);
         } else {
             let mut fdat = Vec::with_capacity(data.len() + 4);
-            fdat.extend_from_slice(&self.sequence.to_be_bytes());
-            fdat.extend_from_slice(&data);
+            fdat.extend_from_slice(&(2 * index).to_be_bytes());
+            fdat.extend_from_slice(data);
             chunk(&mut out, b"fdAT", &fdat);
-            self.sequence += 1;
         }
-        self.written += 1;
         Ok(out)
     }
 
     /// Returns the closing `IEND` chunk once every frame has been added.
-    pub fn finish(self) -> Result<Vec<u8>, PngError> {
-        if self.written != self.frames {
+    pub fn finish(&self) -> Result<Vec<u8>, PngError> {
+        if self.written.load(Ordering::Relaxed) != self.frames {
             return Err(PngError::FrameCount);
         }
         let mut out = Vec::with_capacity(12);
@@ -260,9 +279,16 @@ mod tests {
     #[test]
     fn animations_follow_write_animated_png() {
         let frames: Vec<Vec<u8>> = (0..3u8).map(|f| vec![f * 40; 2 * 2 * 3]).collect();
-        let (mut apng, mut file) = Apng::new(2, 2, 3, 24).unwrap();
-        for rgb in &frames {
-            file.extend(apng.frame(rgb).unwrap());
+        let (apng, mut file) = Apng::new(2, 2, 3, 24).unwrap();
+        // Compressed out of order, as threads may finish them.
+        let mut compressed: Vec<Vec<u8>> = frames
+            .iter()
+            .rev()
+            .map(|rgb| apng.compress(rgb).unwrap())
+            .collect();
+        compressed.reverse();
+        for data in &compressed {
+            file.extend(apng.frame(data).unwrap());
         }
         file.extend(apng.finish().unwrap());
         let parts = chunks(&file);
@@ -310,10 +336,12 @@ mod tests {
             Apng::new(1, 1, (1 << 31) + 1, 12),
             Err(PngError::FrameCount)
         ));
-        let (mut apng, _) = Apng::new(1, 1, 1, 12).unwrap();
-        assert!(matches!(apng.frame(&[0; 2]), Err(PngError::WrongLength)));
-        apng.frame(&[0; 3]).unwrap();
-        assert!(matches!(apng.frame(&[0; 3]), Err(PngError::FrameCount)));
+        let (apng, _) = Apng::new(1, 1, 1, 12).unwrap();
+        assert!(matches!(apng.compress(&[0; 2]), Err(PngError::WrongLength)));
+        let data = apng.compress(&[0; 3]).unwrap();
+        apng.frame(&data).unwrap();
+        assert!(matches!(apng.frame(&data), Err(PngError::FrameCount)));
+        assert!(apng.finish().is_ok());
         let (apng, _) = Apng::new(1, 1, 2, 12).unwrap();
         assert!(matches!(apng.finish(), Err(PngError::FrameCount)));
     }

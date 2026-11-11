@@ -5,7 +5,11 @@
 //! missing palette is not ported: the command line always has a palette.
 //!
 //! Like [`crate::png::Apng`], the encoder does no I/O: [`Gif`] returns the file
-//! piece by piece, so a caller can write each frame as soon as it is rendered.
+//! piece by piece. Every frame's blocks depend only on its pixels, so
+//! [`Gif::frame`] can encode several frames at once on different threads,
+//! and the caller writes them in order.
+
+use std::sync::{Mutex, PoisonError};
 
 use simulacra_engine::Palette;
 
@@ -75,13 +79,12 @@ fn cell(color: [u8; 3]) -> usize {
 /// `_GifColors` in Python: a colour in the table keeps its (lowest) entry;
 /// any other colour takes the entry nearest the centre of its 5-bit cell,
 /// searched once per cell. Python's cache of exact colours only saves time, so
-/// it is not ported; the mapping is the same.
+/// it is not ported; the mapping is the same. The searched cells are cached
+/// per thread, in [`Scratch`], so the table itself is shared read-only.
 struct Colors {
     table: Vec<[u8; 3]>,
     /// Table colours that fall in each cell, with their lowest index.
     members: Vec<Vec<([u8; 3], u8)>>,
-    /// The nearest entry to each cell's centre, once searched.
-    cells: Vec<Option<u8>>,
 }
 
 impl Colors {
@@ -93,19 +96,17 @@ impl Colors {
                 list.push((color, u8::try_from(index).expect("256 entries")));
             }
         }
-        Self {
-            table,
-            members,
-            cells: vec![None; 1 << 15],
-        }
+        Self { table, members }
     }
 
-    fn index(&mut self, color: [u8; 3]) -> u8 {
+    /// The entry for `color`; `cells` caches each cell's nearest entry once
+    /// searched (see [`Scratch::cells`]).
+    fn index(&self, cells: &mut [Option<u8>], color: [u8; 3]) -> u8 {
         let key = cell(color);
         if let Some(&(_, index)) = self.members[key].iter().find(|&&(c, _)| c == color) {
             return index;
         }
-        *self.cells[key].get_or_insert_with(|| {
+        *cells[key].get_or_insert_with(|| {
             let centre = color.map(|c| (c & !7) | 4);
             nearest_entry(&self.table, centre)
         })
@@ -222,6 +223,23 @@ fn lzw(indices: &[u8], dictionary: &mut Dictionary) -> Vec<u8> {
     out.finish()
 }
 
+/// One thread's working memory for encoding frames, kept between frames
+/// because it is costly to build: the nearest entry of each 5-bit cell
+/// searched so far (`None` until searched) and the LZW dictionary.
+struct Scratch {
+    cells: Vec<Option<u8>>,
+    dictionary: Dictionary,
+}
+
+impl Scratch {
+    fn new() -> Self {
+        Self {
+            cells: vec![None; 1 << 15],
+            dictionary: Dictionary::new(),
+        }
+    }
+}
+
 /// `_gif_delay(fps)` in Python: hundredths of a second, at least 2 (viewers
 /// treat 0 and 1 as 10), rounding half to even like Python's `round`.
 pub fn delay(fps: u16) -> u16 {
@@ -230,7 +248,7 @@ pub fn delay(fps: u16) -> u16 {
     (hundredths as u16).max(2)
 }
 
-/// A GIF built one frame at a time, laid out as `write_gif` writes it: the
+/// A GIF built frame by frame, laid out as `write_gif` writes it: the
 /// screen descriptor with the global table, a looping block when there is
 /// more than one frame, then per frame a graphics control block (the delay,
 /// no disposal), an image descriptor for the whole canvas and LZW data in
@@ -240,7 +258,9 @@ pub struct Gif {
     height: u16,
     delay: u16,
     colors: Colors,
-    dictionary: Dictionary,
+    /// Scratch memory not in use by a thread encoding a frame: at most one
+    /// per frame ever encoded at the same time.
+    scratch: Mutex<Vec<Scratch>>,
 }
 
 impl Gif {
@@ -272,24 +292,31 @@ impl Gif {
             height: h,
             delay: delay(fps),
             colors: Colors::new(table),
-            dictionary: Dictionary::new(),
+            scratch: Mutex::new(Vec::new()),
         };
         Ok((gif, out))
     }
 
-    /// Encodes the next frame from packed RGB and returns its blocks.
-    pub fn frame(&mut self, rgb: &[u8]) -> Result<Vec<u8>, GifError> {
+    /// Encodes a frame from packed RGB and returns its blocks. Frames can be
+    /// encoded in any order and on several threads at once; the caller writes
+    /// them to the file in order.
+    pub fn frame(&self, rgb: &[u8]) -> Result<Vec<u8>, GifError> {
         let pixels = usize::from(self.width) * usize::from(self.height);
         if Some(rgb.len()) != pixels.checked_mul(3) {
             return Err(GifError::WrongLength);
         }
+        // Nothing panics while the lock is held, so a poisoned lock still
+        // holds whole scratch buffers.
+        let pool = || self.scratch.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut scratch = pool().pop().unwrap_or_else(Scratch::new);
         let indices: Vec<u8> = rgb
             .as_chunks::<3>()
             .0
             .iter()
-            .map(|&pixel| self.colors.index(pixel))
+            .map(|&pixel| self.colors.index(&mut scratch.cells, pixel))
             .collect();
-        let data = lzw(&indices, &mut self.dictionary);
+        let data = lzw(&indices, &mut scratch.dictionary);
+        pool().push(scratch);
         drop(indices);
         let mut out = Vec::with_capacity(data.len() + data.len() / 255 + 32);
         out.extend_from_slice(b"\x21\xF9\x04\x04"); // disposal 1: do not dispose
@@ -309,7 +336,7 @@ impl Gif {
     }
 
     /// The trailer that ends the file.
-    pub fn finish(self) -> Vec<u8> {
+    pub fn finish(&self) -> Vec<u8> {
         vec![0x3B]
     }
 }
@@ -413,7 +440,8 @@ mod tests {
     #[test]
     fn colours_map_like_python() {
         let table = table(&deep());
-        let mut colors = Colors::new(table.clone());
+        let colors = Colors::new(table.clone());
+        let mut cells = vec![None; 1 << 15];
         // Python: list(_GifColors(table).indices(bytes([0, 0, 0, 13, 19, 49,
         // 61, 90, 153, 200, 10, 90, 201, 12, 93]))) == [240, 0, 120, 246, 246]
         // A table colour keeps its own, lowest entry (entries 0 and 1 are
@@ -426,7 +454,7 @@ mod tests {
             [200, 10, 90],
             [201, 12, 93],
         ]
-        .map(|c| colors.index(c));
+        .map(|c| colors.index(&mut cells, c));
         assert_eq!(got, [240, 0, 120, 246, 246]);
         assert_eq!(nearest_entry(&table, [204, 12, 92]), 246);
         // Ties go to the lowest index.
@@ -449,7 +477,7 @@ mod tests {
 
     #[test]
     fn frames_follow_write_gif() {
-        let (mut gif, start) = Gif::new(2, 1, &deep(), 12, true).unwrap();
+        let (gif, start) = Gif::new(2, 1, &deep(), 12, true).unwrap();
         assert_eq!(&start[..13], b"GIF89a\x02\x00\x01\x00\xF7\x00\x00");
         assert_eq!(start.len(), 13 + 768 + 19);
         assert!(start.ends_with(b"NETSCAPE2.0\x03\x01\x00\x00\x00"));
@@ -471,5 +499,42 @@ mod tests {
             Err(GifError::BadSize)
         ));
         assert!(Gif::new(65_535, 1, &deep(), 12, false).is_ok());
+    }
+
+    #[test]
+    fn frames_encoded_at_once_match_frames_encoded_in_turn() {
+        // Frames of varied colours, so cells are searched and the dictionary
+        // fills, encoded on four threads that share one encoder.
+        let frames: Vec<Vec<u8>> = (0..8u32)
+            .map(|f| {
+                (0..64 * 48 * 3)
+                    .map(|i: u32| (i.wrapping_mul(2_654_435_761) >> (f % 7 + 3)) as u8)
+                    .collect()
+            })
+            .collect();
+        let alone: Vec<Vec<u8>> = {
+            let (gif, _) = Gif::new(64, 48, &deep(), 12, true).unwrap();
+            frames.iter().map(|rgb| gif.frame(rgb).unwrap()).collect()
+        };
+        let (gif, _) = Gif::new(64, 48, &deep(), 12, true).unwrap();
+        let together: Vec<Vec<u8>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = frames
+                .chunks(2)
+                .map(|pair| {
+                    scope.spawn(|| {
+                        pair.iter()
+                            .rev()
+                            .map(|rgb| gif.frame(rgb).unwrap())
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|handle| handle.join().unwrap().into_iter().rev())
+                .collect()
+        });
+        assert_eq!(together, alone);
+        assert!(gif.scratch.lock().unwrap().len() <= 4);
     }
 }
