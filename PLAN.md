@@ -804,10 +804,17 @@ before application cutover.
   (2026-11-11): the binary replaces it with `MAX_TOTAL_PIXELS`, 2**32 pixels
   in all frames (about 18 minutes and 3 GB at the slowest and largest
   measured; 517 frames at 3840 × 2160, 2071 at 1920 × 1080), with a message
-  saying what it limits. Per frame, `MAX_FRAME_PIXELS`, `MAX_SIDE` and the
-  engine's work limit still bound memory and work. `simulacra.py` keeps its
-  memory limit, which is true for it, so the binary accepts longer
-  animations than Python does.
+  saying what it limits, and `MAX_FRAMES`, 65,536 frames: building,
+  validating and encoding a frame costs the same however small it is (at
+  most 174 µs and 66 bytes per frame at 1 × 1, `attractor` as APNG, measured
+  for every style), so the pixel total alone would let a 1 × 1 animation of
+  2**31 frames run for days and write over 100 GB (found by review on
+  PR #46). The cap bounds that to about 11 s and 4.3 MB, and equals counting
+  each frame as at least 256 × 256 pixels. More than 2**31 APNG frames are
+  refused as a format limit, even with `--no-limits`. Per frame,
+  `MAX_FRAME_PIXELS`, `MAX_SIDE` and the engine's work limit still bound
+  memory and work. `simulacra.py` keeps its memory limit, which is true for
+  it, so the binary accepts longer animations than Python does.
 - [x] Validate decoded pixels, metadata, and frame timing with independent
   decoders. APNG: `StandaloneCliTests` compares every frame, `acTL` and
   `fcTL` with `simulacra.py`'s output, `check_release.py` decodes the frames

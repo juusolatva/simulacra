@@ -363,7 +363,7 @@ Rebuild with the same `maturin develop` command after changing Rust code. On an 
 
 ## Standalone binary (preview)
 
-`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py`, including `--frames`, `--fps` and `--slideshow` for animations, and draws the same pixels for every style (`--list-styles`). A `--out` ending in `.gif` writes a GIF byte for byte identical to the one `simulacra.py` writes. It writes each animation frame to the output as soon as it is rendered, so it keeps only one frame in memory (tens of megabytes at 1080p, whatever the frame count). For the same reason it replaces the 1 GiB animation limit with a limit of 2³² pixels across all frames (about 2,070 frames at 1920 × 1080, or 517 at 3840 × 2160), which bounds run time and file size; `--no-limits` skips it as well.
+`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py`, including `--frames`, `--fps` and `--slideshow` for animations, and draws the same pixels for every style (`--list-styles`). A `--out` ending in `.gif` writes a GIF byte for byte identical to the one `simulacra.py` writes. It writes each animation frame to the output as soon as it is rendered, so it keeps only one frame in memory (tens of megabytes at 1080p, whatever the frame count). For the same reason it replaces the 1 GiB animation limit with a limit of 2³² pixels across all frames (about 2,070 frames at 1920 × 1080, or 517 at 3840 × 2160), and to 65,536 frames, since each frame has a fixed cost however small it is. Together they bound run time and file size; `--no-limits` skips them as well.
 
 ```bash
 cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli

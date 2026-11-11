@@ -109,6 +109,10 @@ pub fn encode(rgb: &[u8], width: usize, height: usize) -> Result<Vec<u8>, PngErr
     Ok(out)
 }
 
+/// The most frames an APNG can hold: frame i > 0 uses sequence numbers
+/// 2i - 1 and 2i, which must fit a u32.
+pub const APNG_MAX_FRAMES: usize = 1 << 31;
+
 /// A looping APNG built one frame at a time, laid out as `write_animated_png`
 /// writes it: `acTL` after `IHDR`, then for each frame an `fcTL` (full canvas,
 /// delay `1 / fps` seconds, no disposal, source blending) followed by `IDAT`
@@ -131,8 +135,7 @@ impl Apng {
         frames: u32,
         fps: u16,
     ) -> Result<(Self, Vec<u8>), PngError> {
-        // Frame i > 0 uses sequence numbers 2i - 1 and 2i, which must fit a u32.
-        if frames == 0 || frames > 1 << 31 || fps == 0 {
+        if frames == 0 || frames as usize > APNG_MAX_FRAMES || fps == 0 {
             return Err(PngError::FrameCount);
         }
         let (width, height) = sides(width, height)?;
