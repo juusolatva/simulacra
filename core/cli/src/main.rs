@@ -73,8 +73,9 @@ const FRAME_BYTES_PER_SIDE: usize = 320;
 
 /// The memory the frames in progress may use together, by
 /// [`frame_bytes`]: up to 15 frames of 1920 x 1080 or 4 of 3840 x 2160, and
-/// one frame however large (a single frame needs what it needs, within
-/// `MAX_FRAME_PIXELS` and `MAX_SIDE`, as when frames render one by one).
+/// one frame however large: a single frame needs what it needs, as when
+/// frames render one by one, so its size is bounded only by
+/// `MAX_FRAME_PIXELS` and `MAX_SIDE`, which `--no-limits` skips.
 const FRAMES_IN_FLIGHT_BYTES: usize = 1 << 30;
 
 /// The memory one frame of `width` x `height` may need while it is in
