@@ -5,7 +5,7 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=juusolatva_abstract-art&metric=coverage)](https://sonarcloud.io/summary/overall?id=juusolatva_abstract-art)
 [![License: MIT](https://img.shields.io/github/license/juusolatva/simulacra)](LICENSE)
 
-Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. The script runs on the Python standard library alone, and an optional Rust core makes every style hundreds of times faster. A standalone binary that needs no Python is in preview: it renders every style as a still image or an APNG animation (see [Standalone binary](#standalone-binary-preview)). It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
+Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. The script runs on the Python standard library alone, and an optional Rust core makes every style hundreds of times faster. A standalone binary that needs no Python is in preview: it renders every style as a still image or an APNG or GIF animation (see [Standalone binary](#standalone-binary-preview)). It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
 
 The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
 
@@ -363,12 +363,13 @@ Rebuild with the same `maturin develop` command after changing Rust code. On an 
 
 ## Standalone binary (preview)
 
-`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py`, including `--frames`, `--fps` and `--slideshow` for APNG animations, and draws the same pixels for every style (`--list-styles`). It writes each animation frame to the output as soon as it is rendered, so it keeps only one frame in memory. GIF output is not available yet.
+`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py`, including `--frames`, `--fps` and `--slideshow` for animations, and draws the same pixels for every style (`--list-styles`). A `--out` ending in `.gif` writes a GIF byte for byte identical to the one `simulacra.py` writes. It writes each animation frame to the output as soon as it is rendered, so it keeps only one frame in memory.
 
 ```bash
 cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli
 core/target/release/simulacra --style waves --palette lagoon --seed 17 --width 1280 --height 720 --out waves.png
 core/target/release/simulacra --style mandelbrot --frames 48 --fps 24 --out zoom.png
+core/target/release/simulacra --style plasma --frames 36 --out plasma.gif
 ```
 
 Building with `--features portable` gives the same image on every platform, as planned for released binaries; such a build can differ slightly from Python (see [Optional Rust core](#optional-rust-core)). CI builds such test binaries for Linux (x86_64, aarch64) and Windows (x86_64) and checks each one against the committed fixtures with `core/cli/tests/check_release.py`; they are not published yet. See [`PLAN.md`](PLAN.md), Phases 3 and 5, for what comes next.

@@ -12,7 +12,7 @@ that has neither Python nor a Rust toolchain.
     acceptance test of PLAN.md Phase 3. Styles join the check as their scene
     builders are ported, through ``--list-styles``. With ``--hashes FILE`` it
     also renders larger workloads (sizes, negative and large seeds, phases,
-    palettes, custom stops, and a short APNG animation) and writes their
+    palettes, custom stops, a short APNG animation and a GIF) and writes their
     hashes to ``FILE`` for ``compare``.
 
 ``compare FILE...``
@@ -41,14 +41,16 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 # (width, height, seed, phase, palette, custom stops, frames). Sizes are not
 # multiples of one another, include a tall canvas, and the seeds cover negative
 # and 64-bit values (seed32 folds them), so the comparison is not just the
-# fixture again at a larger scale. The last workload is an APNG animation,
-# hashed over all of its frames in order.
+# fixture again at a larger scale. The last two are animations, an APNG and a
+# GIF (the format follows the output name), hashed over all of their frames in
+# order; a GIF frame is hashed as the RGB its colour table maps it to.
 WORKLOADS = [
     (640, 480, 1, 0.0, "deep", None, 1),
     (640, 480, 17, 0.37, "lagoon", None, 1),
     (301, 517, -7, 1.25, "ember", None, 1),
     (517, 301, 2**40 + 3, -0.6, None, "0c061c,5814a8,ff8800", 1),
     (160, 120, 5, 0.8, "neon", None, 4),
+    (150, 110, -3, 0.2, "sunset", None, 3, "gif"),
 ]
 
 
@@ -164,6 +166,88 @@ def decode_frames(data):
     return width, height, decoded
 
 
+def _lzw_decode(data):
+    """Decode GIF LZW data with minimum code size 8 into colour indices."""
+    clear, end = 256, 257
+    fresh = [bytes([i]) for i in range(256)] + [b"", b""]
+    table, out = list(fresh), bytearray()
+    width, bits, buffer, position, previous = 9, 0, 0, 0, None
+    while True:
+        while bits < width:
+            if position == len(data):
+                raise ValueError("LZW data ends without an end code")
+            buffer |= data[position] << bits
+            position += 1
+            bits += 8
+        code = buffer & ((1 << width) - 1)
+        buffer >>= width
+        bits -= width
+        if code == clear:
+            table, width, previous = list(fresh), 9, None
+            continue
+        if code == end:
+            return bytes(out)
+        if code < len(table):
+            entry = table[code]
+        elif previous is not None and code == len(table):
+            entry = previous + previous[:1]
+        else:
+            raise ValueError(f"LZW code {code} is not in the table")
+        if previous is not None and len(table) < 4096:
+            table.append(previous + entry[:1])
+            if len(table) == 1 << width and width < 12:
+                width += 1
+        out += entry
+        previous = entry
+
+
+def _skip_sub_blocks(data, pos):
+    """Return (the joined data sub-blocks starting at ``pos``, the position after them)."""
+    pieces = []
+    while data[pos]:
+        pieces.append(data[pos + 1 : pos + 1 + data[pos]])
+        pos += 1 + data[pos]
+    return b"".join(pieces), pos + 1
+
+
+def _gif_image(data, pos, size, table):
+    """Decode the image at ``pos`` (after 0x2C); return (packed RGB, next position)."""
+    left, top, width, height, flags = struct.unpack("<HHHHB", data[pos : pos + 9])
+    if (left, top, width, height) != (0, 0, *size) or flags & 0xC0:
+        raise ValueError("expected full-canvas GIF frames without a local table or interlace")
+    if data[pos + 9] != 8:
+        raise ValueError("expected LZW minimum code size 8")
+    packed, pos = _skip_sub_blocks(data, pos + 10)
+    indices = _lzw_decode(packed)
+    if len(indices) != width * height:
+        raise ValueError("a GIF frame has the wrong number of pixels")
+    return b"".join(table[i] for i in indices), pos
+
+
+def decode_gif(data):
+    """Return (width, height, [packed RGB per frame]) of a GIF with a global table.
+
+    Every frame must cover the canvas without a local table or interlacing, as
+    the binary writes them; extension blocks are skipped.
+    """
+    if data[:6] != b"GIF89a":
+        raise ValueError("not a GIF89a file")
+    width, height, flags = struct.unpack("<HHB", data[6:11])
+    if flags != 0xF7:
+        raise ValueError("expected a global table of 256 colours")
+    table = [data[13 + 3 * i : 16 + 3 * i] for i in range(256)]
+    pos, frames = 13 + 768, []
+    while data[pos] != 0x3B:
+        if data[pos] == 0x21:
+            pos = _skip_sub_blocks(data, pos + 2)[1]
+        elif data[pos] == 0x2C:
+            rgb, pos = _gif_image(data, pos + 1, (width, height), table)
+            frames.append(rgb)
+        else:
+            raise ValueError(f"unexpected GIF block {data[pos]:#x}")
+    return width, height, frames
+
+
 def _paeth(a, b, c):
     p = a + b - c
     pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
@@ -239,16 +323,18 @@ class Runner:
             )
         return result.stdout
 
-    def render(self, name, width, height, seed, phase, palette, stops, frames=1):
+    def render(self, name, width, height, seed, phase, palette, stops, frames=1, kind="png"):
         """Render one image or animation; return the SHA-256 of all its frames' RGB."""
+        out = f"out.{kind}"
         args = [
             "--style", name, "--width", str(width), "--height", str(height),
-            "--seed", str(seed), "--phase", repr(phase), "--out", "out.png",
+            "--seed", str(seed), "--phase", repr(phase), "--out", out,
             "--frames", str(frames),
         ]
         args += ["--palette-stops", stops] if stops else ["--palette", palette]
         self.run(*args)
-        got_width, got_height, rgb = decode_frames((self.workdir / "out.png").read_bytes())
+        decode = decode_gif if kind == "gif" else decode_frames
+        got_width, got_height, rgb = decode((self.workdir / out).read_bytes())
         if (got_width, got_height) != (width, height):
             raise SystemExit(f"{name}: wrote {got_width} x {got_height}, asked for {width} x {height}")
         if len(rgb) != frames:

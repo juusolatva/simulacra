@@ -13,8 +13,8 @@ name: Release binaries
 #          render its portable fixture's hash. On Linux the binary runs in a
 #          container image with no Python and no Rust (the checker itself needs
 #          Python, but runs outside the container).
-# compare: the larger workloads (sizes, seeds, phases, palettes, an APNG
-#          animation) must render identically on all targets.
+# compare: the larger workloads (sizes, seeds, phases, palettes, APNG and GIF
+#          animations) must render identically on all targets.
 on:
   push:
     branches: [main]

@@ -1,11 +1,13 @@
 //! `simulacra`: the standalone command-line tool, rendering without Python.
 //!
 //! The options, defaults and messages follow `simulacra.py`'s command line for
-//! every style (`--list-styles`): still PNG images and looping APNG animations
-//! (`--frames`). GIF output comes later. Each animation frame is rendered,
-//! compressed and written to the temporary output file before the next one, so
-//! only one frame's pixels are held at a time.
+//! every style (`--list-styles`): still PNG images, looping APNG animations
+//! (`--frames`) and GIF (a `.gif` `--out`, byte for byte as `simulacra.py`
+//! writes it). Each animation frame is rendered, encoded and written to the
+//! temporary output file before the next one, so only one frame's pixels are
+//! held at a time.
 
+mod gif;
 mod output;
 mod png;
 
@@ -64,8 +66,8 @@ struct Args {
     width: i64,
     #[arg(long, default_value_t = 256, allow_negative_numbers = true)]
     height: i64,
-    /// Output PNG file (APNG with --frames), replaced only after a successful
-    /// write
+    /// Output file, replaced only after a successful write: GIF if it ends in
+    /// .gif, otherwise PNG (APNG with --frames)
     #[arg(long, default_value = "art.png")]
     out: PathBuf,
     /// Number of frames (default 1). Styles with motion animate one scene in a
@@ -200,6 +202,15 @@ fn list_names(args: &Args) -> Option<Vec<&'static str>> {
     Some(names)
 }
 
+/// `_wants_gif` in Python: `--out` ends in `.gif`, in any case.
+fn wants_gif(args: &Args) -> bool {
+    args.out
+        .as_os_str()
+        .to_string_lossy()
+        .to_lowercase()
+        .ends_with(".gif")
+}
+
 /// Checks the arguments in `_check_args`'s order; returns width, height and
 /// the frame count.
 fn dimensions(args: &Args) -> Result<(usize, usize, usize), String> {
@@ -210,16 +221,14 @@ fn dimensions(args: &Args) -> Result<(usize, usize, usize), String> {
     let Some(frames) = positive(args.frames) else {
         return Err("frames must be positive".into());
     };
-    if args
-        .out
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("gif"))
-    {
-        return Err(
-            "GIF output is not available in the standalone binary yet; use a .png --out".into(),
-        );
-    }
-    if u32::try_from(width).is_err() || u32::try_from(height).is_err() {
+    if wants_gif(args) {
+        if width.max(height) > gif::GIF_MAX_SIDE {
+            return Err(format!(
+                "GIF width and height cannot exceed {} pixels",
+                gif::GIF_MAX_SIDE
+            ));
+        }
+    } else if u32::try_from(width).is_err() || u32::try_from(height).is_err() {
         // PNG stores each side as a 32-bit integer; refuse before rendering.
         return Err(format!("PNG width and height cannot exceed {}", u32::MAX));
     }
@@ -281,25 +290,69 @@ impl Frame<'_> {
     }
 }
 
-/// Renders and writes an APNG of `frames` frames, one frame at a time.
-fn write_animation(args: &Args, frame: &Frame, seed: i64, frames: usize) -> Result<(), String> {
+/// The encoder of a streamed output file: APNG, or GIF with any frame count.
+enum Encoder {
+    Apng(png::Apng),
+    Gif(gif::Gif),
+}
+
+impl Encoder {
+    /// The encoder for `--out` and the bytes that begin the file.
+    fn new(args: &Args, frame: &Frame, frames: usize) -> Result<(Self, Vec<u8>), String> {
+        if wants_gif(args) {
+            let (gif, start) = gif::Gif::new(
+                frame.width,
+                frame.height,
+                frame.palette,
+                args.fps,
+                frames > 1,
+            )
+            .map_err(|err| err.to_string())?;
+            return Ok((Self::Gif(gif), start));
+        }
+        let count = u32::try_from(frames).map_err(|_| png::PngError::FrameCount.to_string())?;
+        let (apng, start) = png::Apng::new(frame.width, frame.height, count, args.fps)
+            .map_err(|err| err.to_string())?;
+        Ok((Self::Apng(apng), start))
+    }
+
+    fn frame(&mut self, rgb: &[u8]) -> Result<Vec<u8>, String> {
+        match self {
+            Self::Apng(apng) => apng.frame(rgb).map_err(|err| err.to_string()),
+            Self::Gif(gif) => gif.frame(rgb).map_err(|err| err.to_string()),
+        }
+    }
+
+    fn finish(self) -> Result<Vec<u8>, String> {
+        match self {
+            Self::Apng(apng) => apng.finish().map_err(|err| err.to_string()),
+            Self::Gif(gif) => Ok(gif.finish()),
+        }
+    }
+}
+
+/// Renders and writes an APNG or GIF of `frames` frames, one frame at a time.
+fn write_frames(args: &Args, frame: &Frame, seed: i64, frames: usize) -> Result<(), String> {
     // Seeds only grow from frame to frame, so if the last frame's plan fits,
     // every frame's does: refuse before rendering anything.
     frame_plan(seed, args.phase, frames, args.slideshow, frames - 1)?;
-    let count = u32::try_from(frames).map_err(|_| png::PngError::FrameCount.to_string())?;
-    let (mut apng, start) = png::Apng::new(frame.width, frame.height, count, args.fps)
-        .map_err(|err| err.to_string())?;
+    let (mut encoder, start) = Encoder::new(args, frame, frames)?;
     let cannot_write = |err: std::io::Error| format!("cannot write {}: {err}", args.out.display());
     let written = output::atomic_write_with(&args.out, |out| {
         out.write_all(&start).map_err(cannot_write)?;
         for index in 0..frames {
-            let (frame_seed, phase) = frame_plan(seed, args.phase, frames, args.slideshow, index)?;
+            // One frame is a still image at --phase, as in Python's _render_and_write.
+            let (frame_seed, phase) = if frames == 1 {
+                (seed, args.phase)
+            } else {
+                frame_plan(seed, args.phase, frames, args.slideshow, index)?
+            };
             let rgb = frame.render(frame_seed, phase)?;
-            let chunks = apng.frame(&rgb).map_err(|err| err.to_string())?;
+            let chunks = encoder.frame(&rgb)?;
             drop(rgb);
             out.write_all(&chunks).map_err(cannot_write)?;
         }
-        let end = apng.finish().map_err(|err| err.to_string())?;
+        let end = encoder.finish()?;
         out.write_all(&end).map_err(cannot_write)
     });
     written.map_err(|err| match err {
@@ -329,24 +382,23 @@ fn run(args: &Args) -> Result<String, String> {
         height,
         palette: &palette,
     };
-    if frames > 1 {
-        write_animation(args, &frame, seed, frames)?;
-        return Ok(format!(
-            "wrote {frames} animation frames to {} ({}, seed={seed}, palette={palette_label}, {} fps)",
-            args.out.display(),
-            args.style,
-            args.fps
-        ));
+    if frames > 1 || wants_gif(args) {
+        write_frames(args, &frame, seed, frames)?;
+    } else {
+        let rgb = frame.render(seed, args.phase)?;
+        let encoded = png::encode(&rgb, width, height).map_err(|err| err.to_string())?;
+        output::atomic_write(&args.out, &encoded)
+            .map_err(|err| format!("cannot write {}: {err}", args.out.display()))?;
     }
-    let rgb = frame.render(seed, args.phase)?;
-    let encoded = png::encode(&rgb, width, height).map_err(|err| err.to_string())?;
-    output::atomic_write(&args.out, &encoded)
-        .map_err(|err| format!("cannot write {}: {err}", args.out.display()))?;
-    Ok(format!(
-        "wrote {} ({}, seed={seed}, palette={palette_label})",
-        args.out.display(),
-        args.style
-    ))
+    let (out, style) = (args.out.display(), &args.style);
+    Ok(if frames > 1 {
+        format!(
+            "wrote {frames} animation frames to {out} ({style}, seed={seed}, palette={palette_label}, {} fps)",
+            args.fps
+        )
+    } else {
+        format!("wrote {out} ({style}, seed={seed}, palette={palette_label})")
+    })
 }
 
 fn main() -> ExitCode {
