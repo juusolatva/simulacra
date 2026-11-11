@@ -92,6 +92,7 @@ class _FrameReader:
         self.header = None
         self.frame_count = None  # from acTL
         self.sequence = 0  # fcTL and fdAT chunks seen so far
+        self.controls = 0  # fcTL chunks seen so far
         self.frames = [[]]
 
     def add(self, tag, body):
@@ -100,7 +101,7 @@ class _FrameReader:
         elif tag == b"acTL":
             self.frame_count = struct.unpack(">II", body)[0]
         elif tag == b"IDAT":
-            if self.frame_count is not None and self.sequence == 0:
+            if self.frame_count is not None and self.controls != 1:
                 raise ValueError("the APNG's IDAT image is not its first frame")
             self.frames[0].append(body)
         elif tag in (b"fcTL", b"fdAT"):
@@ -113,11 +114,15 @@ class _FrameReader:
             raise ValueError(f"{tag!r} out of sequence")
         self.sequence += 1
         if tag == b"fdAT":
+            # Frame 0's pixels are the IDAT image; fdAT belongs to later frames.
+            if self.controls < 2:
+                raise ValueError("fdAT outside a frame after the first")
             self.frames[-1].append(body[4:])
             return
         if self.header is None or struct.unpack(">II", body[4:12]) != self.header[:2]:
             raise ValueError("an APNG frame does not cover the canvas")
-        if self.sequence > 1:
+        self.controls += 1
+        if self.controls > 1:
             self.frames.append([])
 
     def check(self):
@@ -127,10 +132,12 @@ class _FrameReader:
         width, height, depth, color, _, _, interlace = self.header
         if (depth, color, interlace) != (8, 2, 0):
             raise ValueError(f"expected 8-bit RGB without interlace, got {self.header}")
-        if self.frame_count is not None and self.sequence == 0:
+        if self.frame_count is not None and self.controls == 0:
             raise ValueError("acTL without fcTL")
         if self.frame_count is not None and self.frame_count != len(self.frames):
             raise ValueError(f"acTL announces {self.frame_count} frames, found {len(self.frames)}")
+        if not all(self.frames):
+            raise ValueError("a frame has no image data")
         return width, height
 
 
@@ -138,8 +145,9 @@ def decode_frames(data):
     """Return (width, height, [packed RGB per frame]) of a PNG or APNG.
 
     The image must be 8-bit RGB without interlace. An APNG needs ``acTL``
-    before any ``fcTL`` or ``fdAT``, at least one ``fcTL`` (the first one before
-    ``IDAT``), every frame covering the whole canvas, the frame count ``acTL``
+    before any ``fcTL`` or ``fdAT``, exactly one ``fcTL`` before ``IDAT`` (which
+    holds the first frame), ``fdAT`` only in later frames, image data in every
+    frame, every frame covering the whole canvas, the frame count ``acTL``
     announces, and sequence numbers counting up from 0.
     """
     reader = _FrameReader()
