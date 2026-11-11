@@ -1452,6 +1452,30 @@ class StandaloneCliTests(unittest.TestCase):
                     self.assertEqual(len(frames), int(extra[extra.index('--frames') + 1])
                                      if '--frames' in extra else 1)
 
+    def test_repeated_options_and_failed_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            # A repeated option takes its last value, as in argparse.
+            rust, python = pathlib.Path(directory) / 'rust.png', pathlib.Path(directory) / 'python.png'
+            repeated = ['--width', '8', '--width', '20', '--height', '12', '--style', 'blobs', '--style', 'plasma']
+            result = self.run_cli(*repeated, '--out', str(rust))
+            with mock.patch('sys.argv', ['simulacra.py', *repeated, '--out', str(python)]), \
+                    mock.patch('sys.stdout', new_callable=io.StringIO) as printed:
+                art.main()
+            self.assertEqual(result.stdout, printed.getvalue().replace(str(python), str(rust)))
+            self.assertEqual(dict(chunks(rust))[b'IHDR'], dict(chunks(python))[b'IHDR'])
+            self.assertEqual(self.scanlines(rust), self.scanlines(python))
+            # A failed write exits 1 with a message (simulacra.py raises), unlike
+            # refused arguments, which exit 2.
+            missing = pathlib.Path(directory) / 'missing' / 'art.png'
+            for extra in ([], ['--frames', '2'], ['--out', str(missing.with_suffix('.gif'))]):
+                with self.subTest(extra=extra):
+                    result = self.run_cli('--width', '4', '--height', '4', '--out', str(missing), *extra,
+                                          check=False)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn('simulacra: error: cannot write', result.stderr)
+                    self.assertEqual(result.stdout, '')
+            self.assertFalse(missing.parent.exists())
+
     def test_lists_and_errors(self):
         styles = self.listed_styles()
         self.assertEqual(styles, sorted(styles))

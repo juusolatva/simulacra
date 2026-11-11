@@ -869,11 +869,32 @@ writes the same files as before.
 
 ## Phase 6: Complete distribution and retire duplication
 
-- [ ] Support all 48 reviewed styles, 24 palettes, custom palettes, and three
+- [x] Support all 48 reviewed styles, 24 palettes, custom palettes, and three
   output formats; update the inventory if experimentation adds more.
-- [ ] Preserve CLI defaults, listing commands, random-seed reporting, phase,
+  Audited (2026-11-11): the binary lists exactly the 48 styles of `STYLES`,
+  `NATIVE_STYLES` and `SCENE_BUILDERS`; `StandaloneCliTests` compares every
+  style's pixels with Python's (two sizes, seeds 1, -7 and 2**40 + 3, phases 0
+  and 0.37), the palette table equals `PALETTES`, the Rust scene builders are
+  compared draw for draw with 2, 5 and 7 stops (`orbits` draws
+  `randrange(n_stops)`), and PNG, APNG and GIF (byte for byte) are compared.
+  Release binaries keep the accepted `portable` drift (`attractor`,
+  `cymatics`; see "Compatibility policy").
+- [x] Preserve CLI defaults, listing commands, random-seed reporting, phase,
   `--frames`, slideshow, FPS behavior, resource limits and `--no-limits`,
-  validation, and useful error messages.
+  validation, and useful error messages. Audited (2026-11-11) by running both
+  command lines on edge cases: all of these matched. Exact parity is not a
+  goal outside styles and palettes (decided 2026-11-11: small differences
+  are fine where they make the code simpler or better, each agreed first).
+  Changed: a repeated option takes its last value, as in argparse (clap
+  refused it); a failure while rendering or writing exits 1 (it exited 2,
+  like refused arguments; `simulacra.py` stops with a traceback and 1),
+  and refused arguments, limits and the `--slideshow` seed overflow stay 2,
+  all checked before rendering. Kept, and listed in the README: 64-bit seeds
+  (Python takes any integer; larger ones would need big-integer seeding in
+  `PyRandom`), no option abbreviations (argparse accepts `--wid`; prefixes
+  would make every new option a possible break), alphabetical
+  `--list-styles`, clap's wording for malformed values, and the limits and
+  messages already decided in Phase 5.
 - [ ] Add version reporting and platform-specific installation instructions.
   (`simulacra --version` exists, from the crate version 0.1.0; nothing sets
   release versions yet.)
@@ -1108,5 +1129,5 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    within a memory budget, and a limit on total pixels in place of the
    memory limit. Reusing buffers remains an option.
 10. Next: Phase 6, completing distribution: version reporting (Rust
-   coverage is done), and the distribution route, signing and clean-machine checks
+   coverage and the CLI parity audit are done), and the distribution route, signing and clean-machine checks
    left from Phase 3, which come with the first release.

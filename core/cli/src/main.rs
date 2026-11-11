@@ -108,6 +108,8 @@ fn frames_in_flight(width: usize, height: usize, frames: usize, threads: usize) 
     name = "simulacra",
     version,
     about = "Simulacra: procedurally generated images, without Python",
+    // A repeated option takes its last value, as in argparse.
+    args_override_self = true,
     group(ArgGroup::new("seeds").args(["seed", "random_seed"])),
     group(ArgGroup::new("palettes").args(["palette", "palette_stops"]))
 )]
@@ -494,9 +496,6 @@ fn in_order<T: Send>(
 /// Renders and writes an APNG or GIF of `frames` frames, rendering and
 /// encoding up to [`frames_in_flight`] frames at once.
 fn write_frames(args: &Args, frame: &Frame, seed: i64, frames: usize) -> Result<(), String> {
-    // Seeds only grow from frame to frame, so if the last frame's plan fits,
-    // every frame's does: refuse before rendering anything.
-    frame_plan(seed, args.phase, frames, args.slideshow, frames - 1)?;
     let (encoder, start) = Encoder::new(args, frame, frames)?;
     let cannot_write = |err: std::io::Error| format!("cannot write {}: {err}", args.out.display());
     let make = |index: usize| {
@@ -530,13 +529,51 @@ fn write_frames(args: &Args, frame: &Frame, seed: i64, frames: usize) -> Result<
     })
 }
 
-fn run(args: &Args) -> Result<String, String> {
-    let (width, height, frames) = dimensions(args)?;
+/// Why a run failed, which sets the exit code.
+#[derive(Debug, PartialEq)]
+enum Failure {
+    /// The arguments or the limits refuse the run before any rendering:
+    /// exit code 2, as for argparse's (and clap's) errors.
+    Usage(String),
+    /// Rendering, encoding or writing failed: exit code 1, as for an error
+    /// that stops `simulacra.py`.
+    Runtime(String),
+}
+
+impl Failure {
+    fn exit_code(&self) -> ExitCode {
+        ExitCode::from(match self {
+            Self::Usage(_) => 2,
+            Self::Runtime(_) => 1,
+        })
+    }
+
+    fn message(&self) -> &str {
+        match self {
+            Self::Usage(message) | Self::Runtime(message) => message,
+        }
+    }
+}
+
+fn run(args: &Args) -> Result<String, Failure> {
+    let (width, height, frames) = dimensions(args).map_err(Failure::Usage)?;
     let seed = if args.random_seed {
         random_seed()
     } else {
         args.seed
     };
+    // Seeds only grow from frame to frame, so if the last frame's plan fits,
+    // every frame's does: refuse before rendering anything.
+    frame_plan(seed, args.phase, frames, args.slideshow, frames - 1).map_err(Failure::Usage)?;
+    render_and_write(args, (width, height, frames), seed).map_err(Failure::Runtime)
+}
+
+/// Renders the checked run and writes `--out`; returns the line to print.
+fn render_and_write(
+    args: &Args,
+    (width, height, frames): (usize, usize, usize),
+    seed: i64,
+) -> Result<String, String> {
     let (palette_label, stops) = match &args.palette_stops {
         Some(Stops(stops)) => ("custom", stops.clone()),
         None => (
@@ -581,9 +618,9 @@ fn main() -> ExitCode {
             println!("{message}");
             ExitCode::SUCCESS
         }
-        Err(message) => {
-            eprintln!("simulacra: error: {message}");
-            ExitCode::from(2)
+        Err(failure) => {
+            eprintln!("simulacra: error: {}", failure.message());
+            failure.exit_code()
         }
     }
 }
@@ -591,9 +628,10 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        check_limits, fps, frame_plan, frames_in_flight, in_order, name_wants_gif,
-        parse_hex_palette, random_seed,
+        Args, Failure, check_limits, fps, frame_plan, frames_in_flight, in_order, name_wants_gif,
+        parse_hex_palette, random_seed, run,
     };
+    use clap::Parser;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
@@ -835,5 +873,45 @@ mod tests {
         assert_eq!(frames_in_flight(usize::MAX, usize::MAX, 100, 64), 1);
         assert_eq!(frames_in_flight(64, 64, 3, 12), 3);
         assert_eq!(frames_in_flight(64, 64, 1, 12), 1);
+    }
+
+    fn parse(args: &[&str]) -> Args {
+        Args::try_parse_from(std::iter::once("simulacra").chain(args.iter().copied()))
+            .expect("valid arguments")
+    }
+
+    #[test]
+    fn a_repeated_option_takes_its_last_value() {
+        let args = parse(&["--width", "8", "--width", "9", "--slideshow", "--slideshow"]);
+        assert_eq!(args.width, 9);
+        assert!(args.slideshow);
+    }
+
+    #[test]
+    fn refused_arguments_are_usage_errors_and_failed_writes_are_runtime_errors() {
+        let usage = |args: &[&str]| match run(&parse(args)) {
+            Err(Failure::Usage(message)) => message,
+            other => panic!("{args:?}: expected a usage error, got {other:?}"),
+        };
+        assert_eq!(
+            usage(&["--width", "0"]),
+            "width and height must be positive"
+        );
+        let max = i64::MAX.to_string();
+        assert!(
+            usage(&["--slideshow", "--frames", "2", "--seed", &max]).contains("--slideshow seeds")
+        );
+
+        let directory =
+            std::env::temp_dir().join(format!("simulacra-missing-{}", std::process::id()));
+        let out = directory.join("art.png");
+        let out = out.to_str().expect("UTF-8 temporary path");
+        match run(&parse(&["--width", "4", "--height", "4", "--out", out])) {
+            Err(Failure::Runtime(message)) => {
+                assert!(message.starts_with("cannot write"), "{message}")
+            }
+            other => panic!("expected a runtime error, got {other:?}"),
+        }
+        assert!(!directory.exists());
     }
 }
