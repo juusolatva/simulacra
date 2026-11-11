@@ -37,12 +37,13 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Decodes `path` as GIF if its extension is `gif` (any case), else as PNG.
+/// Decodes `path` as GIF if its name ends in `.gif` (any case, including a
+/// file named `.gif`), else as PNG: the binary's `name_wants_gif` rule.
 pub fn decode(path: &Path) -> Result<Decoded, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("{}: {err}", path.display()))?;
     let is_gif = path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("gif"));
+        .file_name()
+        .is_some_and(|n| n.to_string_lossy().to_lowercase().ends_with(".gif"));
     let decoded = if is_gif {
         decode_gif(&bytes)
     } else {
@@ -108,6 +109,17 @@ struct FrameReader {
 
 impl FrameReader {
     fn add(&mut self, tag: &[u8; 4], body: &[u8]) -> Result<(), String> {
+        // The fixed sizes of the chunks whose fields are read below.
+        let minimum = match tag {
+            b"IHDR" => 13,
+            b"acTL" => 8,
+            b"fcTL" => 26,
+            b"fdAT" => 4,
+            _ => 0,
+        };
+        if body.len() < minimum {
+            return Err(format!("{} is too short", String::from_utf8_lossy(tag)));
+        }
         match tag {
             b"IHDR" => {
                 if body.len() != 13 {

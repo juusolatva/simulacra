@@ -629,3 +629,35 @@ fn failed_writes_exit_1_and_leave_no_trace() {
         assert!(leftovers.is_empty(), "{leftovers:?}");
     }
 }
+
+#[test]
+fn decode_follows_the_binarys_gif_rule_for_a_leading_dot_name() {
+    // The binary writes GIF for any name ending in .gif, including ".gif".
+    let dir = tempdir("dot-gif");
+    run_in(&dir, &["--width", "4", "--height", "3", "--out", ".gif"]);
+    let decoded = common::decode(&dir.join(".gif")).unwrap();
+    assert!(decoded.table.is_some());
+}
+
+#[test]
+fn png_decoder_rejects_short_animation_chunks_without_panicking() {
+    let mut header = Vec::new();
+    header.extend(2u32.to_be_bytes());
+    header.extend(2u32.to_be_bytes());
+    header.extend([8, 2, 0, 0, 0]);
+    for (tag, body) in [
+        (b"acTL", &[0u8; 3][..]),
+        (b"fcTL", &[0u8; 3][..]),
+        (b"fcTL", &[0u8; 10][..]),
+    ] {
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        chunk(&mut png, b"IHDR", &header);
+        if tag != b"acTL" {
+            chunk(&mut png, b"acTL", &[0, 0, 0, 1, 0, 0, 0, 0]);
+        }
+        chunk(&mut png, tag, body);
+        chunk(&mut png, b"IEND", &[]);
+        let err = decode_png(&png).unwrap_err();
+        assert!(err.contains("too short"), "{err}");
+    }
+}

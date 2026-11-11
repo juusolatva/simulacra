@@ -51,6 +51,20 @@ fn compare_inventories(manifest: &[&str], found: &[&str]) -> Vec<String> {
     problems
 }
 
+/// What keeps a `--keep` directory from being blessed: the files found must
+/// be exactly the workloads named in `SHA256SUMS` (whose text is `sums`).
+fn bless_problems(files: &[&str], sums: &str) -> Vec<String> {
+    let workloads: Vec<&str> = sums
+        .lines()
+        .filter_map(|line| line.trim_end_matches('\r').split_once("  "))
+        .map(|(_, name)| name)
+        .collect();
+    compare_inventories(&workloads, files)
+        .into_iter()
+        .map(|problem| problem.replace("in PIXELS", "in SHA256SUMS"))
+        .collect()
+}
+
 /// `<hex>  <name>#<frame>` for every frame of every file in `dir`, ordered
 /// by file name and then frame.
 fn frame_lines(dir: &Path) -> Vec<(String, String)> {
@@ -81,6 +95,24 @@ fn fixture_hash(style: &str) -> String {
     text[start..start + 64].to_owned()
 }
 
+/// The fixture workloads render the portable fixtures' settings, so their
+/// frames must hash as the fixtures do.
+fn fixture_mismatches(lines: &[(String, String)]) -> Vec<String> {
+    let mut mismatches = Vec::new();
+    for (name, hash) in lines {
+        if let Some(style) = name
+            .strip_prefix("fixture-")
+            .and_then(|n| n.strip_suffix(".png#0"))
+        {
+            let fixture = fixture_hash(style);
+            if *hash != fixture {
+                mismatches.push(format!("{name}: fixture {style} has {fixture}, got {hash}"));
+            }
+        }
+    }
+    mismatches
+}
+
 #[test]
 #[ignore = "run on a golden.sh --keep directory: SIMULACRA_GOLDEN_OUT=DIR cargo test --manifest-path core/Cargo.toml -p simulacra_cli --features portable --test golden_pixels -- --ignored"]
 fn every_frame_matches_its_pixel_hash() {
@@ -89,7 +121,22 @@ fn every_frame_matches_its_pixel_hash() {
     };
     let lines = frame_lines(Path::new(&dir));
     let pixels = golden_dir().join("PIXELS");
+    let fixtures = fixture_mismatches(&lines);
     if std::env::var_os("SIMULACRA_BLESS").is_some_and(|v| v == "1") {
+        // Bless only a complete, correct render: every workload's file, and
+        // fixture frames that match the portable fixtures.
+        let sums = fs::read_to_string(golden_dir().join("SHA256SUMS")).unwrap();
+        let files: BTreeSet<&str> = lines
+            .iter()
+            .map(|(name, _)| name.rsplit_once('#').unwrap().0)
+            .collect();
+        let mut problems = bless_problems(&files.into_iter().collect::<Vec<_>>(), &sums);
+        problems.extend(fixtures);
+        assert!(
+            problems.is_empty(),
+            "not blessing:\n{}",
+            problems.join("\n")
+        );
         let text: String = lines.iter().map(|(n, h)| format!("{h}  {n}\n")).collect();
         fs::write(&pixels, text).unwrap();
         return;
@@ -118,20 +165,21 @@ fn every_frame_matches_its_pixel_hash() {
         .filter(|(name, hash)| want[name.as_str()] != hash)
         .map(|(name, hash)| format!("{name}: expected {}, got {hash}", want[name.as_str()]))
         .collect();
-    // The fixture workloads render the portable fixtures' settings, so their
-    // frames must hash as the fixtures do.
-    for (name, hash) in &lines {
-        if let Some(style) = name
-            .strip_prefix("fixture-")
-            .and_then(|n| n.strip_suffix(".png#0"))
-        {
-            let fixture = fixture_hash(style);
-            if *hash != fixture {
-                mismatches.push(format!("{name}: fixture {style} has {fixture}, got {hash}"));
-            }
-        }
-    }
+    mismatches.extend(fixtures);
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+}
+
+#[test]
+fn blessing_requires_a_file_for_every_workload() {
+    let sums = "aa  a.png\nbb  b.gif\r\n";
+    assert_eq!(
+        bless_problems(&["a.png", "b.gif"], sums),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        bless_problems(&["a.png", "c.png"], sums),
+        ["no hash for c.png", "hash without a file: b.gif"]
+    );
 }
 
 #[test]
