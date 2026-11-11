@@ -10,12 +10,12 @@ name: Release binaries
 #          `cargo install --locked --features portable` (as the README tells
 #          users to install it) and package the binary.
 # verify:  on a fresh runner, download the package as a user would, unpack it and
-#          run core/cli/tests/check_release.py: every style the binary lists must
-#          render its portable fixture's hash. On Linux the binary runs in a
-#          container image with no Python and no Rust (the checker itself needs
-#          Python, but runs outside the container).
-# compare: the larger workloads (sizes, seeds, phases, palettes, APNG and GIF
-#          animations) must render identically on all targets.
+#          run core/cli/tests/golden.sh: every golden workload (every style at
+#          several sizes, seeds, phases and palettes, APNG and GIF animations)
+#          must hash as committed in core/cli/tests/golden/SHA256SUMS. Every
+#          target is held to the same hashes, so they all render identically.
+#          On Linux the binary runs in a container image with no Python and no
+#          Rust; the runner needs neither (the checker is POSIX sh).
 on:
   push:
     branches: [main]
@@ -118,7 +118,7 @@ jobs:
     needs: build
     runs-on: ${{ matrix.runner }}
     permissions:
-      contents: read # Check out the checker and the fixtures
+      contents: read # Check out the checker and the golden hashes
     strategy:
       fail-fast: false
       matrix:
@@ -133,10 +133,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -157,41 +153,9 @@ jobs:
         if: runner.os == 'Linux'
         run: ldd dist/simulacra
 
-      - name: Check the binary against the portable fixtures
+      - name: Check the binary against the golden hashes
         run: |
           binary=dist/simulacra
           if [ "$RUNNER_OS" = Windows ]; then binary=dist/simulacra.exe; fi
-          python -I core/cli/tests/check_release.py check "$binary" \
-            --target "$TARGET" --hashes "hashes-$TARGET.json" \
+          sh core/cli/tests/golden.sh check "$binary" \
             ${CONTAINER:+--container "$NO_PYTHON_IMAGE"}
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: hashes-${{ matrix.target }}
-          path: hashes-${{ matrix.target }}.json
-          if-no-files-found: error
-          retention-days: 14
-
-  compare:
-    name: Identical images on every target
-    needs: verify
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read # Check out the checker
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: hashes-*
-          path: hashes
-          merge-multiple: true
-
-      - name: Compare the workload hashes
-        run: python -I core/cli/tests/check_release.py compare hashes/*.json

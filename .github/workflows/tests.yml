@@ -113,3 +113,30 @@ jobs:
           cargo test --locked --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable
           cargo test --locked --manifest-path core/Cargo.toml -p simulacra_engine --features json
           cargo clippy --locked --manifest-path core/Cargo.toml -p simulacra_engine --all-targets --features json,portable -- -D warnings
+
+  golden:
+    name: Golden hashes (portable binary)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Check out the code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Update the stable toolchain
+        run: rustup update stable && rustup default stable
+
+      - name: Self-test the checker
+        run: sh core/cli/tests/golden_selftest.sh
+
+      # Every golden workload's file must hash as committed in
+      # core/cli/tests/golden/SHA256SUMS, and every decoded frame as in PIXELS
+      # (and the fixture workloads as the portable fixtures). The hashes hold
+      # for portable builds, as release binaries are.
+      - name: Golden file and pixel hashes
+        run: |
+          cargo build --locked --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable
+          out="$RUNNER_TEMP/golden"
+          sh core/cli/tests/golden.sh check core/target/release/simulacra --keep "$out"
+          SIMULACRA_GOLDEN_OUT="$out" cargo test --locked --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable --test golden_pixels -- --ignored
