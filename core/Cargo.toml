@@ -1,9 +1,8 @@
-# Workspace for the native side of Simulacra (see PLAN.md, "Target architecture").
-# engine: the renderer, with no Python dependency unless its `python` feature is on.
-# py:     the `simulacra_core` Python extension, a thin adapter over the engine.
-# cli:    the standalone `simulacra` binary (Phase 3).
+# Workspace for Simulacra (see PLAN.md, "Target architecture").
+# engine: the renderer (scenes, shaders, palettes), usable as a library.
+# cli:    the `simulacra` command-line tool.
 [workspace]
-members = ["cli", "engine", "py"]
+members = ["cli", "engine"]
 resolver = "3"
 
 [workspace.package]
@@ -13,7 +12,6 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
-pyo3 = "0.30"
 rayon = "1.12"
 # No default features: the `arch` feature would use platform intrinsics where they exist.
 libm = { version = "0.2.16", default-features = false }

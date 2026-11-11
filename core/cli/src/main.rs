@@ -1,9 +1,9 @@
-//! `simulacra`: the standalone command-line tool, rendering without Python.
+//! `simulacra`: the command-line tool.
 //!
-//! The options, defaults and messages follow `simulacra.py`'s command line for
-//! every style (`--list-styles`): still PNG images, looping APNG animations
-//! (`--frames`) and GIF (a `.gif` `--out`, byte for byte as `simulacra.py`
-//! writes it). Animation frames are rendered and encoded several at a time
+//! It renders every style (`--list-styles`) as still PNG images, looping APNG
+//! animations (`--frames`) and GIF (a `.gif` `--out`). Its options, defaults
+//! and messages were kept from the retired Python command line (see the
+//! engine's crate docs). Animation frames are rendered and encoded several at a time
 //! on the thread pool and written to the temporary output file in order as
 //! they finish; the number in progress is bounded by the thread count and a
 //! memory budget ([`frames_in_flight`]), not by the frame count.
@@ -40,8 +40,7 @@ const MAX_SIDE: usize = 100_000;
 /// holds only the frames in progress ([`frames_in_flight`]), so its limit
 /// guards run time and output size instead. At the 4 to 49 million pixels per second and at most 0.7 bytes
 /// per pixel measured (PLAN.md Phase 5) that is up to about 18 minutes and
-/// 3 GB, or 517 frames at 3840 x 2160. The binary therefore accepts longer
-/// animations than `simulacra.py`.
+/// 3 GB, or 517 frames at 3840 x 2160.
 const MAX_TOTAL_PIXELS: u128 = 1 << 32;
 
 /// The most frames an animation may have unless `--no-limits` is given.
@@ -117,7 +116,7 @@ struct Args {
     /// Style to draw (see --list-styles)
     #[arg(long, default_value = "waves", value_parser = clap::builder::PossibleValuesParser::new(SCENE_BUILDERS))]
     style: String,
-    /// Seed; the same seed gives the same image as simulacra.py
+    /// Seed; the same seed gives the same image
     #[arg(long, default_value_t = 1, allow_negative_numbers = true)]
     seed: i64,
     /// Pick a random seed and print it so the image can be reproduced
@@ -535,8 +534,7 @@ enum Failure {
     /// The arguments or the limits refuse the run before any rendering:
     /// exit code 2, as for argparse's (and clap's) errors.
     Usage(String),
-    /// Rendering, encoding or writing failed: exit code 1, as for an error
-    /// that stops `simulacra.py`.
+    /// Rendering, encoding or writing failed: exit code 1.
     Runtime(String),
 }
 

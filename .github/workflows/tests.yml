@@ -15,53 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: Python ${{ matrix.python }}${{ matrix.core && format(' with the Rust core{0}', matrix.core == 'portable' && ' (portable math)' || '') || '' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read # Check out the code
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ['3.12', '3.14']
-        core: [false, true]
-        # The core with the portable math backend (a new core value, so include adds a
-        # job rather than changing one). The suite skips exact Python comparisons
-        # only for the styles in PORTABLE_DRIFT_STYLES.
-        include:
-          - python: '3.12'
-            core: portable
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python }}
-
-      - name: Build the Rust core
-        if: ${{ matrix.core }}
-        run: |
-          python -m venv .venv
-          .venv/bin/python -m pip install maturin
-          .venv/bin/maturin develop --release -m core/py/Cargo.toml ${MATRIX_FEATURES:+--features "$MATRIX_FEATURES"}
-        env:
-          MATRIX_FEATURES: ${{ matrix.core == 'portable' && 'portable' || '' }}
-
-      # The standalone binary uses the platform libm here, like Python, so
-      # StandaloneCliTests can require identical pixels (not with portable math).
-      - name: Build the standalone binary
-        if: ${{ matrix.core == true }}
-        run: |
-          cargo build --locked --release --manifest-path core/Cargo.toml -p simulacra_cli
-          echo "SIMULACRA_CLI=$PWD/core/target/release/simulacra" >> "$GITHUB_ENV"
-
-      - name: Run the tests
-        run: |
-          if [ -x .venv/bin/python ]; then python=.venv/bin/python; else python=python; fi
-          "$python" -m unittest -v
-
   rust:
     name: Cargo test and Clippy
     runs-on: ubuntu-latest
@@ -72,16 +25,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # PyO3 links against Python, so the crate's tests need an interpreter.
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.12'
-
       - name: Update the stable toolchain
         run: rustup update stable && rustup default stable && rustup component add clippy
 
-      # The workspace root is a virtual manifest, so these cover both crates, and
-      # Cargo unifies features: the engine is built with `python` here.
+      # The workspace root is a virtual manifest, so these cover both crates.
       - name: Cargo test
         run: cargo test --locked --manifest-path core/Cargo.toml
 
@@ -93,14 +40,9 @@ jobs:
           cargo test --locked --manifest-path core/Cargo.toml --features portable
           cargo clippy --locked --manifest-path core/Cargo.toml --all-targets --features portable -- -D warnings
 
-      # PLAN.md Phase 2 acceptance: the engine builds and tests without the `python`
-      # feature, so without PyO3 (the runner has a Python, so check the tree too).
-      - name: Engine without Python
+      # The engine on its own, without the CLI's dependencies and features.
+      - name: Engine alone
         run: |
-          if cargo tree --locked --manifest-path core/Cargo.toml -p simulacra_engine -e normal,build | grep -q pyo3; then
-            echo "simulacra_engine depends on pyo3 without the python feature" >&2
-            exit 1
-          fi
           cargo test --locked --manifest-path core/Cargo.toml -p simulacra_engine
           cargo clippy --locked --manifest-path core/Cargo.toml -p simulacra_engine --all-targets -- -D warnings
           cargo clippy --locked --manifest-path core/Cargo.toml -p simulacra_engine --all-targets --features portable -- -D warnings

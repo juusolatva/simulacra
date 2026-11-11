@@ -5,10 +5,9 @@ name: Release binaries
 # (PLAN.md Phase 3). Nothing is published: the first release waits for the
 # finished Rust rewrite, so the packages are workflow artifacts kept 14 days.
 #
-# build:   on a native runner per target, check that the binary does not pull in
-#          PyO3, run the portable fixtures and the CLI tests, build with
-#          `cargo install --locked --features portable` (as the README tells
-#          users to install it) and package the binary.
+# build:   on a native runner per target, run the portable fixtures and the
+#          CLI tests, build with `cargo install --locked --features portable`
+#          (as the README tells users to install it) and package the binary.
 # verify:  on a fresh runner, download the package as a user would, unpack it and
 #          run core/cli/tests/golden.sh: every golden workload (every style at
 #          several sizes, seeds, phases and palettes, APNG and GIF animations)
@@ -71,13 +70,6 @@ jobs:
           host=$(rustc -vV | sed -n 's/^host: //p')
           if [ "$host" != "$TARGET" ]; then
             echo "runner host $host is not $TARGET" >&2
-            exit 1
-          fi
-
-      - name: The binary does not depend on PyO3
-        run: |
-          if cargo tree --locked --manifest-path core/Cargo.toml -p simulacra_cli --features portable -e normal,build | grep -q pyo3; then
-            echo "simulacra_cli depends on pyo3" >&2
             exit 1
           fi
 

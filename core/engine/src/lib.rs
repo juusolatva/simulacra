@@ -1,11 +1,15 @@
-//! Simulacra's renderer, independent of Python.
+//! Simulacra's renderer.
 //!
 //! Each style is a scene struct (in [`styles`]) that implements [`Style`]: given
 //! a size, a seed and a [`Palette`], it shades the pixels in parallel and
-//! returns packed RGB bytes (row-major, 3 bytes per pixel). Scenes are built by
-//! the Python scene builders in `simulacra.py` and converted by the `py` adapter
-//! crate, which turns on the `python` feature to derive `pyo3::FromPyObject` on
-//! them. Without that feature this crate does not depend on Python or PyO3.
+//! returns packed RGB bytes (row-major, 3 bytes per pixel). [`build_scene`]
+//! builds a style's scene (all its random draws, through [`PyRandom`]).
+//!
+//! The engine was ported from a Python reference, `simulacra.py`, which was
+//! retired when Simulacra became a Rust-only project; it can be read in git
+//! history before that change. Comments that name a Python function (such as
+//! `_mosaic_scene` or `render_waves`) or Python semantics refer to that
+//! reference, which the shaders and scene builders reproduce exactly.
 
 mod geometry;
 mod math;

@@ -14,7 +14,6 @@ use crate::random::PyRandom;
 use crate::scenes::{BuildScene, SceneParams};
 use crate::validate::{Canvas, Numbers, SceneError, check_numbers};
 
-#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 struct Layer {
     surface: Vec<f64>,
@@ -45,7 +44,6 @@ impl Layer {
     }
 }
 
-#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Woodblock {
     layers: Vec<Layer>,
