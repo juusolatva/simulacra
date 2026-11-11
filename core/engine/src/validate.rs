@@ -15,9 +15,9 @@
 //!   loop iterations, stays within [`work_limit`] for the canvas, so a scene
 //!   cannot stall rendering or allocate buffers far larger than the frame.
 //!
-//! Scenes from the Python builders stay far below the limit at every size;
-//! `test_native_scenes_stay_well_within_the_work_limit` in `test_simulacra.py`
-//! holds them to an eighth of it.
+//! Built-in scenes stay far below the limit at every size;
+//! `scenes_stay_well_within_the_work_limit` in `tests/invariants.rs` holds
+//! them to an eighth of it.
 
 use std::fmt;
 

@@ -1,15 +1,15 @@
 //! `PyRandom` against CPython: replays the call sequences in
-//! `random_reference.json` (written by `make_random_reference.py` from
-//! CPython's `random.Random`) and requires identical results.
+//! `random_reference.json` and requires identical results. The reference was
+//! written from CPython's `random.Random` before the Python cutover; its
+//! generator, `make_random_reference.py`, is in git history.
 
 use std::path::Path;
 
 use serde::Deserialize;
 use simulacra_engine::PyRandom;
 
-/// The seeds and sequence length `make_random_reference.py` writes; checked so
-/// that a truncated reference cannot pass. Keep in sync with `SEEDS` and
-/// `CALLS_PER_SEED` there.
+/// The seeds and sequence length the reference holds; checked so that a
+/// truncated reference cannot pass.
 const SEEDS: [i64; 14] = [
     0,
     1,
@@ -76,7 +76,7 @@ fn replays_cpython_sequences() {
     let text = std::fs::read_to_string(&path).expect("random_reference.json");
     let reference: Reference = serde_json::from_str(&text).expect("valid reference");
     let seeds: Vec<i64> = reference.sequences.iter().map(|s| int(&s.seed)).collect();
-    assert_eq!(seeds, SEEDS, "rerun make_random_reference.py");
+    assert_eq!(seeds, SEEDS, "random_reference.json is incomplete");
     for sequence in &reference.sequences {
         assert_eq!(
             sequence.calls.len(),

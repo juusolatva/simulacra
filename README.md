@@ -5,62 +5,71 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=juusolatva_abstract-art&metric=coverage)](https://sonarcloud.io/summary/overall?id=juusolatva_abstract-art)
 [![License: MIT](https://img.shields.io/github/license/juusolatva/simulacra)](LICENSE)
 
-Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. The script runs on the Python standard library alone, and an optional Rust core makes every style hundreds of times faster. A standalone binary that needs no Python is in preview: it renders every style as a still image or an APNG or GIF animation (see [Standalone binary](#standalone-binary-preview)). It includes **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF.
+Generate images and seamless animations from mathematical patterns, noise fields, simulated physical processes, and seeded randomness. Some styles are purely abstract (plasma, op art, strange attractors); others are stylized representations of real phenomena, such as a lunar surface, a black hole, a supernova remnant, paper marbling, or Chladni figures. `simulacra` is a single command-line program written in Rust, with **48 styles**, **24 palettes**, static PNG output, and looping animated output as APNG or GIF. It renders in parallel on every processor core.
 
-The project started as a script produced by an LLM running in a sandbox loop. The current version includes corrections to rendering geometry, pixel-buffer dimensions, trail sampling, and animation encoding, with regression tests for those behaviors.
+The project started as a Python script produced by an LLM running in a sandbox loop. It was corrected, tested and then ported to Rust pixel for pixel; the Python reference was retired once the Rust program matched it (see [`PLAN.md`](PLAN.md)).
 
 See the [glossary](GLOSSARY.md) for the project's visual concepts and terminology.
 
 ## Contents
 
+- [Installing](#installing)
 - [Quick start](#quick-start)
 - [Command-line options](#command-line-options)
 - [Examples](#examples)
 - [Styles](#styles)
 - [Palettes](#palettes)
 - [Animation](#animation)
-- [Python API](#python-api)
 - [How rendering works](#how-rendering-works)
-- [Performance and limitations](#performance-and-limitations)
-- [Optional Rust core](#optional-rust-core)
-- [Standalone binary (preview)](#standalone-binary-preview)
+- [Performance and limits](#performance-and-limits)
 - [Testing](#testing)
-- [Extending the script](#extending-the-script)
+- [Adding a style](#adding-a-style)
 - [Troubleshooting](#troubleshooting)
 - [Project files](#project-files)
 
-## Quick start
+## Installing
 
-You need Python 3. No third-party packages, installation step, network access, or external image libraries are required to generate images or run the tests. For much faster rendering, build the [optional Rust core](#optional-rust-core). CI runs the test suite on Python 3.12 and 3.14; the Rust core declares Python 3.10 or later.
-
-Run commands from the directory containing `simulacra.py`:
+Install it with Cargo, straight from this repository (it is not published on crates.io):
 
 ```bash
-python3 simulacra.py
+cargo install --locked --features portable --git https://github.com/juusolatva/simulacra simulacra_cli
+```
+
+From a clone, `cargo install --locked --features portable --path core/cli` does the same. Cargo puts `simulacra` (`simulacra.exe` on Windows) in `~/.cargo/bin`, which the Rust installer adds to `PATH`.
+
+- **Rust:** install a recent stable toolchain with [rustup](https://rustup.rs); run `rustup update` first if an older one fails to build (the crates use the 2024 edition, and CI builds with the latest stable release).
+- **Linux:** Rust needs a C linker; on Debian and Ubuntu, `sudo apt install build-essential`.
+- **Windows:** Rust needs the Microsoft C++ build tools, which rustup offers to install; follow its prompts.
+- **macOS:** not a tested target; the build may work.
+- **Options:** `--locked` builds with the dependency versions in the repository's `Cargo.lock`, the ones CI tests. `--features portable` uses the pure-Rust math library, so every platform renders exactly the same image (the committed golden hashes hold for these builds). Without it, the program uses the platform's math library, which is somewhat faster but can differ slightly in two styles: `cymatics` by at most one level in rare pixels, and `attractor`, whose chaotic orbit takes another path through the same curves.
+- **Updating and removing:** run the same command again to update to the latest commit on `main` (Cargo says the package is already installed if nothing changed), and `cargo uninstall simulacra_cli` to remove it.
+
+`simulacra --version` prints the crate version, which does not change between commits yet. To build without installing, run `cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable` and use `core/target/release/simulacra`. No prebuilt binaries are published yet; CI builds and checks them for Linux (x86_64, aarch64) and Windows (x86_64), see [`PLAN.md`](PLAN.md), Phases 3 and 6.
+
+## Quick start
+
+```bash
+simulacra
 ```
 
 This writes `art.png` in the current directory using the defaults: a 256 × 256 image, the `waves` style, seed `1`, and the `deep` palette.
 
-Choose a style and palette:
+Choose a style and palette, or write an animation:
 
 ```bash
-python3 simulacra.py --style petals --palette sunset --seed 7 --out petals.png
+simulacra --style petals --palette sunset --seed 7 --out petals.png
+simulacra --style mandelbrot --frames 48 --fps 24 --out zoom.png
+simulacra --style plasma --frames 36 --out plasma.gif
 ```
 
-See all options:
-
-```bash
-python3 simulacra.py --help
-```
-
-If your interpreter is named `python` rather than `python3`, substitute that command in the examples.
+See all options with `simulacra --help`, and the names with `simulacra --list-styles` and `--list-palettes`.
 
 ## Command-line options
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--style` | `waves` | One of the 48 style names listed below. |
-| `--seed` | `1` | Integer controlling seeded randomness and noise. Negative integers are accepted. |
+| `--seed` | `1` | Integer controlling seeded randomness and noise: a 64-bit signed integer, negative values included. |
 | `--random-seed` | off | Pick a random seed instead and print it in the output line, so the image can be reproduced with `--seed`. Cannot be combined with `--seed`. |
 | `--palette` | `deep` | One of the 24 palette names listed below. |
 | `--palette-stops` | — | A custom palette instead of a named one: two or more comma-separated hex colors from dark to light, such as `0c061c,5814a8,ff8800`. Colors are `rrggbb` or `rgb`, with an optional `#`. Quote the value if it contains `#`, which a shell treats as a comment otherwise. Cannot be combined with `--palette`. |
@@ -68,33 +77,31 @@ If your interpreter is named `python` rather than `python3`, substitute that com
 | `--height` | `256` | Output height in pixels; must be a positive integer. |
 | `--out` | `art.png` | Destination path. Its parent directory must already exist. |
 | `--frames` | `1` | Positive frame count. `1` writes a still image; larger values write an animation (APNG, or GIF if `--out` ends in `.gif`). Every style animates one scene in a seamless loop (see [Animation](#animation)). |
-| `--phase` | `0` | Loop position for styles with motion; `1.0` repeats `0.0`. For a still image it picks the moment; with `--frames` it is the first frame's position. |
-| `--slideshow` | off | Make every frame an unrelated scene with consecutive seeds, even for styles with motion. |
+| `--phase` | `0` | Loop position; `1.0` repeats `0.0`. For a still image it picks the moment; with `--frames` it is the first frame's position. |
+| `--slideshow` | off | Make every frame an unrelated scene with consecutive seeds instead of one moving scene. |
 | `--fps` | `12` | Animation frame rate, an integer from 1 to 65,535. Only used with `--frames` greater than 1. GIF delays are whole hundredths of a second, so GIF rates are rounded and capped at 50. |
-| `--no-limits` | off | Skip the size limits (see below). |
-| `--list-styles`, `--list-palettes` | — | Print the style or palette names, one per line, and exit. |
-| `-h`, `--help` | — | Print usage and available choices, then exit. |
+| `--no-limits` | off | Skip the size limits (see [Performance and limits](#performance-and-limits)). |
+| `--list-styles`, `--list-palettes` | — | Print the style or palette names in alphabetical order, one per line, and exit. |
+| `-h`, `--help`, `-V`, `--version` | — | Print usage or the version, then exit. |
 
-Names are case-sensitive. Options can appear in any order.
+Names are case-sensitive. Options can appear in any order and must be spelled out (`--wid` does not abbreviate `--width`); a repeated option takes its last value.
 
-The CLI refuses renders over 100 million pixels per frame or with a side over 100,000 pixels, and animations whose frames would need more than 1 GiB of memory in total (`width × height × 3 × frames` bytes). Pass `--no-limits` to override. The limits live in `MAX_FRAME_PIXELS`, `MAX_SIDE`, `MAX_ANIMATION_BYTES` and `check_limits()`; the Python API does not enforce them.
+A `--out` ending in `.gif` (any case) writes a looping GIF, still or animated. Any other name writes PNG data: `--frames` decides between a static PNG and an APNG, so use `.png` or `.apng` for clarity, and a `.jpg` filename still gets PNG data. A GIF holds 256 colors, so all frames share one table of 240 colors sampled evenly along the palette plus 16 greys for glows; gradients can show slight banding, and the APNG is the higher-quality choice.
 
-A `--out` ending in `.gif` (any case) writes a looping GIF, still or animated. Any other name writes PNG data: `--frames` decides between a static PNG and an APNG, so use `.png` or `.apng` for clarity, and a `.jpg` filename still gets PNG data. A GIF holds 256 colors, so all frames share one table of 240 colors sampled evenly along the palette plus 16 greys for glows; gradients can show slight banding, and the APNG is the higher-quality choice. The Python API is `write_gif(path, frames, width, height, fps=12, stops=None)`.
-
-A successful run prints the destination, style, seed, and palette. Successful writes replace an existing destination file.
+A successful run prints the destination, style, seed, and palette, and replaces an existing destination file. Refused arguments and limits print an error and exit with status 2 before anything is rendered; a failure while rendering or writing, such as an `--out` in a missing directory, prints `simulacra: error: …` and exits with status 1.
 
 ## Examples
 
 ### A flower scene
 
 ```bash
-python3 simulacra.py --style petals --palette sunset --seed 7 --width 512 --height 512 --out flower.png
+simulacra --style petals --palette sunset --seed 7 --width 512 --height 512 --out flower.png
 ```
 
 ### A Mandelbrot image
 
 ```bash
-python3 simulacra.py --style mandelbrot --palette ultraviolet --width 512 --height 512 --out mandelbrot.png
+simulacra --style mandelbrot --palette ultraviolet --width 512 --height 512 --out mandelbrot.png
 ```
 
 A still Mandelbrot image uses a fixed viewport that preserves the complex plane's aspect ratio. The renderer does not use the seed, so changing `--seed` will not change this style. With `--frames` it zooms into the seahorse valley and back out.
@@ -102,21 +109,21 @@ A still Mandelbrot image uses a fixed viewport that preserves the complex plane'
 ### A wide landscape
 
 ```bash
-python3 simulacra.py --style horizon --palette forest --seed 12 --width 960 --height 360 --out mountains.png
+simulacra --style horizon --palette forest --seed 12 --width 960 --height 360 --out mountains.png
 ```
 
 ### Geometric outlines and flowing strokes
 
 ```bash
-python3 simulacra.py --style geo --palette gold --seed 3 --out geometry.png
-python3 simulacra.py --style ink --palette lagoon --seed 17 --out ink.png
+simulacra --style geo --palette gold --seed 3 --out geometry.png
+simulacra --style ink --palette lagoon --seed 17 --out ink.png
 ```
 
 ### Woodblock landscapes in watercolor colors
 
 ```bash
-python3 simulacra.py --style woodblock --palette watercolor --seed 5 --out woodblock.png
-python3 simulacra.py --style woodblock --palette watercolor --seed 7 --width 640 --height 480 --frames 48 --fps 12 --out woodblock.gif
+simulacra --style woodblock --palette watercolor --seed 5 --out woodblock.png
+simulacra --style woodblock --palette watercolor --seed 7 --width 640 --height 480 --frames 48 --fps 12 --out woodblock.gif
 ```
 
 `watercolor` is a color palette usable with every style. In `woodblock`, the last palette stop supplies the paper and the other stops supply the printed forms and carved marks; the contours remain crisp.
@@ -124,10 +131,10 @@ python3 simulacra.py --style woodblock --palette watercolor --seed 7 --width 640
 ### An animated sequence
 
 ```bash
-python3 simulacra.py --style rings --palette rainbow --seed 3 --width 256 --height 256 --frames 24 --fps 12 --out rings.png
+simulacra --style rings --palette rainbow --seed 3 --width 256 --height 256 --frames 24 --fps 12 --out rings.png
 ```
 
-This creates a two-second sequence that loops seamlessly. `rings` is one of the styles with motion, so the frames are one scene seen at 24 positions along a loop. Every built-in style has motion. With `--slideshow`, each frame is instead an unrelated scene with the next seed.
+This creates a two-second sequence that loops seamlessly: one scene seen at 24 positions along a loop. With `--slideshow`, each frame is instead an unrelated scene with the next seed.
 
 ## Styles
 
@@ -221,279 +228,129 @@ The `ember` style and the `ember` palette are independent choices. You can use, 
 
 ## Animation
 
-Each style takes a `phase`, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the CLI renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
+Each style takes a phase, the position in a loop from 0 up to 1, where 1.0 looks the same as 0.0. With `--frames N`, the program renders one scene at phases `0`, `1/N`, …, `(N - 1)/N` (starting at `--phase` if given), so the animation loops without a visible seam. The frame rate is 12 FPS unless you pass `--fps`, so one loop lasts `N / fps` seconds.
 
-Every style moves. The motion is a rotation, a drift of waves, a circling of clouds, cells, stars or brush strokes, a sweep of jets, a slow zoom (`mandelbrot` dives toward a spiral in the seahorse valley, then back out), or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. `woodblock` rolls its wave layers and reshapes its hills and cliffs. The list is `ANIMATED_STYLES` in the module.
+Every style moves. The motion is a rotation, a drift of waves, a circling of clouds, cells, stars or brush strokes, a sweep of jets, a slow zoom (`mandelbrot` dives toward a spiral in the seahorse valley, then back out), or noise that keeps changing shape, depending on the style; `mosaic` steps its patterns along whole tiles. `woodblock` rolls its wave layers and reshapes its hills and cliffs.
 
-Pass `--slideshow` to render seeds `seed`, `seed + 1`, …, `seed + N - 1` instead, a slideshow of unrelated scenes. (A style added to the registry without motion gets this automatically, and the CLI prints a note.)
+Pass `--slideshow` to render seeds `seed`, `seed + 1`, …, `seed + N - 1` instead, a slideshow of unrelated scenes.
 
-- `phase` does not change the scene: the same seed always gives the same objects, and phase 0 gives the same still image as before motion existed.
+- The phase does not change the scene: the same seed always gives the same objects, and phase 0 gives the same still image as a run without `--phase`.
 - `mandelbrot` ignores the seed, so its slideshow frames are identical; its normal animation (the zoom) does not depend on the seed either.
-- Use the Python API to choose a different integer frame rate or to supply your own frames. `render(width, height, seed, style, palette_name, phase=0.0)` and `render_rgb(...)` accept `phase`; a style without motion would ignore it.
-- The viewer must support APNG to show the animation. A viewer without animation support may display only the first frame.
+- The viewer must support APNG to show a PNG animation. A viewer without animation support may display only the first frame.
 
-All writers (PNG, APNG and GIF) use a temporary file in the destination directory and replace the destination only after everything has been written. Encoding or replacement failures preserve an existing output and clean up the temporary file during normal exception handling. The finished file gets the usual permissions for a new file under the current umask (typically `0644`). The destination directory must allow creating temporary files and replacing the output.
-
-## Python API
-
-Import the module from a script in the same directory, or make its directory available on your Python import path. Importing it does not render an image or create files.
-
-### Render and save an image
-
-```python
-from pathlib import Path
-import simulacra as art
-
-output = Path("output")
-output.mkdir(exist_ok=True)
-
-width, height = 320, 240
-pixels = art.render(
-    width=width,
-    height=height,
-    seed=7,
-    style="voronoi",
-    palette_name="lagoon",
-)
-art.write_png(output / "cells.png", pixels, width, height)
-```
-
-`render(width, height, seed, style, palette_name, phase=0.0)` returns a row-major nested list:
-
-```text
-pixels[y][x] == (red, green, blue)
-```
-
-There are exactly `height` rows and `width` pixels per row. Each rendered pixel is an RGB tuple of integers from 0 to 255. The image is opaque; there is no alpha channel.
-
-The public dispatcher validates dimensions, style, and palette. Invalid dimensions or unknown names raise `ValueError`. Use `render()` rather than individual `render_*()` functions when you want this validation.
-
-For large images, prefer `render_rgb(width, height, seed, style, palette_name)`. It returns the same image as packed `bytes`, row-major with 3 bytes per pixel (`width * height * 3` bytes). That is far smaller than nested tuples, and with the Rust core no per-pixel Python objects are created. Both writers accept either form.
-
-### Write an animation at a custom frame rate
-
-```python
-import simulacra as art
-
-width, height = 128, 128
-frames = [
-    art.render(width, height, seed, "kaleidoscope", "ultraviolet")
-    for seed in range(7, 13)
-]
-art.write_animated_png("patterns.png", frames, width, height, fps=6)
-```
-
-`write_animated_png(path, frames, width, height, fps=12)` expects a nonempty sequence of frames with the same dimensions. Pass a list or tuple; the writer uses `len(frames)`, so a generator is not accepted. `fps` must be an integer from 1 to 65,535. Output loops indefinitely, with each frame replacing the complete canvas.
-
-Both image writers accept nested rows or packed RGB bytes and validate their dimensions. Empty animation sequences and invalid frame rates raise `ValueError`. File-system errors, such as a missing output directory or insufficient write permissions, propagate to the caller.
-
-### Custom palettes from hex colors
-
-```bash
-python3 simulacra.py --style plasma --palette-stops "#0c061c,#5814a8,#ff8800,#fff0c0" --out custom.png
-```
-
-The first color is the background in many styles, so start with a dark one. The output line reports the palette as `custom`. In Python, `parse_hex_palette("#0c061c,5814a8,f80")` returns the same stops as a list of RGB tuples, which you can register as described below.
-
-### Add a palette in Python
-
-```python
-import simulacra as art
-
-art.PALETTES["ice"] = [
-    (2, 8, 24),
-    (12, 38, 72),
-    (36, 94, 142),
-    (108, 184, 210),
-    (220, 248, 255),
-]
-
-pixels = art.render(256, 256, 4, "geo", "ice")
-art.write_png("ice.png", pixels, 256, 256)
-```
-
-Palette entries should be a nonempty list of RGB tuples with channels in the range 0–255. The built-ins have five stops, except `rainbow` with seven; any count of two or more works. Adding an entry at runtime affects that Python process. To make a palette available in subsequent CLI runs, add it to `PALETTES` in `simulacra.py`; CLI palette choices are derived from that dictionary. Add a new built-in palette to the Rust table in `core/engine/src/palettes.rs` as well (the standalone binary reads it); with the Rust core built, `test_native_palettes_match_python` fails until the two match.
+Frames are rendered and encoded several at a time, about one per processor thread, and written to the output in order as they finish, so memory depends on the frames in progress rather than the frame count (at 1080p on 12 threads most styles peak around 100 MB). Every file (PNG, APNG and GIF) is written to a temporary file in the destination directory and replaces the destination only after everything has been written; a failure keeps an existing output and removes the temporary file. The finished file gets the usual permissions for a new file under the current umask (typically `0644`). The destination directory must allow creating temporary files and replacing the output.
 
 ## How rendering works
 
-1. **Choose geometry or a field.** A style computes an intensity from coordinates, noise, distances to shapes, curve samples, or accumulated brush strokes.
-2. **Map to a palette.** `palette_color()` clamps its scalar input to `[0, 1]` and interpolates RGB stops.
-3. **Build a rectangular pixel buffer.** Renderers produce rows of RGB tuples; glow-based renderers first accumulate a flat intensity buffer and then reshape it.
-4. **Encode the image.** The writers store the 8-bit RGB samples unchanged, prefix each scanline with PNG filter type 0, compress the samples with `zlib`, and write PNG chunks with CRC checksums.
+1. **Build the scene.** A style's scene builder makes all its random choices from the seed: positions, sizes, parameters, curves. The phase moves the scene along its loop without new random draws.
+2. **Shade the pixels.** The style's shader computes an intensity per pixel from coordinates, noise, distances to shapes, curve samples, or accumulated brush strokes, in parallel across rows. Brush and curve styles stamp their strokes in a fixed order first, so the result does not depend on the thread count.
+3. **Map to a palette.** The intensity, clamped to `[0, 1]`, is interpolated between the palette's RGB stops.
+4. **Encode the image.** The PNG writer stores the 8-bit RGB samples unchanged, with filter type 0 and `zlib` compression; APNG adds frame control chunks, and GIF maps each pixel to the nearest entry of its shared color table.
 
-The noise helpers use interpolated lattice values and fractal Brownian motion (fBm): several noise layers combined at increasing frequencies and decreasing amplitudes. `fbm()` returns values in `[0, 1]` centered near 0.5; `polar_noise()` samples fBm around a circle so angle-based textures have no seam at ±π. Renderers that need randomness create local `random.Random(seed)` instances rather than reseeding Python's global random generator.
+The noise helpers use interpolated lattice values and fractal Brownian motion (fBm): several noise layers combined at increasing frequencies and decreasing amplitudes, with values in `[0, 1]` centered near 0.5. Angle-based textures sample the noise around a circle so they have no seam at ±π, and animated noise blends a looping stack of layers so the last frame leads back into the first.
 
-Palette stops are sRGB colors, and the writers store samples as given, with no transfer-function conversion. Custom pixel buffers should therefore contain ordinary sRGB values from 0 to 255; out-of-range channels are clamped. The output does not embed an explicit color profile or sRGB chunk.
+Palette stops are sRGB colors, and the writers store samples as given, with no transfer-function conversion. The output does not embed an explicit color profile or sRGB chunk.
 
-For a fixed script version and Python environment, the same inputs produce repeatable results. Changes to rendering algorithms can change output for an existing seed; saved seeds are not a guarantee of identical images across versions.
+The same inputs give the same image on every platform with a `portable` build, which the committed golden hashes check. Changes to rendering algorithms can change the output for an existing seed; saved seeds are not a guarantee of identical images across versions.
 
-## Performance and limitations
+## Performance and limits
 
-Without the Rust core, rendering runs on the CPU in Python loops: the original 36 styles take about 3 minutes at 640 × 480. With the Rust core, every style is native (the per-pixel ones shade in parallel on all CPU cores, and the brush and curve styles accumulate sequentially to keep the Python result exactly), so all 48 styles take well under a second at 640 × 480 (see [Optional Rust core](#optional-rust-core)). There is no GPU backend or progress indicator. Use `bench_simulacra.py` to measure render times.
+Every style renders on all processor cores; at 640 × 480 most styles take a few milliseconds to shade, and the slowest about 0.15 s (measured on 8 CPUs; see "Stage baseline" in [`PLAN.md`](PLAN.md)). There is no GPU backend or progress indicator.
+
+To measure scene building and shading per style, run the engine's benchmark (add `--features portable` to measure the portable math):
+
+```bash
+cargo run --release --manifest-path core/Cargo.toml -p simulacra_engine --example bench -- --width 1920 --height 1080 --repeat 3
+```
+
+It prints the best of the repeats in milliseconds for every style (or `--styles a,b`), and takes `--phase`, `--seed` and `--palette`. Time encoding and whole runs by running the program, with [hyperfine](https://github.com/sharkdp/hyperfine) or a shell loop:
+
+```bash
+hyperfine --warmup 1 'simulacra --style ink --width 1920 --height 1080 --out ink.png'
+time (for i in 1 2 3; do simulacra --style plasma --frames 12 --out plasma.png; done)
+```
+
+The program refuses, before rendering, a frame over 100 million pixels or with a side over 100,000 pixels, more than 2³² pixels across all frames (about 2,070 frames at 1920 × 1080, or 517 at 3840 × 2160) and more than 65,536 frames, since each frame has a fixed cost however small it is. Together these bound run time and file size; `--no-limits` skips them. Format limits apply even then: PNG sides up to 4,294,967,295, GIF sides up to 65,535, and at most 2,147,483,648 APNG frames.
 
 - Start with 128 × 128 or 256 × 256 previews before increasing resolution.
 - Doubling width and height produces four times as many pixels. Runtime often rises accordingly, but curve sampling, brush sizes, and per-style calculations can change the scaling.
-- Styles such as `quasar`, `circuit`, and `drift` perform many noise or geometry calculations per pixel. Actual speed depends on style, size, seed, and hardware.
-- `render()` returns Python lists and tuples, which use far more memory than the packed RGB size of `width * height * 3` bytes. The CLI and `render_rgb()` use packed bytes.
-- The CLI (`simulacra.py`; the standalone binary streams frames instead) holds all uncompressed animation frames in memory before writing them, so memory use grows with frame count and pixel count. It refuses renders past the limits above unless you pass `--no-limits`.
-- The CLI limits are fixed constants (changing them means editing `MAX_FRAME_PIXELS`, `MAX_SIDE` and `MAX_ANIMATION_BYTES`), and they only estimate the packed frame size. The Python API validates positive dimensions only and has no size cap or memory estimate, so check sizes yourself before calling `render()` on large canvases.
 - Features still based on fixed pixel sizes, such as star dots and some brush widths, become relatively small at large resolutions. Very small images can lose detail through sampling and color quantization.
 
 Output is PNG, APNG or GIF only. There is no JPEG, SVG, or video export, and no built-in viewer.
 
-## Optional Rust core
-
-The `core/` directory is a Cargo workspace: `engine` is the renderer, `py` builds `simulacra_core`, a Python extension module made with [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs), and `cli` builds the [standalone binary](#standalone-binary-preview). When the extension is importable, `render()`, `render_rgb()`, and the CLI use it automatically for the styles listed in `NATIVE_STYLES`: every style (all 48). When the module is missing, the pure-Python renderers produce the same images.
-
-Python still generates each scene with `random.Random`, so a seed produces the same scene either way. The native output is tested to be byte-identical to the Python output.
-
-Building with `--features portable` (`maturin develop --release -m core/py/Cargo.toml --features portable`) makes the core use the pure-Rust `libm` crate instead of the platform math library, so results are the same on every platform. Released standalone binaries will use it. Its output differs slightly from Python's in two styles: `cymatics` by at most one level in rare pixels, and `attractor`, whose chaotic orbit takes another path through the same curves. Development builds use the default so that native output stays byte-identical to Python. See [`PLAN.md`](PLAN.md) for the measurements.
-
-Build it into a virtual environment (requires a Rust toolchain from [rustup.rs](https://rustup.rs)):
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install maturin
-maturin develop --release -m core/py/Cargo.toml
-python simulacra.py --style quasar --width 3840 --height 2160 --out quasar-4k.png
-```
-
-Rebuild with the same `maturin develop` command after changing Rust code. On an 8-core machine at 640 × 480, native styles take a few milliseconds to about 0.15 s each to shade, against up to 43 s in Python; PNG encoding adds 5–75 ms. `bench_simulacra.py --stages` and `--cli` measure scene building, shading, encoding and peak memory, and the latest baseline is in [`PLAN.md`](PLAN.md).
-
-## Standalone binary (preview)
-
-`core/cli` builds `simulacra`, a command-line tool that renders without Python. It takes the same options as `simulacra.py`, including `--frames`, `--fps` and `--slideshow` for animations, and draws the same pixels for every style (`--list-styles`). A `--out` ending in `.gif` writes a GIF byte for byte identical to the one `simulacra.py` writes. It renders and encodes several animation frames at once, about one per processor thread, and writes them to the output in order as they finish, so its memory depends on the frames in progress rather than the frame count: it renders at most as many at once as fit in about 1 GiB (one at a time when a single frame needs more). That is a ceiling: usually the thread count sets the number, and at 1080p on 12 threads most styles peak around 100 MB. Since it never holds the whole animation, it replaces the 1 GiB animation limit with a limit of 2³² pixels across all frames (about 2,070 frames at 1920 × 1080, or 517 at 3840 × 2160), and to 65,536 frames, since each frame has a fixed cost however small it is. Together they bound run time and file size; `--no-limits` skips them as well.
-
-### Installing the binary
-
-Install it with Cargo, straight from this repository (it is not published on crates.io):
-
-```bash
-cargo install --locked --features portable --git https://github.com/juusolatva/simulacra simulacra_cli
-simulacra --style waves --palette lagoon --seed 17 --width 1280 --height 720 --out waves.png
-simulacra --style mandelbrot --frames 48 --fps 24 --out zoom.png
-simulacra --style plasma --frames 36 --out plasma.gif
-```
-
-From a clone, `cargo install --locked --features portable --path core/cli` does the same. Cargo puts `simulacra` (`simulacra.exe` on Windows) in `~/.cargo/bin`, which the Rust installer adds to `PATH`.
-
-- **Rust:** install a recent stable toolchain with [rustup](https://rustup.rs); run `rustup update` first if an older one fails to build (the crates use the 2024 edition, and CI builds with the latest stable release).
-- **Linux:** Rust needs a C linker; on Debian and Ubuntu, `sudo apt install build-essential`.
-- **Windows:** Rust needs the Microsoft C++ build tools, which rustup offers to install; follow its prompts.
-- **macOS:** not a tested target; the build may work.
-- **Options:** `--locked` builds with the dependency versions in the repository's `Cargo.lock`, the ones CI tests. `--features portable` uses the pure-Rust math library, so every platform renders the same image (the released binaries will be built this way); without it, the binary uses the platform's math library and matches `simulacra.py` on the same machine exactly, where `portable` can differ slightly in two styles (see [Optional Rust core](#optional-rust-core)).
-- **Updating and removing:** run the same command again to update to the latest commit on `main` (Cargo says the package is already installed if nothing changed), and `cargo uninstall simulacra_cli` to remove it.
-
-`simulacra --version` prints the crate version, which does not change between commits yet. To build without installing, run `cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli` and use `core/target/release/simulacra`.
-
-CI builds the binary with this same `cargo install` command for Linux (x86_64, aarch64) and Windows (x86_64) and checks each one against the committed golden hashes with `core/cli/tests/golden.sh`, on Linux in a container without Python; no prebuilt binaries are published yet. See [`PLAN.md`](PLAN.md), Phases 3 and 6, for what comes next.
-
-### Differences from simulacra.py
-
-Where the binary differs from `simulacra.py`'s command line:
-
-- It limits animations by total pixels and frame count instead of memory (above), and refuses PNG sides over 4,294,967,295, the format's limit.
-- Seeds are 64-bit integers (±9.2 × 10¹⁸); `simulacra.py` accepts any integer.
-- `--list-styles` prints the styles in alphabetical order rather than in `simulacra.py`'s registry order.
-- Options must be spelled out: `--wid` does not abbreviate `--width` (the error suggests the full name). A repeated option takes its last value, as in `simulacra.py`.
-- A failure while rendering or writing, such as an `--out` in a missing directory, prints `simulacra: error: …` and exits with status 1, where `simulacra.py` stops with a traceback (also status 1). Refused arguments and limits exit with status 2 in both; the binary's messages for malformed values are worded by its parser ([clap](https://docs.rs/clap)) rather than by argparse.
-- `--version` prints the version.
-
 ## Testing
 
-Run the test suite from the project directory:
+Everything runs with Cargo from the repository root:
 
 ```bash
-python3 -m unittest -v
+cargo test --manifest-path core/Cargo.toml
+cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
 ```
 
-With the Rust core built, run the suite with the virtual environment's interpreter (`.venv/bin/python -m unittest -v`) to also check that native and Python output match; without it, those tests are skipped. Slower checks, a comparison at 200 × 150 and 150 × 200 and a check of every attractor parameter set at 48 phases, run with `SIMULACRA_SLOW=1 .venv/bin/python -m unittest -v -k larger_sizes -k every_attractor_table_entry test_simulacra` (several minutes). Rust unit tests run with `cargo test --manifest-path core/Cargo.toml`; `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable` also renders the committed scenes in `core/engine/tests/fixtures/` without Python and checks the hash of each image. With the standalone binary built, `SIMULACRA_CLI=core/target/release/simulacra .venv/bin/python -m unittest -v` also checks that it draws the same pixels and prints the same messages as `simulacra.py`. `cargo test` also runs the binary's behavior tests (`core/cli/tests/cli.rs`: options, messages, exit statuses and decoded output) and the engine's invariants for every style (`core/engine/tests/invariants.rs`). The golden hashes in `core/cli/tests/golden/` pin the exact output of a `portable` binary for 343 workloads: `sh core/cli/tests/golden.sh check core/target/release/simulacra` compares whole files, and with `--keep DIR` followed by `SIMULACRA_GOLDEN_OUT=DIR cargo test --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable --test golden_pixels -- --ignored` every decoded frame as well. Run Clippy with `cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings`. `core/coverage.sh` collects Rust line coverage the way CI does, from the Rust tests, the Python suite and the standalone binary's tests, into `lcov.info` (it needs [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) and `rustup component add llvm-tools-preview`, and leaves an instrumented debug build of the core in the virtual environment).
+`cargo test` covers the engine's unit tests (noise, palettes, the CPython `hypot` and random-generator ports checked against CPython's own results, scene validation), invariants every style keeps (`core/engine/tests/invariants.rs`: a wide palette range, motion and seamless loops, huge phases, tiny canvases, the work limit up to 4K, unaliased waves), and the program's behavior (`core/cli/tests/cli.rs`: options, messages, exit statuses, failed writes, and the decoded PNG, APNG and GIF output).
 
-To run one regression test:
+Two sets of committed hashes pin the exact images of a `portable` build:
+
+- **Portable fixtures** (`core/engine/tests/fixtures/`): one scene per style at 48 × 36 with the hash of its image. `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable` renders them and also builds each scene from scratch. After a deliberate change to a style, update them with the ignored `bless_fixtures` test, run on its own: `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures -- --ignored --exact bless_fixtures`.
+- **Golden hashes** (`core/cli/tests/golden/`): 343 renders of the program (every style at several sizes, seeds, phases and palettes, APNG and GIF animations), with each file's hash in `SHA256SUMS` and each decoded frame's in `PIXELS`. Build a portable binary and check it:
+
+  ```bash
+  cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable
+  DIR=$(mktemp -d)/golden   # golden.sh creates it; it must be empty or missing
+  sh core/cli/tests/golden.sh check core/target/release/simulacra --keep "$DIR"
+  SIMULACRA_GOLDEN_OUT="$DIR" cargo test --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable --test golden_pixels -- --ignored
+  ```
+
+  `golden.sh bless` rewrites `SHA256SUMS`, and `SIMULACRA_BLESS=1` on the pixel test rewrites `PIXELS` (it refuses an incomplete directory). A change that alters file bytes but not images, such as a compression library update, re-blesses `SHA256SUMS` only, after the pixel test passes against the unchanged `PIXELS`; a deliberate visual change re-blesses both. `sh core/cli/tests/golden_selftest.sh` tests the checker itself.
+
+`core/coverage.sh` collects line coverage the way CI does (it needs [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) and `rustup component add llvm-tools-preview`) and writes `lcov.info`; `core/check_lcov.sh` fails if the program's or the shaders' coverage went missing.
+
+These checks catch structural and selected visual regressions; they do not establish that every style looks good for every seed, palette, and size. Inspect rendered images when changing drawing algorithms. If FFmpeg is installed, it can check a generated animation with an independent decoder:
 
 ```bash
-python3 -m unittest -v test_simulacra.RenderingTests.test_large_flowfield_trails_are_connected
+ffprobe -v error -count_frames -show_entries stream=codec_name,width,height,nb_read_frames -of json rings.png
+ffmpeg -v error -i rings.png -f null -
 ```
 
-The Python suite currently contains 89 tests covering:
+## Adding a style
 
-- Valid dimensions and RGB channels across all registered styles.
-- Every style using a wide part of its palette, unaliased wave styles, and shapes that scale with the canvas.
-- The noise range and seam-free angular noise.
-- Writers that store palette colors unchanged, use normal file permissions without changing the process umask, and preserve existing files on failure.
-- A command-line smoke test.
-- Packed RGB rendering and writing, and byte-identical output from the Rust core at several sizes, seeds, palettes and phases (with a `portable` core, `attractor` and `cymatics` are held to measured bounds instead).
-- Spatial detail in formerly flat renderers and known Mandelbrot interior/exterior points.
-- Repeatability without changing global random state.
-- Lissajous curve coverage and a single-pixel galaxy edge case.
-- Invalid dimensions, style names, palette names, and frame rates.
-- Flow-field continuity at larger resolutions and comet continuity on wide canvases.
-- Visible quasar-jet contributions.
-- APNG chunk order, sequence numbers, timing, CRCs, and decompressed pixel data.
-- GIF output: LZW round-trips across table resets, the shared colour table, frame delays, looping and the size limit, all checked with a reference decoder.
-- Animation: every style moves with `phase`, loops after one turn, matches its still image at phase 0 and renders identically in Rust and Python at any phase.
-- The `mosaic` style: flat tiles, even grout at fractional tile sizes, and native-equals-Python.
-- The `attractor` parameter table: entries stay lively and stable at sampled phases, and a seed's choice uses no floating-point math.
-- The Rust engine's palette table matching `PALETTES`, and, when `SIMULACRA_CLI` names a built binary, the standalone binary's pixels, messages, list options and errors matching `simulacra.py`.
-- Preservation of existing animation output and temporary-file cleanup on failures.
+No styles are being added for now; this is the outline for when that changes. A style lives in the engine (`core/engine/src/styles/`):
 
-The Rust tests (`cargo test`) add the CPython `hypot` and random-generator ports checked against CPython's own results, the committed `portable` fixtures (one scene per style with the hash of its image, also rendered from the Rust scene builders), the PNG writer and the safe file replacement.
+1. Write a scene struct with a `Style` implementation: `render` shades the pixels (call `exp`, `sin`, `cos` and the other libm functions through the `Libm` trait in `core/engine/src/math.rs`, as `x.m_sin()`; Clippy rejects the `f64` methods), and `validate` range-checks every number, checks indices and lengths, and estimates the work (see `core/engine/src/validate.rs`).
+2. Implement `BuildScene::build` for it, drawing all random choices through `PyRandom` from the seed, and moving the scene with the phase without new draws so phase 0 is the still image and phase 1 repeats it.
+3. Add one line to `for_each_style!` in `core/engine/src/lib.rs` and one to `scene_builders!` in `core/engine/src/scenes.rs`.
+4. Bless its portable fixture (`bless_fixtures`, above) and its golden hashes; its `{style}` workloads fail until then.
+5. Describe it in the style table above and in `GLOSSARY.md` if it brings a new term, and inspect square, wide and tall renders.
 
-These checks catch structural and selected visual regressions; they do not establish that every style looks good for every seed, palette, and size. Inspect rendered images when changing drawing algorithms.
-
-If FFmpeg is installed separately, you can also check a generated animation with an independent decoder:
-
-```bash
-ffprobe -v error -count_frames -show_entries stream=codec_name,width,height,nb_read_frames -of json comets.png
-ffmpeg -v error -i comets.png -f null -
-```
-
-FFmpeg is optional and is not required by the script or its unit tests.
-
-## Extending the script
-
-To add a style:
-
-1. Implement `render_your_style(width, height, seed, palette_name, phase=0.0)` in `simulacra.py`. A style that does not move can ignore `phase`, but then it is a slideshow under `--frames` until it is added to `ANIMATED_STYLES`.
-2. Return exactly `height` rows containing exactly `width` RGB tuples each. Keep channel values between 0 and 255.
-3. Use `PALETTES[palette_name]` and `palette_color()` for palette mapping. If randomness is needed, create a local `random.Random(seed)`.
-4. Register it in the `STYLES` dictionary. `render()`, the CLI's `--style` choices, and the tests all read from it.
-5. Add a description to this README and the module's style list.
-6. Run the tests, add a regression check for the new style's intended behavior, and inspect square, wide, and tall renders.
-7. Optionally port the per-pixel work to Rust: move the random layout into a `_your_style_scene()` that returns plain data, add a `Style` implementation under `core/engine/src/styles/` that reads it (with the `cfg_attr` line that derives `FromPyObject` under the `python` feature) and validates it (`validate` range-checks every number with `check_numbers!`, checks indices and lengths, and estimates the work; see `core/engine/src/validate.rs`), add one line for it to the registry, `for_each_style!` in `core/engine/src/lib.rs`, which generates both `STYLES` and the adapter's dispatch, and register the scene builder in `NATIVE_STYLES`. Port expressions operation for operation and call `exp`, `sin`, `cos` and the other libm functions through the `Libm` trait in `core/engine/src/math.rs` (`x.m_sin()`); Clippy rejects the `f64` methods (`core/clippy.toml`). `test_native_styles_match_python_exactly` then checks it against the Python renderer. A native style also needs a `portable` fixture: rerun `core/engine/tests/make_fixtures.py` with a `portable` core (see its docstring), or `every_style_has_exactly_one_fixture` fails. For the standalone binary, port the scene builder too, as a `build` function on the scene struct listed in `build_scene` (`core/engine/src/scenes.rs`), drawing through `PyRandom` with only the random methods it supports (see `AGENTS.md`).
-8. To make it move, add `_loop(phase, k)` or `_circle_offset()` terms in the scene builder (see `AGENTS.md`), give it an entry in `ANIMATED_STYLES`, and wrap the builder with `_animated_scene()` in `NATIVE_STYLES`. Phase 0 must give the same image as before.
-
-Pay particular attention to coordinate units: normalize positions when a shape should scale with the canvas, distinguish angles from pixel distances, and sample continuous paths densely enough to connect adjacent pixels. Test the saved image as well as the in-memory buffer.
+Express sizes, radii, frequencies and noise scales relative to the canvas, keep wave frequencies well below one cycle per two pixels, and make the style use more than half of its palette at 64 × 64 (`invariants.rs` checks all three kinds of property). See `AGENTS.md` for the conventions.
 
 ## Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
-| `python3` is not found | Check the Python executable installed on your system; it may be named `python`. |
-| `invalid choice` | Style and palette names are lowercase and case-sensitive; use `--help` to list valid values. |
-| Width, height, or frame-count validation error | Supply positive integers. |
-| Output path raises `FileNotFoundError` | Create the parent directory before rendering. The script does not create it. |
-| Output path raises `PermissionError` | Choose a writable location. All writers also need permission to create a temporary file and replace the destination. |
-| A render takes a long time without printing anything | Rendering has no progress display. Reduce dimensions or frame count for a preview. |
+| `simulacra` is not found | Check that `~/.cargo/bin` is on `PATH`, or run the binary by its full path. |
+| `invalid value` for `--style` or `--palette` | Names are lowercase and case-sensitive; use `--list-styles` and `--list-palettes`. |
+| Width, height, or frame-count error | Supply positive integers within the limits, or pass `--no-limits`. |
+| `cannot write …: No such file or directory` | Create the parent directory before rendering; the program does not create it. |
+| `cannot write …: Permission denied` | Choose a writable location. Writing also needs permission to create a temporary file and replace the destination. |
+| A render takes a long time without printing anything | There is no progress display. Reduce dimensions or frame count for a preview. |
 | An animation appears static | Check APNG support in the viewer, confirm `--frames` is greater than 1, and check `--slideshow` was not set. |
-| Frames jump between unrelated scenes | You passed `--slideshow`, or the style has no motion (the CLI prints a note). Drop `--slideshow` to animate one scene; see [Animation](#animation). |
+| Frames jump between unrelated scenes | You passed `--slideshow`; drop it to animate one scene. |
 | Output is not the format suggested by its filename | Only a `.gif` name changes the format. Any other name gets PNG data, and `--frames` controls whether it includes animation. |
 
 ## Project files
 
 | File | Purpose |
 | --- | --- |
-| [`simulacra.py`](simulacra.py) | Palettes, noise and geometry helpers, all renderers, PNG/APNG/GIF writers, and CLI. |
-| [`test_simulacra.py`](test_simulacra.py) | Regression tests (standard library only). |
-| [`bench_simulacra.py`](bench_simulacra.py) | Per-style render benchmark with save/compare; `--stages` splits scene, shader and PNG time, and `--cli` times whole CLI runs with peak memory. |
-| [`core/`](core) | Cargo workspace: `engine` (the renderer, no Python; rayon), `py` (the optional extension module `simulacra_core`, PyO3) and `cli` (the standalone `simulacra` binary). `clippy.toml` keeps libm calls in `engine/src/math.rs`. |
+| [`core/`](core) | Cargo workspace: `engine` (the renderer: scenes, shaders, palettes, noise; rayon) and `cli` (the `simulacra` program, with its PNG, APNG and GIF writers). `clippy.toml` keeps libm calls in `engine/src/math.rs`. |
+| [`core/cli/tests/golden/`](core/cli/tests/golden) | The golden workloads and their file and pixel hashes; `golden.sh` checks and blesses them. |
+| [`core/engine/tests/fixtures/`](core/engine/tests/fixtures) | One portable scene per style with the hash of its image. |
+| [`core/engine/examples/bench.rs`](core/engine/examples/bench.rs) | Per-style benchmark of scene building and shading. |
+| `core/coverage.sh`, `core/check_lcov.sh` | Line coverage as CI collects it, and its safeguards. |
 | [`GLOSSARY.md`](GLOSSARY.md) | The project's visual vocabulary: style, palette, seed, scene, frame, phase, animation. |
-| [`.github/workflows/`](.github/workflows) | CI: tests on Python 3.12 and 3.14 with and without the Rust core (default and portable math), `cargo test` and Clippy; SonarQube Cloud analysis with Python and Rust test coverage; OSV-Scanner. |
-| `sonar-project.properties`, `.coveragerc` | SonarQube Cloud project settings and the coverage configuration the CI uses. |
-| [`.gitignore`](.gitignore) | Excludes Python bytecode, the virtual environment, Rust build output and coverage reports. Generated artwork is not currently ignored. |
-| [`README.md`](README.md) | Usage, API, implementation notes, and development guidance. |
-| [`PLAN.md`](PLAN.md) | The plan for a standalone Rust application: phases, measured drift, compatibility policy and performance baseline. |
+| [`.github/workflows/`](.github/workflows) | CI: `cargo test` and Clippy on both math backends and the golden check; release builds for Linux and Windows checked against the golden hashes; SonarQube Cloud analysis with Rust coverage; OSV-Scanner. |
+| `sonar-project.properties` | SonarQube Cloud project settings. |
+| [`PLAN.md`](PLAN.md) | The plan for the Rust application: phases, measured drift, compatibility policy and performance baselines, including the Python era. |
 | [`AGENTS.md`](AGENTS.md) | Conventions, triage notes, and known issues for coding agents and contributors. |
 | [`CLAUDE.md`](CLAUDE.md) | Points Claude Code at `AGENTS.md`. |
 | [`LICENSE`](LICENSE) | MIT license. |

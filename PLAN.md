@@ -25,8 +25,10 @@ Phase 5 is done: the binary writes APNG and GIF animations under a limit on
 total pixels, rendering and encoding several frames at once within a memory
 budget and writing them in order; reusing buffers is left as an option.
 Phase 6 is under way: Rust coverage, the CLI parity audit and `cargo install`
-from GitHub are done, and the Python cutover has begun (golden hashes and Rust
-tests in place; see Phase 6).
+from GitHub are done, and Python is retired (golden hashes and Rust tests took
+over, then the Python reference and extension were removed; see Phase 6).
+Simulacra is now a Rust-only project; the Python-era sections below are kept
+as history.
 
 Prepared on 2026-11-04 from the GitHub source review of
 [`main` at `6e6e58b7c6a18f25406c89bacc39dad0bde1d2af`](https://github.com/juusolatva/simulacra/tree/6e6e58b7c6a18f25406c89bacc39dad0bde1d2af).
@@ -531,7 +533,9 @@ Timing: migrate styles as their behavior settles.
 | Sampled and prepared scenes | Port torus/Lissajous sampling, woodblock surfaces, and mosaic tile patterns. |
 | Complex preparation | Port attractor parameter selection (a table lookup with `choice()` and `getrandbits(1)`), bounds, and phase updates. |
 
-Freeze policy (decided 2026-11-10): style experimentation has stopped and the
+Freeze policy (decided 2026-11-10; ended 2026-11-11 when Python was retired
+in Phase 6: styles now live in Rust only, and a deliberate change re-blesses
+the portable fixtures and the golden hashes): style experimentation has stopped and the
 rewrite to Rust has priority, so a ported style's Python renderer and builder
 are frozen from the PR that ports its builder. They stay in `simulacra.py` as
 the reference the tests compare against (native against Python, Rust scenes
@@ -938,7 +942,7 @@ writes the same files as before.
   has none on the first statement of the binary's `main()` or in the
   shaders (tried by hand with the binary's tests skipped and with
   an uninstrumented extension).
-- [ ] Remove Python as an application runtime dependency only after full parity.
+- [x] Remove Python as an application runtime dependency only after full parity.
   Under way, in three pull requests (design in
   `docs/superpowers/specs/2026-11-11-python-cutover-design.md`). PR 1 (done):
   golden hashes for the binary in `core/cli/tests/golden/` (343 workloads;
@@ -947,12 +951,24 @@ writes the same files as before.
   (blessing took 4.9 s on 12 threads), checked by `golden.sh` in a new
   `golden` job and in the release verify job on every target (which no
   longer needs Python; the compare job went), plus Rust CLI behavior tests
-  and engine invariants. Next: PR 2 removes Python, PR 3 measures the math
-  backends.
-- [ ] Retain the Python reference temporarily for regression testing.
-- [ ] Decide where new styles are authored after cutover: designed in Python
-  through the binding and then ported, or written directly in Rust. Keep the
-  Python binding if the first.
+  and engine invariants. PR 2 (done): `simulacra.py`, its tests, the
+  benchmark, the Python helper scripts, the PyO3 extension (`core/py`) and
+  the engine's `python` feature were removed. Their replacements: fixture
+  regeneration is the ignored `bless_fixtures` test (it rewrites only a
+  fixture that is missing, no longer loads, or renders another hash), the
+  per-stage benchmark is `core/engine/examples/bench.rs` (whole runs are
+  timed with `hyperfine` or a shell loop), and coverage is Rust-only, with
+  `core/check_lcov.sh` failing CI if the binary's `main()` or the shaders
+  have no hits. CI installs no Python. Next: PR 3 measures the math backends
+  and decides whether the platform-libm backend stays.
+- [x] Retain the Python reference temporarily for regression testing.
+  Retired in PR 2 of the cutover, after PR 1 recorded the golden hashes and
+  fixtures while the Python comparison still passed; the reference is in
+  git history.
+- [x] Decide where new styles are authored after cutover: designed in Python
+  through the binding and then ported, or written directly in Rust. Decided
+  (2026-11-11): directly in Rust; the binding was removed. No styles are
+  being added for now (README, "Adding a style").
 
 Acceptance: all supported functionality works from a downloadable executable
 on a machine without Python, with documented compatibility and performance.
@@ -1156,4 +1172,6 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
 10. Next: Phase 6, completing distribution. Done: Rust coverage, the CLI
    parity audit, and installing with `cargo install` from GitHub. Left:
    GitHub Releases, signing and clean-machine checks (Phase 3), which come
-   with the first release, and the cutover decisions.
+   with the first release, and PR 3 of the Python cutover (the math
+   backends). Python is retired: golden hashes and Rust tests took over, and
+   the reference and extension were removed.

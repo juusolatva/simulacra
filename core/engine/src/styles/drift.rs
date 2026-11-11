@@ -6,7 +6,6 @@ use crate::raster::shade;
 use crate::scenes::{BuildScene, SceneParams};
 use crate::validate::{Canvas, SceneError, check_loop_phase};
 
-#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Drift {
     phase: f64,

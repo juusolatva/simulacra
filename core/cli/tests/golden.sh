@@ -83,7 +83,11 @@ keep=
 while [ $# -gt 0 ]; do
     case $1 in
         --container) [ $# -ge 2 ] || usage "--container needs IMAGE"; container=$2; shift 2 ;;
-        --keep) [ "$command" = check ] && [ $# -ge 2 ] || usage "--keep DIR is for check"; keep=$2; shift 2 ;;
+        --keep)
+            [ "$command" = check ] && [ $# -ge 2 ] || usage "--keep DIR is for check"
+            [ -n "$2" ] || usage "--keep needs a directory"
+            keep=$2
+            shift 2 ;;
         *) usage "unknown argument '$1'" ;;
     esac
 done

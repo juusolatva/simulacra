@@ -1,9 +1,0 @@
-[run]
-branch = True
-relative_files = True
-source = .
-omit =
-    test_simulacra.py
-    bench_simulacra.py
-    .venv/*
-    core/*

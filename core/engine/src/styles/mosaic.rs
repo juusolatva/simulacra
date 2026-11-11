@@ -13,7 +13,6 @@ use crate::scenes::{BuildScene, SceneParams};
 use crate::seed32;
 use crate::validate::{Canvas, SceneError, check_numbers};
 
-#[cfg_attr(feature = "python", derive(pyo3::FromPyObject), pyo3(from_item_all))]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Mosaic {
     cols: usize,

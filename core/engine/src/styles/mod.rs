@@ -1,7 +1,6 @@
-//! Per-style pixel shaders. Each mirrors the matching `render_*` function in
-//! `simulacra.py` expression for expression. Python generates the scene (all
-//! random draws) as a dict; with the `python` feature the `py` adapter extracts
-//! it into these structs.
+//! Per-style scene structs, their builders and pixel shaders. Each shader
+//! mirrors the matching `render_*` function of the retired Python reference
+//! expression for expression (see the crate docs).
 
 pub mod brush;
 pub mod drift;

@@ -4,9 +4,9 @@
 # (its missing hashes fail the check until blessed). Names: letters, digits,
 # '.', '_' and '-'. After editing, bless both manifests (see AGENTS.md).
 
-# Every style, as check_release.py's WORKLOADS: sizes that are not multiples of
-# one another, a tall canvas, negative and 64-bit seeds, phases outside [0, 1),
-# a custom palette, a 4-frame APNG and a 3-frame GIF.
+# Every style, as the retired check_release.py's WORKLOADS: sizes that are not
+# multiples of one another, a tall canvas, negative and 64-bit seeds, phases
+# outside [0, 1), a custom palette, a 4-frame APNG and a 3-frame GIF.
 {style}-640x480-s1.png    --style {style} --width 640 --height 480 --seed 1 --phase 0.0 --palette deep
 {style}-640x480-s17.png   --style {style} --width 640 --height 480 --seed 17 --phase 0.37 --palette lagoon
 {style}-301x517-sm7.png   --style {style} --width 301 --height 517 --seed -7 --phase 1.25 --palette ember

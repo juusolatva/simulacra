@@ -136,6 +136,9 @@ SIMULACRA_GOLDEN_DIR=$work/golden sh "$golden_sh" bless "$stub" > /dev/null
 mkdir "$work/keep" && : > "$work/keep/old.png"
 expect 2 "not empty" sh "$golden_sh" check "$stub" --keep "$work/keep"
 
+case_name="empty keep"
+expect 2 "--keep needs a directory" sh "$golden_sh" check "$stub" --keep ""
+
 case_name="keep contents"
 rm -rf "$work/keep"
 expect 0 "3 workloads match" sh "$golden_sh" check "$stub" --keep "$work/keep"
