@@ -9,8 +9,6 @@ Generate images and seamless animations from mathematical patterns, noise fields
 
 The project started as a Python script produced by an LLM running in a sandbox loop. It was corrected, tested and then ported to Rust pixel for pixel; the Python reference was retired once the Rust program matched it (see [`PLAN.md`](PLAN.md)).
 
-See the [glossary](GLOSSARY.md) for the project's visual concepts and terminology.
-
 ## Contents
 
 - [Installing](#installing)
@@ -320,7 +318,7 @@ No styles are being added for now; this is the outline for when that changes. A 
 2. Implement `BuildScene::build` for it, drawing all random choices through `PyRandom` from the seed, and moving the scene with the phase without new draws so phase 0 is the still image and phase 1 repeats it.
 3. Add one line to `for_each_style!` in `core/engine/src/lib.rs` and one to `scene_builders!` in `core/engine/src/scenes.rs`.
 4. Bless its portable fixture (`bless_fixtures`, above) and its golden hashes; its `{style}` workloads fail until then.
-5. Describe it in the style table above and in `GLOSSARY.md` if it brings a new term, and inspect square, wide and tall renders.
+5. Describe it in the style table above and inspect square, wide and tall renders.
 
 Express sizes, radii, frequencies and noise scales relative to the canvas, keep wave frequencies well below one cycle per two pixels, and make the style use more than half of its palette at 64 × 64 (`invariants.rs` checks all three kinds of property). See `AGENTS.md` for the conventions.
 
@@ -347,7 +345,6 @@ Express sizes, radii, frequencies and noise scales relative to the canvas, keep 
 | [`core/engine/tests/fixtures/`](core/engine/tests/fixtures) | One portable scene per style with the hash of its image. |
 | [`core/engine/examples/bench.rs`](core/engine/examples/bench.rs) | Per-style benchmark of scene building and shading. |
 | `core/coverage.sh`, `core/check_lcov.sh` | Line coverage as CI collects it, and its safeguards. |
-| [`GLOSSARY.md`](GLOSSARY.md) | The project's visual vocabulary: style, palette, seed, scene, frame, phase, animation. |
 | [`.github/workflows/`](.github/workflows) | CI: `cargo test` and Clippy on both math backends and the golden check; release builds for Linux and Windows checked against the golden hashes; SonarQube Cloud analysis with Rust coverage; OSV-Scanner. |
 | `sonar-project.properties` | SonarQube Cloud project settings. |
 | [`PLAN.md`](PLAN.md) | The plan for the Rust application: phases, measured drift, compatibility policy and performance baselines, including the Python era. |
