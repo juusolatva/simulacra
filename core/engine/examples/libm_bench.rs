@@ -67,7 +67,13 @@ fn main() -> ExitCode {
     for (name, low, high, platform, crate_fn) in FUNCTIONS {
         let a = nanoseconds_per_call(platform, low, high, calls);
         let b = nanoseconds_per_call(crate_fn, low, high, calls);
-        println!("{name}\t{a:.2}\t{b:.2}\t{:.2}", b / a);
+        // A coarse timer with a tiny --calls can measure zero.
+        let ratio = if a > 0.0 {
+            format!("{:.2}", b / a)
+        } else {
+            "n/a".to_owned()
+        };
+        println!("{name}\t{a:.2}\t{b:.2}\t{ratio}");
     }
     ExitCode::SUCCESS
 }

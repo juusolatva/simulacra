@@ -158,7 +158,9 @@ done
 echo "done: $(state)" | tee -a "$out/log.txt" >&2
 
 # Summary: stills as the best scene + shade time over all rounds; animations
-# as the best and the median run.
+# as the best and the median run. A ratio with a zero time (possible at tiny
+# sizes or with a coarse timer) prints as n/a and stays out of the geometric
+# mean.
 {
     for f in "$out"/stills-*-*.tsv; do
         backend=$(basename "$f" | cut -d- -f2)
@@ -166,9 +168,10 @@ echo "done: $(state)" | tee -a "$out/log.txt" >&2
             print "still", $1, b, $2 + $3 }' "$f"
     done
     awk -F'\t' 'NR > 1 { print "anim", $2, $3, $4 }' "$out/anim.tsv"
-} | LC_ALL=C sort -k1,1 -k2,2 -k3,3 -k4,4g | awk '
+} | LC_ALL=C sort -k1,1 -k2,2 -k3,3 -k4,4n | awk '
     function median(key,   n) { n = count[key]
         return n % 2 ? v[key, (n + 1) / 2] : (v[key, n / 2] + v[key, n / 2 + 1]) / 2 }
+    function ratio(p, s) { return p > 0 && s > 0 ? sprintf("%.3f", p / s) : "n/a" }
     { key = $1 SUBSEP $2 SUBSEP $3; v[key, ++count[key]] = $4; styles[$2] = 1 }
     END {
         print "style\tstill_system_ms\tstill_portable_ms\tstill_ratio\tanim_system_ms\tanim_portable_ms\tanim_ratio\tanim_system_median_ms\tanim_portable_median_ms"
@@ -177,15 +180,17 @@ echo "done: $(state)" | tee -a "$out/log.txt" >&2
         for (s in styles) {
             ss = v["still", s, "system", 1]; sp = v["still", s, "portable", 1]
             as = v["anim", s, "system", 1]; ap = v["anim", s, "portable", 1]
-            printf "%s\t%.1f\t%.1f\t%.3f\t%.0f\t%.0f\t%.3f\t%.0f\t%.0f\n", s, ss, sp, sp / ss,
-                as, ap, ap / as, median("anim" SUBSEP s SUBSEP "system"),
+            printf "%s\t%.1f\t%.1f\t%s\t%.0f\t%.0f\t%s\t%.0f\t%.0f\n", s, ss, sp, ratio(sp, ss),
+                as, ap, ratio(ap, as), median("anim" SUBSEP s SUBSEP "system"),
                 median("anim" SUBSEP s SUBSEP "portable") | sorted
             tss += ss; tsp += sp; tas += as; tap += ap
-            lss += log(sp / ss); las += log(ap / as); n++
+            if (sp > 0 && ss > 0) { lss += log(sp / ss); nss++ }
+            if (ap > 0 && as > 0) { las += log(ap / as); nas++ }
         }
         close(sorted)
-        printf "total\t%.1f\t%.1f\t%.3f\t%.0f\t%.0f\t%.3f\n", tss, tsp, tsp / tss, tas, tap, tap / tas
-        printf "geomean\t\t\t%.3f\t\t\t%.3f\n", exp(lss / n), exp(las / n)
+        printf "total\t%.1f\t%.1f\t%s\t%.0f\t%.0f\t%s\n", tss, tsp, ratio(tsp, tss), tas, tap, ratio(tap, tas)
+        printf "geomean\t\t\t%s\t\t\t%s\n", nss ? sprintf("%.3f", exp(lss / nss)) : "n/a",
+            nas ? sprintf("%.3f", exp(las / nas)) : "n/a"
     }' > "$out/summary.tsv"
 cat "$out/libm.tsv"
 echo

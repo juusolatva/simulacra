@@ -227,7 +227,7 @@ reference to match; it remains only for speed.
    machine and CI) and Windows (CI), with repeats. As carried out:
    `core/bench_backends.sh` on the owner's machines (a laptop, a slower
    desktop and a Windows 11 desktop) instead of CI runners, which are shared
-   and noisy; results in PLAN.md, "Math backends: measurement (preliminary)".
+   and noisy; results in `PLAN.md`, "Math backends: measurement (preliminary)".
 2. Present the numbers with a recommendation; the owner decides between:
    - **portable only:** remove the platform backend (the `Libm` trait keeps one
      implementation, `clippy.toml`'s rules and the CI backend matrix
