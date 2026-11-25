@@ -959,8 +959,9 @@ writes the same files as before.
   per-stage benchmark is `core/engine/examples/bench.rs` (whole runs are
   timed with `hyperfine` or a shell loop), and coverage is Rust-only, with
   `core/check_lcov.sh` failing CI if the binary's `main()` or the shaders
-  have no hits. CI installs no Python. Next: PR 3 measures the math backends
-  and decides whether the platform-libm backend stays.
+  have no hits. CI installs no Python. PR 3 (in progress) measures the math
+  backends and decides whether the platform-libm backend stays; preliminary
+  numbers from one laptop are in "Math backends: measurement (preliminary)".
 - [x] Retain the Python reference temporarily for regression testing.
   Retired in PR 2 of the cutover, after PR 1 recorded the golden hashes and
   fixtures while the Python comparison still passed; the reference is in
@@ -1119,6 +1120,67 @@ window narrower than 1/768 of the loop, so roughly one 60-frame animation in
 The tests check a sample of the table at 6 phases, and with `SIMULACRA_SLOW`
 every entry at the 48 phases, both orientations, with the test limits.
 
+### Math backends: measurement (preliminary)
+
+Cutover PR 3 decides whether the platform-libm backend stays, now that no
+Python reference needs it (design in
+`docs/superpowers/specs/2026-11-11-python-cutover-design.md`). Measured with
+`core/bench_backends.sh`, which builds both backends and times each libm
+function (`examples/libm_bench.rs`), every style as a 1920 × 1080 still
+(`examples/bench.rs`: scene and shading, best of 3 per round) and every style
+as a whole binary run writing a 12-frame 1920 × 1080 APNG, over 3 rounds. The
+backends alternate between rounds, and between styles in the animations, so
+drift hits both alike; the figures are the best over all rounds.
+
+Machines: the owner's own rather than CI runners, which are shared and noisy.
+Done: ThinkPad X280. To do: the homelab Core i7-4770 (the slowest machine,
+Linux), the Windows 11 desktop with a Ryzen 5 9600X (the MSVC runtime against
+the `libm` crate, which may compare differently from glibc; also Ubuntu under
+WSL2 there), and the X280 again, idle. A Raspberry Pi is possible but ARM is
+not a priority.
+
+**ThinkPad X280** (2026-11-25; Core i5-8350U, 4 cores, 8 threads, 16 GB;
+Fedora, kernel 7.3.3, glibc, rustc 1.99.1, `libm` 0.2.16; on AC, `powersave`
+governor with `balance_performance`): the package sat at 81 °C throughout, so
+the CPU was thermally limited, and a browser was running (load average 2.4
+before the run). Per style, the best and median animation runs differ by 10
+to 20%, so per-style ratios within about ±10% are noise.
+
+| All 48 styles | Platform libm | `portable` | `portable` / platform |
+| --- | --- | --- | --- |
+| Stills, sum | 9.76 s | 9.86 s | 1.01 (geometric mean of the per-style ratios 1.02) |
+| Animations, sum | 127.0 s | 132.1 s | 1.04 (geometric mean 1.03) |
+
+Styles beyond the noise (stills rerun for these with 5 repeats in 3 rounds;
+animation ratios from the main run, which includes encoding):
+
+| Style | Still ratio | Animation ratio |
+| --- | --- | --- |
+| `quasar` | 1.62 | 1.51 |
+| `ink` | 1.64 | 1.11 |
+| `opart` | 1.45 | 1.47 |
+| `starburst` | 1.37 | 1.22 |
+| `petals` | 1.36 | 1.19 |
+| `lunar` | 1.21 | 1.10 |
+| `marbling` | 1.19 | 1.20 |
+| `attractor` | 0.74 | 0.85 |
+| `asteroids` | 0.88 | 1.12 |
+| `constellations` | 0.88 | 0.90 |
+
+Per call (`libm_bench`, `libm` crate time / glibc time): `exp` 1.7 to 1.8,
+`sin` and `cos` 0.84 to 0.93, `tan` 1.2 to 1.3, `tanh` 1.2, `atan` 1.0,
+`atan2` 0.8, `pow` 3.1 to 3.4, `ln_1p` 1.1 (glibc: 8 to 23 ns per call).
+`pow` and `exp` explain the slower styles; `attractor`'s orbit is mostly
+`sin` and `cos`, which the `libm` crate does faster.
+
+Preliminary reading: over all styles the platform backend saves 1 to 4% on
+this machine, while it renders `attractor` and `cymatics` differently from
+the golden hashes and keeps a second backend in CI. The owner leans towards
+**portable only** (2026-11-25). If the slow styles matter, a faster portable
+`pow` or `exp` (or fewer calls in those shaders) is the better lever, but
+changing how a style computes changes its images. To be confirmed with the
+other machines.
+
 ## Performance investigations
 
 These are candidates for measurement, not established bottlenecks.
@@ -1173,5 +1235,5 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    parity audit, and installing with `cargo install` from GitHub. Left:
    GitHub Releases, signing and clean-machine checks (Phase 3), which come
    with the first release, and PR 3 of the Python cutover (the math
-   backends). Python is retired: golden hashes and Rust tests took over, and
+   backends; in progress, see "Math backends: measurement (preliminary)"). Python is retired: golden hashes and Rust tests took over, and
    the reference and extension were removed.

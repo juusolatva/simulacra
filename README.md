@@ -268,6 +268,8 @@ hyperfine --warmup 1 'simulacra --style ink --width 1920 --height 1080 --out ink
 time (for i in 1 2 3; do simulacra --style plasma --frames 12 --out plasma.png; done)
 ```
 
+To compare the platform libm with the `portable` math on your machine, run `sh core/bench_backends.sh OUTDIR` (about 15 minutes on a 4-core laptop; Git Bash on Windows). It builds both, times each libm function, every style as a 1080p still and as a 12-frame 1080p animation over three rounds, and writes the results and a `summary.tsv` with portable / platform ratios to `OUTDIR`.
+
 The program refuses, before rendering, a frame over 100 million pixels or with a side over 100,000 pixels, more than 2³² pixels across all frames (about 2,070 frames at 1920 × 1080, or 517 at 3840 × 2160) and more than 65,536 frames, since each frame has a fixed cost however small it is. Together these bound run time and file size; `--no-limits` skips them. Format limits apply even then: PNG sides up to 4,294,967,295, GIF sides up to 65,535, and at most 2,147,483,648 APNG frames.
 
 - Start with 128 × 128 or 256 × 256 previews before increasing resolution.
@@ -344,6 +346,7 @@ Express sizes, radii, frequencies and noise scales relative to the canvas, keep 
 | [`core/cli/tests/golden/`](core/cli/tests/golden) | The golden workloads and their file and pixel hashes; `golden.sh` checks and blesses them. |
 | [`core/engine/tests/fixtures/`](core/engine/tests/fixtures) | One portable scene per style with the hash of its image. |
 | [`core/engine/examples/bench.rs`](core/engine/examples/bench.rs) | Per-style benchmark of scene building and shading. |
+| [`core/bench_backends.sh`](core/bench_backends.sh) | Compares the two math backends: `libm_bench` (each libm function), stills and animations of every style. |
 | `core/coverage.sh`, `core/check_lcov.sh` | Line coverage as CI collects it, and its safeguards. |
 | [`.github/workflows/`](.github/workflows) | CI: `cargo test` and Clippy on both math backends and the golden check; release builds for Linux and Windows checked against the golden hashes; SonarQube Cloud analysis with Rust coverage; OSV-Scanner. |
 | `sonar-project.properties` | SonarQube Cloud project settings. |
