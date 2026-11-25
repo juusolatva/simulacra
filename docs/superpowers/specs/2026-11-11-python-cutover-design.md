@@ -224,7 +224,10 @@ reference to match; it remains only for speed.
 
 1. Measure `portable` against the platform libm with the new benchmark: every
    style as a still at 1920 × 1080 and as a 12-frame animation, on Linux (this
-   machine and CI) and Windows (CI), with repeats.
+   machine and CI) and Windows (CI), with repeats. As carried out:
+   `core/bench_backends.sh` on the owner's machines (a laptop, a slower
+   desktop and a Windows 11 desktop) instead of CI runners, which are shared
+   and noisy; results in `PLAN.md`, "Math backends: measurement (preliminary)".
 2. Present the numbers with a recommendation; the owner decides between:
    - **portable only:** remove the platform backend (the `Libm` trait keeps one
      implementation, `clippy.toml`'s rules and the CI backend matrix
