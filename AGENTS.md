@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing documentation
 
 ## Project overview
 
-Simulacra (formerly Abstract Art) is a generative art program that draws abstract patterns and stylized representations of real phenomena: 48 styles, 24 palettes, PNG, APNG and GIF output, and a command line. It is a Rust-only project: `core/` is a Cargo workspace with `engine` (package `simulacra_engine`: scenes, shaders, palettes, noise; usable as a library) and `cli` (package `simulacra_cli`, the `simulacra` binary with its PNG, APNG and GIF writers). It was ported pixel for pixel from a Python reference, `simulacra.py`, which was retired in the Python cutover (`PLAN.md` Phase 6; design in `docs/superpowers/specs/2026-11-11-python-cutover-design.md`). Committed golden hashes and portable fixtures recorded while the Python comparison still passed now pin every style's output. No styles are being added or changed for now. Third-party dependencies are allowed.
+simulacra (formerly Abstract Art) is a generative art program that draws abstract patterns and stylized representations of real phenomena: 48 styles, 24 palettes, PNG, APNG and GIF output, and a command line. It is a Rust-only project: `core/` is a Cargo workspace with `engine` (package `simulacra_engine`: scenes, shaders, palettes, noise; usable as a library) and `cli` (package `simulacra_cli`, the `simulacra` binary with its PNG, APNG and GIF writers). It was ported pixel for pixel from a Python reference, `simulacra.py`, which was retired in the Python cutover (`PLAN.md` Phase 6; design in `docs/superpowers/specs/2026-11-11-python-cutover-design.md`). Committed golden hashes and portable fixtures recorded while the Python comparison still passed now pin every style's output. No styles are being added or changed for now. Third-party dependencies are allowed.
 
 ## Progress
 
@@ -35,7 +35,7 @@ Simulacra (formerly Abstract Art) is a generative art program that draws abstrac
 | Rust rewrite (`PLAN.md`), Phase 1: test workflow for every PR, native-versus-Python test at nonzero phases and larger sizes | Done | PR #20 |
 | Rust rewrite, Phase 1: `portable` math feature and measured drift (46 styles identical, `cymatics` ±1 in 2 bytes, `attractor` differs and 9% of seeds picked other parameters) | Done. Policy: release builds use `portable` and accept this drift | PR #21 |
 | Rust rewrite, Phase 1: stage and CLI benchmarks (`--stages`, `--cli`) and the recorded baseline | Done | PR #22 |
-| Rename the project from Abstract Art to Simulacra (it now draws representations of real phenomena too): `simulacra.py`, `test_simulacra.py`, `bench_simulacra.py`, Rust module `simulacra_core`, `SIMULACRA_SLOW` | Done. The GitHub repository was renamed to `simulacra` later; the SonarQube project key (`juusolatva_abstract-art`) keeps the old name for now | PR #23 |
+| Rename the project from Abstract Art to simulacra (it now draws representations of real phenomena too): `simulacra.py`, `test_simulacra.py`, `bench_simulacra.py`, Rust module `simulacra_core`, `SIMULACRA_SLOW` | Done. The GitHub repository was renamed to `simulacra` later; the SonarQube project key (`juusolatva_abstract-art`) keeps the old name for now | PR #23 |
 | `attractor` picks from a table of 256 parameter sets (512 with mirroring) instead of searching, so no libm changes a seed's figure; cold scene about 150× faster. Clippy rejects direct `f64` libm calls outside `core/engine/src/math.rs` | Done | PR #25 |
 | Rust rewrite, Phase 2: port CPython's `hypot` (`math::py_hypot`); Clippy rejects `f64::hypot` | Done | PR #27 |
 | Rust rewrite, Phase 2: Cargo workspace with `simulacra_engine` (no PyO3 without its `python` feature) and the `simulacra_core` adapter; one style registry (`for_each_style!`); CI tests the engine alone | Done | PR #29 |
@@ -62,7 +62,8 @@ Simulacra (formerly Abstract Art) is a generative art program that draws abstrac
 | Rust rewrite, Phase 6: portable math only: the platform-libm backend and the `portable` feature removed (every build uses the `libm` crate and renders the golden hashes), CI's second backend dropped, the install command without `--features portable`; the measuring tools removed | Done | PR #54 |
 | Cleanup after the cutover: comments and test names describe behavior instead of the retired Python reference (CPython stays named where `PyRandom`, `py_mod`, `py_sum` and `py_hypot` reproduce it), "without Python" dropped from the help text and crate descriptions, the clean-image check no longer looks for Python, Python entries out of `.gitignore`, the finished cutover plans in `docs/superpowers/plans/` removed | Done | PR #55 |
 | Release workflow: a `vX.Y.Z` tag on main (checked against the crate version) drafts a GitHub release from the verified packages of every target, with `SHA256SUMS` and build provenance attestations; packages now include the README; steps in "Releasing" | Done | PR #56 |
-| Rust rewrite, Phase 3 and 6: the first release, Windows signing decision, clean-machine checks | Not started; the release workflow is ready. `PLAN.md` holds the checklists | — |
+| First release: v0.1.0, a pre-release titled `simulacra v0.1.0` (lowercase, like the binary); release titles and tag messages are lowercase from now on | Done | PR #57 |
+| Rust rewrite, Phase 3 and 6: Windows signing decision, clean-machine checks | Not started. `PLAN.md` holds the checklists | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
 Measured at 640×480: the original 36 styles took 178 s in pure Python at the start. The per-stage baseline from the Python era (scene, shader, PNG, CLI runs with peak memory) is "Stage baseline" in `PLAN.md`; measure now with `core/engine/examples/bench.rs` and compare against a fresh run on the same machine, not old numbers.
@@ -99,9 +100,9 @@ Do not commit generated images.
 Releases are drafted by `release-binaries.yml` from a `vX.Y.Z` tag; nothing is public until the owner publishes the draft. Pushing a tag and publishing are outward-facing: do either only when the owner asks.
 
 1. In a PR, set `version` under `[workspace.package]` in `core/Cargo.toml` (both crates inherit it, and `simulacra --version` prints it) and update `core/Cargo.lock` (`cargo update --workspace --manifest-path core/Cargo.toml`, which changes only the two workspace entries' versions). Merge it.
-2. Tag the merge commit on main and push the tag: `git tag -a vX.Y.Z -m "Simulacra vX.Y.Z" origin/main && git push origin vX.Y.Z`.
+2. Tag the merge commit on main and push the tag: `git tag -a vX.Y.Z -m "simulacra vX.Y.Z" origin/main && git push origin vX.Y.Z`.
 3. The workflow builds, tests and golden-checks every target, then drafts the release with the three packages, `SHA256SUMS` and generated notes. A failure creates no release; fix it, delete the tag (`git push --delete origin vX.Y.Z`, `git tag -d vX.Y.Z`) and tag again.
-4. Review the draft (notes, assets) and publish it. Anyone can check a download with `gh attestation verify FILE --repo juusolatva/simulacra`.
+4. Review the draft (notes, assets) and publish it. The release title and tag message are lowercase (`simulacra vX.Y.Z`), like the `simulacra` binary and package names. Anyone can check a download with `gh attestation verify FILE --repo juusolatva/simulacra`.
 
 ## Architecture
 
@@ -146,7 +147,7 @@ Project key: `juusolatva_abstract-art`.
 
 ## Known issues and follow-ups
 
-Next: `PLAN.md` Phase 6's GitHub Releases, signing and clean-machine checks with the first release. Open ideas, none started: reuse frame buffers in the binary (`PLAN.md` Phase 5); animate the per-ring turbulence in `quasar` and `mandala`, which needs the noise to take a phase.
+Next: after the v0.1.0 pre-release, `PLAN.md` Phase 3's Windows SmartScreen and signing decision and a clean-machine check of the downloaded binaries. Open ideas, none started: reuse frame buffers in the binary (`PLAN.md` Phase 5); animate the per-ring turbulence in `quasar` and `mandala`, which needs the noise to take a phase.
 
 ### Rendering quirks (not bugs, but worth knowing)
 

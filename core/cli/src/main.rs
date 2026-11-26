@@ -106,7 +106,7 @@ fn frames_in_flight(width: usize, height: usize, frames: usize, threads: usize) 
 #[command(
     name = "simulacra",
     version,
-    about = "Simulacra: procedurally generated images",
+    about = "simulacra: procedurally generated images",
     // A repeated option takes its last value, as in argparse.
     args_override_self = true,
     group(ArgGroup::new("seeds").args(["seed", "random_seed"])),

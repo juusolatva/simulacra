@@ -15,7 +15,7 @@ const MATRIX_A: u32 = 0x9908_b0df;
 const UPPER_MASK: u32 = 0x8000_0000;
 const LOWER_MASK: u32 = 0x7fff_ffff;
 
-/// A `random.Random(seed)` with the methods Simulacra's scene builders use.
+/// A `random.Random(seed)` with the methods the scene builders use.
 #[derive(Clone)]
 pub struct PyRandom {
     state: [u32; N],

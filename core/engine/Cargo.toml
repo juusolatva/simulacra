@@ -1,6 +1,6 @@
 [package]
 name = "simulacra_engine"
-description = "Simulacra's renderer: math, noise, palettes, scenes and shading"
+description = "simulacra's renderer: math, noise, palettes, scenes and shading"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
