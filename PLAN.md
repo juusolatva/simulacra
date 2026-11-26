@@ -932,8 +932,8 @@ writes the same files as before.
   decoder checks, and representative performance checks before release.
 - [x] Collect Rust coverage (for example with `cargo-llvm-cov`) and report it
   alongside Python coverage, since SonarQube's Python-only figure loses
-  meaning as logic moves to Rust. Done (design in
-  `docs/superpowers/specs/2026-11-11-rust-coverage-design.md`): the
+  meaning as logic moves to Rust. Done (its design document, like the
+  cutover's, was removed after the work; it is in git history): the
   SonarQube job runs `core/coverage.sh`, which sources `cargo llvm-cov
   show-env` (cargo-llvm-cov 0.9.1) and, in the dev profile, runs `cargo
   test` (the workspace, and the engine with `json,portable`), the Python
@@ -952,8 +952,7 @@ writes the same files as before.
   shaders (tried by hand with the binary's tests skipped and with
   an uninstrumented extension).
 - [x] Remove Python as an application runtime dependency only after full parity.
-  Under way, in three pull requests (design in
-  `docs/superpowers/specs/2026-11-11-python-cutover-design.md`). PR 1 (done):
+  Done, in three pull requests. PR 1:
   golden hashes for the binary in `core/cli/tests/golden/` (343 workloads;
   `SHA256SUMS` for files, `PIXELS` for 586 decoded frames) blessed from a
   portable build while the Python suite and `StandaloneCliTests` passed
@@ -1138,8 +1137,7 @@ every entry at the 48 phases, both orientations, with the test limits.
 ### Math backends: measurement
 
 Cutover PR 3 decided whether the platform-libm backend stays, now that no
-Python reference needs it (design in
-`docs/superpowers/specs/2026-11-11-python-cutover-design.md`). **Decided
+Python reference needs it. **Decided
 2026-11-26: portable only.** The platform backend saved 1 to 11% over all
 styles, too little for a second backend whose images differ from the golden
 hashes in `attractor` and `cymatics`, and the program stays far faster than
