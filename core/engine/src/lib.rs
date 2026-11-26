@@ -1,4 +1,4 @@
-//! Simulacra's renderer.
+//! The renderer behind the `simulacra` command.
 //!
 //! Each style is a scene struct (in [`styles`]) that implements [`Style`]: given
 //! a size, a seed and a [`Palette`], it shades the pixels in parallel and

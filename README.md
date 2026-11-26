@@ -1,4 +1,4 @@
-# Simulacra
+# simulacra
 
 [![Tests](https://github.com/juusolatva/simulacra/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/juusolatva/simulacra/actions/workflows/tests.yml)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=juusolatva_abstract-art&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=juusolatva_abstract-art)

@@ -1,6 +1,6 @@
 [package]
 name = "simulacra_cli"
-description = "The Simulacra command-line tool"
+description = "The simulacra command-line tool"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

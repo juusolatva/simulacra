@@ -29,7 +29,7 @@ from GitHub are done, and Python is retired (golden hashes and Rust tests took
 over, then the Python reference and extension were removed; see Phase 6),
 and every build uses the portable math (the platform-libm backend was
 measured and removed; see "Math backends: measurement").
-Simulacra is now a Rust-only project; the Python-era sections below are kept
+simulacra is now a Rust-only project; the Python-era sections below are kept
 as history.
 
 Prepared on 2026-11-04 from the GitHub source review of
