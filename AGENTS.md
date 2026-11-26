@@ -62,7 +62,8 @@ Simulacra (formerly Abstract Art) is a generative art program that draws abstrac
 | Rust rewrite, Phase 6: portable math only: the platform-libm backend and the `portable` feature removed (every build uses the `libm` crate and renders the golden hashes), CI's second backend dropped, the install command without `--features portable`; the measuring tools removed | Done | PR #54 |
 | Cleanup after the cutover: comments and test names describe behavior instead of the retired Python reference (CPython stays named where `PyRandom`, `py_mod`, `py_sum` and `py_hypot` reproduce it), "without Python" dropped from the help text and crate descriptions, the clean-image check no longer looks for Python, Python entries out of `.gitignore`, the finished cutover plans in `docs/superpowers/plans/` removed | Done | PR #55 |
 | Release workflow: a `vX.Y.Z` tag on main (checked against the crate version) drafts a GitHub release from the verified packages of every target, with `SHA256SUMS` and build provenance attestations; packages now include the README; steps in "Releasing" | Done | PR #56 |
-| Rust rewrite, Phase 3 and 6: the first release, Windows signing decision, clean-machine checks | Not started; the release workflow is ready. `PLAN.md` holds the checklists | — |
+| First release: v0.1.0, a pre-release titled `simulacra v0.1.0` (lowercase, like the binary); release titles and tag messages are lowercase from now on | Done | PR #57 |
+| Rust rewrite, Phase 3 and 6: Windows signing decision, clean-machine checks | Not started. `PLAN.md` holds the checklists | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
 Measured at 640×480: the original 36 styles took 178 s in pure Python at the start. The per-stage baseline from the Python era (scene, shader, PNG, CLI runs with peak memory) is "Stage baseline" in `PLAN.md`; measure now with `core/engine/examples/bench.rs` and compare against a fresh run on the same machine, not old numbers.
@@ -146,7 +147,7 @@ Project key: `juusolatva_abstract-art`.
 
 ## Known issues and follow-ups
 
-Next: `PLAN.md` Phase 6's GitHub Releases, signing and clean-machine checks with the first release. Open ideas, none started: reuse frame buffers in the binary (`PLAN.md` Phase 5); animate the per-ring turbulence in `quasar` and `mandala`, which needs the noise to take a phase.
+Next: after the v0.1.0 pre-release, `PLAN.md` Phase 3's Windows SmartScreen and signing decision and a clean-machine check of the downloaded binaries. Open ideas, none started: reuse frame buffers in the binary (`PLAN.md` Phase 5); animate the per-ring turbulence in `quasar` and `mandala`, which needs the noise to take a phase.
 
 ### Rendering quirks (not bugs, but worth knowing)
 
