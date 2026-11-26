@@ -33,10 +33,6 @@ pub use scenes::{BuildScene, SCENE_BUILDERS, SceneParams, build_scene};
 pub use styles::Style;
 pub use validate::{SceneError, scene_work, validate_scene, work_limit};
 
-/// True when built with the `portable` feature (the pure-Rust `libm` crate),
-/// whose output can differ from Python's; see `PORTABLE_DRIFT_STYLES` in Python.
-pub const PORTABLE: bool = cfg!(feature = "portable");
-
 /// Why [`render`] refused a canvas or scene.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RenderError {

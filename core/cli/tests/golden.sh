@@ -12,7 +12,7 @@
 # --container, BINARY runs inside IMAGE (which must not have Python), all
 # workloads in one `docker run`.
 #
-# The hashes hold only for builds with --features portable. Exit status: 0 if
+# Every build renders these hashes on every platform. Exit status: 0 if
 # everything matches, 1 on a mismatch or failure, 2 on a usage error.
 # SIMULACRA_GOLDEN_DIR overrides the directory holding workloads.txt and
 # SHA256SUMS (the self-test, golden_selftest.sh, uses it). POSIX sh and
@@ -224,10 +224,6 @@ while read -r name want got; do
 done <<JOINED
 $(LC_ALL=C join -j 2 "$scratch/expected" "$scratch/actual")
 JOINED
-if [ "$mismatches" -gt 0 ]; then
-    echo "only portable builds match these hashes: a mismatch in attractor or cymatics" \
-        "usually means the binary was built without --features portable" >&2
-fi
 if [ $((problems + mismatches)) -gt 0 ]; then
     fail "$problems inventory problem(s), $mismatches mismatch(es)"
 fi

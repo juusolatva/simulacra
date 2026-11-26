@@ -17,10 +17,9 @@ manifest=core/Cargo.toml
 source <(cargo llvm-cov show-env --sh --manifest-path "$manifest")
 cargo llvm-cov clean --workspace --manifest-path "$manifest"
 
-# The workspace on the default backend, and the engine's portable fixtures
-# (the libm-crate path in math.rs).
+# The workspace, and the engine's portable fixtures (feature json).
 cargo test --locked --manifest-path "$manifest"
-cargo test --locked --manifest-path "$manifest" -p simulacra_engine --features json,portable
+cargo test --locked --manifest-path "$manifest" -p simulacra_engine --features json
 
 cargo llvm-cov report --manifest-path "$manifest" --lcov --output-path lcov.info
 cargo llvm-cov report --manifest-path "$manifest" --summary-only

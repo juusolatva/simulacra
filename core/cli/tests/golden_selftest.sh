@@ -75,7 +75,7 @@ expect 0 "3 workloads match" sh "$golden_sh" check "$stub"
 case_name="changed output"
 sed 's/^[0-9a-f]\{8\}/00000000/' "$work/golden/SHA256SUMS" > "$work/sums" && mv "$work/sums" "$work/golden/SHA256SUMS"
 expect 1 "a.png: expected 00000000" sh "$golden_sh" check "$stub"
-expect 1 "only portable builds" sh "$golden_sh" check "$stub"
+expect 1 "0 inventory problem(s), 3 mismatch(es)" sh "$golden_sh" check "$stub"
 
 case_name="hash without a workload"
 fresh

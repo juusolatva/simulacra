@@ -1,8 +1,8 @@
 # Transcendental f64 methods call the platform libm, whose last bit differs
 # between platforms. Call them through the `Libm` trait in src/math.rs
-# (`x.m_exp()` and so on), which the `portable` feature switches to the
-# pure-Rust libm crate. `sqrt` and `floor` are exact everywhere. `hypot` must be
-# `math::py_hypot`, the port of CPython's own algorithm, on both backends.
+# (`x.m_exp()` and so on), which uses the pure-Rust libm crate, so every
+# platform renders the same image. `sqrt` and `floor` are exact everywhere.
+# `hypot` must be `math::py_hypot`, the port of CPython's own algorithm.
 disallowed-methods = [
     { path = "f64::hypot", reason = "use math::py_hypot (CPython's algorithm, not libm)" },
     { path = "f64::exp", reason = "use Libm::m_exp (src/math.rs)" },

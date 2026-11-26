@@ -3,7 +3,7 @@
 //! README, "Performance and limits").
 //!
 //! ```text
-//! cargo run --release --manifest-path core/Cargo.toml -p simulacra_engine [--features portable] \
+//! cargo run --release --manifest-path core/Cargo.toml -p simulacra_engine \
 //!     --example bench -- [--width N] [--height N] [--phase X] [--seed N] [--repeat N] \
 //!     [--palette NAME] [--styles a,b,...]
 //! ```
@@ -11,9 +11,7 @@
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use simulacra_engine::{
-    PORTABLE, Palette, SCENE_BUILDERS, build_scene, palette_stops, render, seed32,
-};
+use simulacra_engine::{Palette, SCENE_BUILDERS, build_scene, palette_stops, render, seed32};
 
 /// The binary's `MAX_SIDE` and `MAX_FRAME_PIXELS`.
 const MAX_SIDE: usize = 100_000;
@@ -105,12 +103,8 @@ fn main() -> ExitCode {
     let palette = Palette::new(palette_stops(&options.palette).unwrap().to_vec()).unwrap();
     let (w, h) = (options.width, options.height);
     println!(
-        "# {w}x{h}, phase {}, seed {}, palette {}, best of {}, {} math",
-        options.phase,
-        options.seed,
-        options.palette,
-        options.repeat,
-        if PORTABLE { "portable" } else { "system" }
+        "# {w}x{h}, phase {}, seed {}, palette {}, best of {}",
+        options.phase, options.seed, options.palette, options.repeat
     );
     println!("style\tscene_ms\tshade_ms");
     let (mut scene_total, mut shade_total) = (0.0, 0.0);

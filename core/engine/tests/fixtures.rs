@@ -1,21 +1,20 @@
 //! The portable fixtures: committed scenes with the SHA-256 of their render.
 //!
 //! Each `fixtures/<style>.json` holds a scene at 48 x 36, seed 3, phase 0.37
-//! and the SHA-256 of the packed RGB a `portable` build renders from it. The
+//! and the SHA-256 of the packed RGB it renders, the same on every platform. The
 //! committed scenes were written before the Python cutover by the Python
 //! scene builders (the Rust builder for `attractor`), whose reference is in
-//! git history. These tests load each scene through serde and render it; with
-//! `portable` the hash must match on every platform, and with the platform
-//! libm the fixtures only have to load and render a full frame.
+//! git history. These tests load each scene through serde, render it and
+//! require the recorded hash.
 //!
 //! A deliberate change to a shader or scene builder updates them with the
 //! ignored `bless_fixtures` test, run on its own so that no other test reads
 //! the fixtures while it writes them, and then the normal tests:
 //!
 //! ```text
-//! cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable \
+//! cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json \
 //!     --test fixtures -- --ignored --exact bless_fixtures
-//! cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures
+//! cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json --test fixtures
 //! ```
 //!
 //! It rewrites only a fixture that is missing or does not parse, whose
@@ -35,7 +34,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use simulacra_engine::{
-    PALETTES, PORTABLE, Palette, SCENE_BUILDERS, STYLES, build_scene, build_scene_json, render,
+    PALETTES, Palette, SCENE_BUILDERS, STYLES, build_scene, build_scene_json, render,
     scene_from_json, seed32,
 };
 
@@ -112,13 +111,11 @@ fn fixtures_render_their_recorded_hash() {
             mismatched.push(style);
         }
     }
-    if cfg!(feature = "portable") {
-        assert!(
-            mismatched.is_empty(),
-            "portable renders differ from the fixtures for {mismatched:?}; if the change is \
-             intended, run the bless_fixtures test (see the module docs)"
-        );
-    }
+    assert!(
+        mismatched.is_empty(),
+        "renders differ from the fixtures for {mismatched:?}; if the change is intended, \
+         run the bless_fixtures test (see the module docs)"
+    );
 }
 
 /// Scenes built by the Rust ports of the Python builders must render the
@@ -140,16 +137,13 @@ fn ported_scene_builders_render_the_fixture_hash() {
         .expect("ported builder");
         let rgb = scene.render(fixture.width, fixture.height, fixture.core_seed, &palette);
         let digest = hex(&Sha256::digest(&rgb));
-        if cfg!(feature = "portable") {
-            assert_eq!(
-                digest, fixture.sha256,
-                "{style}: the Rust-built scene renders differently"
-            );
-        }
+        assert_eq!(
+            digest, fixture.sha256,
+            "{style}: the Rust-built scene renders differently"
+        );
     }
 }
 
-#[cfg(feature = "portable")]
 /// A fresh copy of the committed fixtures in its own directory, for tests
 /// that bless without touching the real ones.
 fn fixture_copy(name: &str) -> PathBuf {
@@ -210,7 +204,6 @@ fn fixture_writer_keeps_the_layout() {
     );
 }
 
-#[cfg(feature = "portable")]
 fn read_all(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
     fs::read_dir(dir)
         .unwrap()
@@ -224,7 +217,6 @@ fn read_all(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
         .collect()
 }
 
-#[cfg(feature = "portable")]
 #[test]
 fn blessing_leaves_matching_fixtures_untouched() {
     let copy = fixture_copy("untouched");
@@ -232,7 +224,6 @@ fn blessing_leaves_matching_fixtures_untouched() {
     assert_eq!(read_all(&copy), read_all(&fixture_dir()));
 }
 
-#[cfg(feature = "portable")]
 /// The recorded hash of `style` in `dir`, and whether its stored scene renders it.
 fn renders_its_hash(dir: &Path, style: &str) -> (String, bool) {
     let text = fs::read_to_string(dir.join(format!("{style}.json"))).unwrap();
@@ -251,7 +242,6 @@ fn renders_its_hash(dir: &Path, style: &str) -> (String, bool) {
     (fixture.sha256, ok)
 }
 
-#[cfg(feature = "portable")]
 #[test]
 fn blessing_rewrites_a_changed_or_missing_fixture() {
     let copy = fixture_copy("changed");
@@ -274,7 +264,6 @@ fn blessing_rewrites_a_changed_or_missing_fixture() {
     }
 }
 
-#[cfg(feature = "portable")]
 #[test]
 fn blessing_repairs_a_scene_that_no_longer_loads() {
     let copy = fixture_copy("schema");
@@ -399,9 +388,6 @@ fn needs_bless(text: Option<&str>, expected: &Expected<'_>) -> bool {
 /// styles it rewrote, sorted. Also deletes fixtures of styles that no longer
 /// exist.
 fn bless_into(dir: &Path) -> Vec<String> {
-    if !PORTABLE {
-        panic!("blessing needs --features portable");
-    }
     let mut styles: Vec<&str> = STYLES.to_vec();
     styles.sort_unstable();
     for entry in fs::read_dir(dir).unwrap() {
@@ -456,7 +442,7 @@ fn bless_into(dir: &Path) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "rewrites the fixtures; run alone: cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures -- --ignored --exact bless_fixtures"]
+#[ignore = "rewrites the fixtures; run alone: cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json --test fixtures -- --ignored --exact bless_fixtures"]
 fn bless_fixtures() {
     let rewritten = bless_into(&fixture_dir());
     println!("blessed {} fixture(s): {rewritten:?}", rewritten.len());
@@ -464,7 +450,6 @@ fn bless_fixtures() {
 
 /// Blesses a copy in which `edit` changed waves.json; requires that only
 /// waves was rewritten and that it then renders its original hash.
-#[cfg(feature = "portable")]
 fn bless_after_editing_waves(name: &str, edit: impl Fn(&mut serde_json::Value)) {
     let copy = fixture_copy(name);
     let waves = copy.join("waves.json");
@@ -484,7 +469,6 @@ fn bless_after_editing_waves(name: &str, edit: impl Fn(&mut serde_json::Value)) 
     assert_eq!(rewritten["palette"], original["palette"]);
 }
 
-#[cfg(feature = "portable")]
 #[test]
 fn blessing_corrects_a_wrong_setting_label() {
     // The palette name is a label only: the stops make the image, so the hash
@@ -492,7 +476,6 @@ fn blessing_corrects_a_wrong_setting_label() {
     bless_after_editing_waves("label", |v| v["palette"] = "noir".into());
 }
 
-#[cfg(feature = "portable")]
 #[test]
 fn blessing_repairs_a_stored_scene_that_renders_another_image() {
     // A valid scene whose image no longer matches its recorded hash, while the

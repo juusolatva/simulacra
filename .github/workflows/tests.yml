@@ -35,29 +35,21 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --manifest-path core/Cargo.toml --all-targets -- -D warnings
 
-      - name: Cargo test and Clippy with the portable math backend
-        run: |
-          cargo test --locked --manifest-path core/Cargo.toml --features portable
-          cargo clippy --locked --manifest-path core/Cargo.toml --all-targets --features portable -- -D warnings
-
       # The engine on its own, without the CLI's dependencies and features.
       - name: Engine alone
         run: |
           cargo test --locked --manifest-path core/Cargo.toml -p simulacra_engine
           cargo clippy --locked --manifest-path core/Cargo.toml -p simulacra_engine --all-targets -- -D warnings
-          cargo clippy --locked --manifest-path core/Cargo.toml -p simulacra_engine --all-targets --features portable -- -D warnings
 
       # Scenes from JSON: core/engine/tests/fixtures/ holds one committed scene per style
-      # with the SHA-256 of its portable render, which must match on every platform.
-      # With the platform libm the fixtures only have to load and render.
+      # with the SHA-256 of its render, which must match on every platform.
       - name: Portable fixtures
         run: |
-          cargo test --locked --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable
           cargo test --locked --manifest-path core/Cargo.toml -p simulacra_engine --features json
-          cargo clippy --locked --manifest-path core/Cargo.toml -p simulacra_engine --all-targets --features json,portable -- -D warnings
+          cargo clippy --locked --manifest-path core/Cargo.toml -p simulacra_engine --all-targets --features json -- -D warnings
 
   golden:
-    name: Golden hashes (portable binary)
+    name: Golden hashes
     runs-on: ubuntu-latest
     permissions:
       contents: read # Check out the code
@@ -74,11 +66,10 @@ jobs:
 
       # Every golden workload's file must hash as committed in
       # core/cli/tests/golden/SHA256SUMS, and every decoded frame as in PIXELS
-      # (and the fixture workloads as the portable fixtures). The hashes hold
-      # for portable builds, as release binaries are.
+      # (and the fixture workloads as the portable fixtures).
       - name: Golden file and pixel hashes
         run: |
-          cargo build --locked --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable
+          cargo build --locked --release --manifest-path core/Cargo.toml -p simulacra_cli
           out="$RUNNER_TEMP/golden"
           sh core/cli/tests/golden.sh check core/target/release/simulacra --keep "$out"
-          SIMULACRA_GOLDEN_OUT="$out" cargo test --locked --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable --test golden_pixels -- --ignored
+          SIMULACRA_GOLDEN_OUT="$out" cargo test --locked --release --manifest-path core/Cargo.toml -p simulacra_cli --test golden_pixels -- --ignored
