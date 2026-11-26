@@ -63,7 +63,7 @@ simulacra (formerly Abstract Art) is a generative art program that draws abstrac
 | Cleanup after the cutover: comments and test names describe behavior instead of the retired Python reference (CPython stays named where `PyRandom`, `py_mod`, `py_sum` and `py_hypot` reproduce it), "without Python" dropped from the help text and crate descriptions, the clean-image check no longer looks for Python, Python entries out of `.gitignore`, the finished cutover plans in `docs/superpowers/plans/` removed | Done | PR #55 |
 | Release workflow: a `vX.Y.Z` tag on main (checked against the crate version) drafts a GitHub release from the verified packages of every target, with `SHA256SUMS` and build provenance attestations; packages now include the README; steps in "Releasing" | Done | PR #56 |
 | First release: v0.1.0, a pre-release titled `simulacra v0.1.0` (lowercase, like the binary); release titles and tag messages are lowercase from now on | Done | PR #57 |
-| Remove `docs/superpowers/` (the design specs for the finished Python cutover and Rust coverage work; in git history), and the references to them in `AGENTS.md` and `PLAN.md` | Done | (this PR) |
+| Remove `docs/superpowers/` (the design specs for the finished Python cutover and Rust coverage work; in git history), and the references to them in `AGENTS.md` and `PLAN.md` | Done | PR #58 |
 | Rust rewrite, Phase 3 and 6: Windows signing decision, clean-machine checks | Not started. `PLAN.md` holds the checklists | — |
 | Further output formats | Not planned: PNG, APNG and GIF are enough | — |
 
