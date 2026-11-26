@@ -510,6 +510,11 @@ scene builders use, across the supported seed range.
   users get.
 - [ ] Publish prebuilt binaries as GitHub Releases (later), with release
   versions and tags; until then `--version` prints the crate version.
+  Workflow ready (2026-11-26): a pushed `vX.Y.Z` tag on main, matching the
+  crate version, drafts a release from the packages every target verified,
+  with `SHA256SUMS` and build provenance attestations (`actions/attest`,
+  Sigstore-signed; `gh attestation verify`). The steps are in AGENTS.md,
+  "Releasing". Left: choose the first version and cut it.
 - [ ] Check Windows SmartScreen behavior and decide whether to sign Windows
   binaries. (macOS signing and notarization are dropped with the target.)
 - [ ] Smoke-test those binaries in environments without Python installed.
