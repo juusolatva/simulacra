@@ -1,6 +1,5 @@
-//! Carved landscapes: animated silhouettes sampled per column (the port of
-//! `_woodblock_scene()`), shaded as paper, overlapping layers and contour
-//! grooves in Python's operation order.
+//! Carved landscapes: animated silhouettes sampled per column by the scene
+//! builder, shaded as paper, overlapping layers and contour grooves.
 
 use crate::math::Libm;
 use rayon::prelude::*;
@@ -98,7 +97,7 @@ enum Profile {
 }
 
 impl Profile {
-    /// Python's `_woodblock_profile(kind, angle, bend)`: rounded hills, steep
+    /// The silhouette height at `angle`: rounded hills, steep
     /// cliffs and leaning wave crests.
     fn height(self, angle: f64, bend: f64) -> f64 {
         match self {
@@ -111,7 +110,8 @@ impl Profile {
     }
 }
 
-/// Python's `_woodblock_layer(rng, index, count, width, height, kind, top, phase)`.
+/// Layer `index` of `count`: its surface sampled per column, its groove
+/// spacing and phase, and a palette position that darkens towards the front.
 fn build_layer(
     rng: &mut PyRandom,
     (index, count): (usize, usize),
@@ -145,7 +145,7 @@ fn build_layer(
 }
 
 impl BuildScene for Woodblock {
-    /// `_woodblock_scene`: 4 to 7 layers of one kind (or mixed), each sliding
+    /// 4 to 7 layers of one kind (or mixed), each sliding
     /// sideways once per loop, alternating in direction.
     fn build(params: &SceneParams<'_>) -> Self {
         const KINDS: [Profile; 3] = [Profile::Hill, Profile::Cliff, Profile::Wave];

@@ -1,9 +1,3 @@
-__pycache__/
-*.pyc
-.venv/
 core/target/
-*.so
-.coverage
-coverage.xml
 lcov.info
 *.profraw

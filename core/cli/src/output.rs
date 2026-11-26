@@ -1,5 +1,4 @@
-//! Replacing the output file safely, as `_atomic_write` and `_create_temporary`
-//! in `simulacra.py` do: write a new temporary file next to the destination,
+//! Replacing the output file safely: write a new temporary file next to the destination,
 //! then rename it over the destination, so a failed write never leaves a
 //! partial image and an existing file stays untouched.
 //!

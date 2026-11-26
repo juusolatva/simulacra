@@ -1,6 +1,6 @@
 //! Properties every style keeps, checked through the engine's scene builders
-//! and the checked `render` at small sizes. They hold on both math backends;
-//! the exact images are pinned by the golden hashes in `core/cli/tests/golden`.
+//! and the checked `render` at small sizes. They are properties, not exact
+//! images; the exact images are pinned by the golden hashes in `core/cli/tests/golden`.
 
 use simulacra_engine::{
     PALETTES, Palette, SCENE_BUILDERS, STYLES, build_scene, palette_stops, render, scene_work,
@@ -53,7 +53,7 @@ fn every_style_uses_a_wide_palette_range() {
                 .map(|(&a, &b)| (i32::from(a) - i32::from(b)).pow(2))
                 .sum()
         };
-        // The first sample of least distance, as Python's min().
+        // The first sample of least distance.
         let mut best = 0;
         for (i, c) in lookup.iter().enumerate() {
             if distance(c) < distance(&lookup[best]) {

@@ -13,8 +13,8 @@ name: Release binaries
 #          several sizes, seeds, phases and palettes, APNG and GIF animations)
 #          must hash as committed in core/cli/tests/golden/SHA256SUMS. Every
 #          target is held to the same hashes, so they all render identically.
-#          On Linux the binary runs in a container image with no Python and no
-#          Rust; the runner needs neither (the checker is POSIX sh).
+#          On Linux the binary runs in a clean container image with no Rust
+#          toolchain; the runner needs none either (the checker is POSIX sh).
 on:
   push:
     branches: [main]
@@ -34,8 +34,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # debian:trixie-slim (multi-arch index): no Python, no Rust toolchain.
-  NO_PYTHON_IMAGE: debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+  # debian:trixie-slim (multi-arch index): a clean system, no Rust toolchain.
+  CLEAN_IMAGE: debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
 defaults:
   run:
@@ -150,4 +150,4 @@ jobs:
           binary=dist/simulacra
           if [ "$RUNNER_OS" = Windows ]; then binary=dist/simulacra.exe; fi
           sh core/cli/tests/golden.sh check "$binary" \
-            ${CONTAINER:+--container "$NO_PYTHON_IMAGE"}
+            ${CONTAINER:+--container "$CLEAN_IMAGE"}

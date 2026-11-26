@@ -9,8 +9,8 @@
 # temporary directory (or DIR, which must be empty or missing and is kept for
 # the pixel test, golden_pixels.rs), and compares each output file's SHA-256
 # with golden/SHA256SUMS; `bless` rewrites that file instead. With
-# --container, BINARY runs inside IMAGE (which must not have Python), all
-# workloads in one `docker run`.
+# --container, BINARY runs inside IMAGE (a clean system image, to show the
+# binary needs nothing installed), all workloads in one `docker run`.
 #
 # Every build renders these hashes on every platform. Exit status: 0 if
 # everything matches, 1 on a mismatch or failure, 2 on a usage error.
@@ -121,9 +121,6 @@ trap cleanup EXIT
 
 # Runs the binary with the given arguments, directly or in the container.
 if [ -n "$container" ]; then
-    if docker run --rm "$container" sh -c 'command -v python3 || command -v python' > /dev/null 2>&1; then
-        fail "$container has Python, so the check would prove less"
-    fi
     cp "$binary" "$out/.golden-bin"
     cp "$self" "$out/.golden.sh"
     user=$(id -u):$(id -g)

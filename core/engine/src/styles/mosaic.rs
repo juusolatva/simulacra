@@ -1,4 +1,4 @@
-//! Mosaic: the builder (the port of `_mosaic_scene()`) computes one palette
+//! Mosaic: the builder computes one palette
 //! position per tile from its regions and patterns; the shader only expands
 //! tiles to pixels.
 
@@ -22,7 +22,7 @@ pub struct Mosaic {
     values: Vec<f64>,
 }
 
-/// Port of `_mosaic_axis`: the tile index of each pixel, or `None` for grout.
+/// The tile index of each pixel along one axis, or `None` for grout.
 fn axis(length: usize, tile: f64, count: usize, grout: f64) -> Vec<Option<usize>> {
     (0..length)
         .map(|p| {
@@ -79,10 +79,10 @@ impl Style for Mosaic {
     }
 }
 
-/// Python's `_MOSAIC_TILES`: tiles across the short side.
+/// Tiles across the short side.
 const MOSAIC_TILES: usize = 64;
 
-/// Python's `_MOSAIC_PATTERNS`, in its order (the builder draws one by index).
+/// The tile patterns, in a fixed order (the builder draws one by index).
 #[derive(Clone, Copy, PartialEq)]
 enum Pattern {
     Checker,
@@ -110,7 +110,7 @@ const PATTERNS: [Pattern; 10] = [
     Pattern::Maze,
 ];
 
-/// One region of the patchwork (Python's `_mosaic_region` dict).
+/// One region of the patchwork.
 struct Region {
     kind: Pattern,
     ci: i64,
@@ -123,13 +123,13 @@ struct Region {
     seed: u32,
 }
 
-/// Python's `_mosaic_shift(phase, period)`: whole tiles a pattern has moved.
+/// Whole tiles a pattern has moved.
 fn shift(phase: f64, period: i64) -> i64 {
     (py_mod(phase, 1.0) * period as f64) as i64
 }
 
 impl Region {
-    /// Python's `_mosaic_region(rng, index, seed, cols, rows)`.
+    /// Draws region `index` of the patchwork.
     fn draw(rng: &mut PyRandom, index: usize, seed: i64, cols: i64, rows: i64) -> Self {
         let kind = *rng.choice(&PATTERNS);
         let ci = rng.randrange(cols);
@@ -138,7 +138,7 @@ impl Region {
         let amp = rng.randint(2, 5);
         let flip = *rng.choice(&[-1, 1]);
         let levels = Self::levels(rng, kind);
-        // Python adds exact ints; the noise and hash only see the low 32 bits.
+        // The noise and hash only see the low 32 bits, so wrapping is exact.
         let seed = seed32(seed).wrapping_add((101 * (index + 1)) as u32);
         Self {
             kind,
@@ -152,7 +152,7 @@ impl Region {
         }
     }
 
-    /// Python's `_mosaic_levels(rng, kind)`: the palette positions a region's
+    /// The palette positions a region's
     /// pattern cycles through.
     fn levels(rng: &mut PyRandom, kind: Pattern) -> Vec<f64> {
         if kind == Pattern::Rainbow {
@@ -179,7 +179,7 @@ impl Region {
         levels
     }
 
-    /// Python's `_MOSAIC_BANDS[kind](r, i, j, di, dj, phase)`: which level the
+    /// Which level the
     /// tile at folded column `i`, row `j` takes (before wrapping).
     fn band(&self, i: i64, j: i64, phase: f64) -> i64 {
         let (q, di, dj) = (self.q, i - self.ci, j - self.cj);
@@ -227,7 +227,7 @@ impl Region {
                 let n = fbm_loop(i as f64 * 1.1, j as f64 * 3.2, self.seed, 3, phase);
                 #[allow(
                     clippy::manual_clamp,
-                    reason = "Python's max(0.0, min(0.999, n)), as written"
+                    reason = "max(0.0, min(0.999, n)) maps NaN to 0.999, where clamp() keeps NaN"
                 )]
                 let t = contrast(n, 2.5).min(0.999).max(0.0);
                 (t * self.levels.len() as f64) as i64
@@ -247,7 +247,7 @@ impl Region {
     }
 }
 
-/// The layout `_mosaic_tile` reads (Python's intermediate `scene` dict).
+/// The tile grid and regions the per-tile pattern code reads.
 struct Layout {
     seed: u32,
     cols: i64,
@@ -265,7 +265,7 @@ struct Layout {
 }
 
 impl Layout {
-    /// Python's `_mosaic_region_at(regions, wi, wj)`: the nearest region centre
+    /// The nearest region centre
     /// under an octagonal distance (the first one on a tie).
     fn region_at(&self, wi: f64, wj: f64) -> &Region {
         let mut best = &self.regions[0];
@@ -282,7 +282,7 @@ impl Layout {
         best
     }
 
-    /// Python's `_mosaic_inside(scene, i, j)`: whether folded tile (i, j)
+    /// Whether folded tile (i, j)
     /// belongs to the ragged silhouette.
     fn inside(&self, i: i64, j: i64) -> bool {
         if !self.silhouette {
@@ -294,7 +294,7 @@ impl Layout {
         contrast(n, 2.2) - 0.75 * (du * du + dv * dv).sqrt() > -0.05
     }
 
-    /// Python's `_mosaic_tile(scene, i, j, phase)`: the palette position of the
+    /// The palette position of the
     /// tile at column `i`, row `j`.
     fn tile(&self, i: i64, j: i64, phase: f64) -> f64 {
         let fi = if self.mirror_x {
@@ -308,7 +308,7 @@ impl Layout {
             j
         };
         if !self.inside(fi, fj) {
-            // Python's seed + 977 * shift, modulo 2**32 for the hash.
+            // seed + 977 * shift, modulo 2**32 for the hash.
             let twinkle = self.seed.wrapping_add((977 * shift(phase, 6)) as u32);
             return if hash(i, j, twinkle) < 0.012 {
                 self.sparkle
@@ -325,18 +325,18 @@ impl Layout {
     }
 }
 
-/// Python's `max(a, b)`: `a` unless `b` is larger.
+/// `a` unless `b` is larger (the first argument wins a tie or a NaN).
 fn py_max2(a: f64, b: f64) -> f64 {
     if b > a { b } else { a }
 }
 
-/// Python's `min(a, b)`: `a` unless `b` is smaller.
+/// `a` unless `b` is smaller (the first argument wins a tie or a NaN).
 fn py_min2(a: f64, b: f64) -> f64 {
     if b < a { b } else { a }
 }
 
 impl BuildScene for Mosaic {
-    /// `_mosaic_scene`: 14 to 22 patterned regions on a grid of about 64 tiles
+    /// 14 to 22 patterned regions on a grid of about 64 tiles
     /// across the short side, often mirrored and sometimes cut to a ragged
     /// silhouette with sparkles outside it.
     fn build(params: &SceneParams<'_>) -> Self {

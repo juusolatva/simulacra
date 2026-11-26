@@ -1,14 +1,14 @@
 //! Scene validation: what the engine checks before it renders a scene.
 //!
-//! The shaders trust their scene. A scene read from a file or passed through
-//! the Python adapter could otherwise index past the end of a list, describe
+//! The shaders trust their scene. A scene read from a file could otherwise
+//! index past the end of a list, describe
 //! a grid that does not match its size or ask for an effectively endless loop.
 //! [`validate_scene`] (called by [`render`](crate::render)) rejects such scenes:
 //!
 //! - every float is finite and at most [`MAX_MAGNITUDE`] in size, so no
 //!   float-to-integer conversion in a shader saturates and then overflows
 //!   (a looping-noise `phase` only has to be finite: the noise reduces it
-//!   modulo 1, and Python passes the caller's phase through unchanged);
+//!   modulo 1, and callers may pass any phase);
 //! - indices, lengths and counts fit the canvas, the palette and each other
 //!   (each style's [`Style::validate`] lists its rules);
 //! - the work a scene asks for, estimated by its [`Style::validate`] in inner
@@ -43,8 +43,8 @@ pub const WORK_PER_PIXEL: f64 = 16_384.0;
 pub const WORK_BASE: f64 = 134_217_728.0;
 
 /// Weight of one sequential step (a brush stamp pixel, a point along a line,
-/// a pixel of a segment's box). The brush styles stamp on one thread in
-/// Python's order, while shading runs on every core; measured on 12 threads,
+/// a pixel of a segment's box). The brush styles stamp on one thread in a
+/// fixed order, while shading runs on every core; measured on 12 threads,
 /// a stamp took about as long as 8 to 40 shading iterations.
 pub const SEQUENTIAL_WEIGHT: f64 = 8.0;
 

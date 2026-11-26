@@ -1,7 +1,4 @@
-//! `render_quasar`: accretion disk, lensing ring and Doppler-beamed jets.
-//!
-//! Mirrors `_quasar_value()` in `simulacra.py`; the scene comes from
-//! `_quasar_scene()` so both implementations share the same random layout.
+//! `quasar`: accretion disk, lensing ring and Doppler-beamed jets.
 
 use crate::math::{Libm, py_hypot};
 use std::f64::consts::PI;
@@ -118,7 +115,7 @@ impl Style for Quasar {
     }
 }
 
-/// Python's `seed + int(ro * 10.0)` reduced by `_seed32`. `ro * 10.0` can
+/// `seed + trunc(ro * 10.0)`, reduced to 32 bits like [`seed32`](crate::seed32). `ro * 10.0` can
 /// exceed `i64` at huge sizes, so the truncated value is reduced modulo 2**32
 /// first (float `%` is exact), which leaves the low 32 bits of the sum
 /// unchanged.
@@ -128,7 +125,7 @@ fn orbit_seed(seed: i64, ro: f64) -> u32 {
 }
 
 impl BuildScene for Quasar {
-    /// `_quasar_native_scene`: the jets sweep once per loop and their beaming
+    /// The jets sweep once per loop and their beaming
     /// swings; orbit radii are sorted and each gets its turbulence seed.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height, phase) = (params.width, params.height, params.phase);

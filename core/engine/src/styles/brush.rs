@@ -1,8 +1,9 @@
 //! Brush-, trail- and curve-based styles.
 //!
 //! These accumulate contributions in a fixed order, and floating-point
-//! addition is not associative, so stamping runs sequentially in exactly the
-//! order `simulacra.py` uses. Only the final per-pixel shading is parallel.
+//! addition is not associative, so stamping runs sequentially in one fixed
+//! order, which the images depend on. Only the final per-pixel shading is
+//! parallel.
 
 use crate::math::{Libm, py_hypot};
 use std::f64::consts::{PI, TAU};
@@ -19,19 +20,19 @@ use crate::validate::{
     Canvas, SEQUENTIAL_WEIGHT, SceneError, check_index, check_numbers, clipped_span,
 };
 
-/// Maps an intensity buffer through `1 - exp(-max(0, v))`, as `_glow_pixels` does.
+/// Maps an intensity buffer through `1 - exp(-max(0, v))`.
 fn glow_pixels(width: usize, height: usize, palette: &Palette, glow: &[f64]) -> Vec<u8> {
     shade(width, height, palette, |x, y| {
         1.0 - (-glow[y * width + x].max(0.0)).m_exp()
     })
 }
 
-/// Visit every pixel in the segment's bounding box grown by `reach`, like
-/// `_segment_box`: `visit(row, col, distance, t)` gets the distance to the
+/// Visit every pixel in the segment's bounding box grown by `reach`:
+/// `visit(row, col, distance, t)` gets the distance to the
 /// closest point on the segment, which lies at fraction `t` along it.
 #[allow(
     clippy::manual_clamp,
-    reason = "clamp() keeps NaN; Python's min(1.0, max(0.0, t)) does not"
+    reason = "clamp() keeps NaN; min(1.0, max(0.0, t)) maps it to 0.0"
 )]
 fn segment_box(
     p0: Point,
@@ -43,7 +44,7 @@ fn segment_box(
     let (ax, ay) = p0;
     let (dx, dy) = (p1.0 - ax, p1.1 - ay);
     let len2 = dx * dx + dy * dy;
-    // Python's int() truncates toward zero, as `as i64` does.
+    // `as i64` truncates toward zero.
     let x0 = ((ax.min(p1.0) - reach) as i64).max(0);
     let x1 = (((ax.max(p1.0) + reach) as i64) + 1).min(width as i64 - 1);
     let y0 = ((ay.min(p1.1) - reach) as i64).max(0);
@@ -116,7 +117,7 @@ impl Style for Flowfield {
 }
 
 impl BuildScene for Flowfield {
-    /// `_flowfield_scene`: 40 to 80 trail starts, each circling a small radius.
+    /// 40 to 80 trail starts, each circling a small radius.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height) = (params.width, params.height);
         let mut rng = PyRandom::new(params.seed);
@@ -188,7 +189,7 @@ impl Style for Comet {
 }
 
 impl BuildScene for Comet {
-    /// `_comet_scene`: 3 to 6 comets whose heads circle a point.
+    /// 3 to 6 comets whose heads circle a point.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height) = (params.width, params.height);
         let mut rng = PyRandom::new(params.seed);
@@ -210,9 +211,8 @@ impl BuildScene for Comet {
 }
 
 /// (x0, y0, x1, y1, control x, control y, brush, alpha, steps). `steps` is a
-/// whole number held as a float: Python's `max(8, ceil(length * 2))` is an
-/// unbounded int, which outgrows `i64` on sides near 2**64 but is always a
-/// float's exact value.
+/// whole number held as a float: `max(8, ceil(length * 2))` outgrows `i64`
+/// on sides near 2**64 but is always a float's exact value.
 type Stroke = (f64, f64, f64, f64, f64, f64, f64, f64, f64);
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -271,7 +271,7 @@ impl Style for Ink {
 }
 
 impl BuildScene for Ink {
-    /// `_ink_scene`: 5 to 9 strokes whose control points circle, so the curves
+    /// 5 to 9 strokes whose control points circle, so the curves
     /// flex while their ends stay put.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height) = (params.width, params.height);
@@ -346,7 +346,7 @@ impl Style for Ember {
 }
 
 impl BuildScene for Ember {
-    /// `_ember_scene`: 60 to 110 embers that sway on small circles while their
+    /// 60 to 110 embers that sway on small circles while their
     /// flicker runs one cycle per loop.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height, phase) = (params.width, params.height, params.phase);
@@ -443,9 +443,9 @@ impl ScreenPoint for (f64, f64, f64) {
     }
 }
 
-/// Python's `_sample_by_length(point_at, spacing, closed)`: samples `point_at(u)`
+/// Samples `point_at(u)`
 /// for `u` in [0, 1] about `spacing` pixels apart, measuring the length on 512
-/// coarse segments with Python's compensated `sum()`. A closed curve repeats
+/// coarse segments with a compensated sum. A closed curve repeats
 /// its first point at the end; an open one ends at `point_at(1.0)`.
 fn sample_by_length<P: ScreenPoint>(
     point_at: impl Fn(f64) -> P,
@@ -470,7 +470,7 @@ fn sample_by_length<P: ScreenPoint>(
     points
 }
 
-/// Python's `min(values)`: the first of the smallest values.
+/// The first of the smallest values.
 fn py_min(values: impl IntoIterator<Item = f64>) -> f64 {
     values
         .into_iter()
@@ -478,7 +478,7 @@ fn py_min(values: impl IntoIterator<Item = f64>) -> f64 {
         .expect("values")
 }
 
-/// Python's `max(values)`: the first of the largest values.
+/// The first of the largest values.
 fn py_max(values: impl IntoIterator<Item = f64>) -> f64 {
     values
         .into_iter()
@@ -486,7 +486,7 @@ fn py_max(values: impl IntoIterator<Item = f64>) -> f64 {
         .expect("values")
 }
 
-/// Python's `_torus_knot_point(tube, a, b, u)`: the (a, b) torus knot in model
+/// The (a, b) torus knot in model
 /// space at `u` in [0, 1).
 fn torus_knot_point(tube: f64, (a, b): (f64, f64), u: f64) -> (f64, f64, f64) {
     let t = TAU * u;
@@ -498,13 +498,13 @@ fn torus_knot_point(tube: f64, (a, b): (f64, f64), u: f64) -> (f64, f64, f64) {
     )
 }
 
-/// Python's `_turned(point, cosine, sine)`: a turn about the vertical axis.
+/// A turn about the vertical axis.
 fn turned((x, y, z): (f64, f64, f64), cosine: f64, sine: f64) -> (f64, f64, f64) {
     (x * cosine + z * sine, y, z * cosine - x * sine)
 }
 
 impl BuildScene for Torus {
-    /// `_torus_scene`: one of four knots, turned once about the vertical axis
+    /// One of four knots, turned once about the vertical axis
     /// per loop; the centre and scale come from the unturned knot and the depth
     /// range from the turned one.
     fn build(params: &SceneParams<'_>) -> Self {
@@ -547,7 +547,7 @@ impl BuildScene for Torus {
     }
 }
 
-/// The most curves a `lissajous` scene may have; the Python builder draws 2 or 3.
+/// The most curves a `lissajous` scene may have; the builder draws 2 or 3.
 const LISSAJOUS_MAX_CURVES: usize = 8;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -609,7 +609,7 @@ impl Style for Lissajous {
 }
 
 impl BuildScene for Lissajous {
-    /// `_lissajous_scene`: 2 or 3 curves whose two phase offsets turn in
+    /// 2 or 3 curves whose two phase offsets turn in
     /// opposite directions over a loop, each sampled as an open polyline.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height, phase) = (params.width, params.height, params.phase);
@@ -758,15 +758,14 @@ impl Style for Attractor {
     }
 }
 
-/// Python's `_ATTRACTOR_MAX_POINTS`: the most orbit points a render plots.
+/// The most orbit points a render plots.
 const ATTRACTOR_MAX_POINTS: u128 = 24_000_000;
 
-/// Python's `_ATTRACTOR_REACH`: the radius the parameters circle with.
+/// The radius the parameters circle with over the loop.
 const ATTRACTOR_REACH: f64 = 0.06;
 
-/// Python's `_ATTRACTOR_TABLE`, entry for entry (see its comment and
-/// "Attractor parameter table" in PLAN.md for how they were chosen; add
-/// entries only with the same offline checks, in both places).
+/// The attractor parameter sets ("Attractor parameter table" in PLAN.md says
+/// how they were chosen; add entries only with the same offline checks).
 const ATTRACTOR_TABLE: [(f64, f64, f64, f64); 256] = [
     (-1.763, 1.233, -1.576, 1.14),
     (-1.687, -1.998, 0.524, 1.355),
@@ -1026,7 +1025,7 @@ const ATTRACTOR_TABLE: [(f64, f64, f64, f64); 256] = [
     (1.603, 1.484, 1.591, 1.472),
 ];
 
-/// Python's `_clifford_step`: one step of the Clifford map.
+/// One step of the Clifford map.
 fn clifford_step((x, y): Point, (a, b, c, d): (f64, f64, f64, f64)) -> Point {
     (
         (a * y).m_sin() + c * (a * x).m_cos(),
@@ -1034,9 +1033,9 @@ fn clifford_step((x, y): Point, (a, b, c, d): (f64, f64, f64, f64)) -> Point {
     )
 }
 
-/// Python's `_clifford_bounds`: `(min_x, max_x, min_y, max_y)` of a 3,000-point
+/// `(min_x, max_x, min_y, max_y)` of a 3,000-point
 /// orbit after 100 warm-up steps, in one pass. The strict comparisons keep the
-/// first of equal values, as Python's `min()` and `max()` do (the orbit is
+/// first of equal values (the orbit is
 /// bounded by its sines and cosines, so there is no NaN).
 fn clifford_bounds(params: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
     let mut point = (0.1, 0.1);
@@ -1063,11 +1062,11 @@ fn clifford_bounds(params: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
 }
 
 impl BuildScene for Attractor {
-    /// `_attractor_scene`: a table entry (mirrored for half the seeds) whose
+    /// A table entry (mirrored for half the seeds) whose
     /// parameters circle over a loop, framed by the bounds of a short orbit.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height) = (params.width, params.height);
-        // `_attractor_base`: only integer draws, so no libm changes the choice.
+        // The base parameters: only integer draws, so no libm changes the choice.
         let mut rng = PyRandom::new(params.seed);
         let (a, b, c, d) = *rng.choice(&ATTRACTOR_TABLE);
         let base = if rng.getrandbits(1) == 1 {
@@ -1075,7 +1074,7 @@ impl BuildScene for Attractor {
         } else {
             (a, b, c, d)
         };
-        // `_attractor_params`
+        // The parameters circle over the loop.
         let a_off = circle_offset(0, ATTRACTOR_REACH, params.phase);
         let c_off = circle_offset(1, ATTRACTOR_REACH, params.phase);
         let moved = (
@@ -1086,7 +1085,7 @@ impl BuildScene for Attractor {
         );
         let (min_x, max_x, min_y, max_y) = clifford_bounds(moved);
         let span = py_max([max_x - min_x, max_y - min_y, 1e-6]);
-        // Python's exact `min(6 * width * height, _ATTRACTOR_MAX_POINTS)`; the
+        // `min(6 * width * height, ATTRACTOR_MAX_POINTS)` in exact integers; the
         // product saturates, which only matters far above the cap.
         let points = (6 * width as u128)
             .saturating_mul(height as u128)
@@ -1101,7 +1100,7 @@ impl BuildScene for Attractor {
 }
 
 impl BuildScene for Constellations {
-    /// `_constellation_scene`: 28 to 48 stars, pairs chosen from the starting
+    /// 28 to 48 stars, pairs chosen from the starting
     /// positions, then the stars drift and each line is measured where its
     /// stars now are.
     fn build(params: &SceneParams<'_>) -> Self {

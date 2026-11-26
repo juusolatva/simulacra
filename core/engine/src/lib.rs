@@ -5,11 +5,11 @@
 //! returns packed RGB bytes (row-major, 3 bytes per pixel). [`build_scene`]
 //! builds a style's scene (all its random draws, through [`PyRandom`]).
 //!
-//! The engine was ported from a Python reference, `simulacra.py`, which was
-//! retired when Simulacra became a Rust-only project; it can be read in git
-//! history before that change. Comments that name a Python function (such as
-//! `_mosaic_scene` or `render_waves`) or Python semantics refer to that
-//! reference, which the shaders and scene builders reproduce exactly.
+//! The committed fixtures and golden hashes pin every style's image, so the
+//! shaders and scene builders keep their exact arithmetic: operation order,
+//! rounding, modulo and summation. Names with a `py` prefix ([`PyRandom`],
+//! [`py_mod`], `py_sum`, `py_hypot`) reproduce CPython's random generator
+//! and float operations bit for bit, which keeps every seed's image.
 
 mod geometry;
 mod math;
@@ -22,7 +22,7 @@ pub mod scenes;
 pub mod styles;
 pub mod validate;
 
-/// Python's float `%`, for callers that compute phases as `simulacra.py` does.
+/// Floored float modulo (CPython's float `%`), for callers that reduce phases.
 pub use geometry::py_mod;
 pub use palette::{Palette, PaletteError};
 pub use palettes::{PALETTES, palette_stops};
@@ -101,7 +101,7 @@ pub fn render(
     Ok(scene.render(width, height, seed, palette))
 }
 
-/// Python's `_seed32(seed)`, `seed & 0xFFFFFFFF`: the noise hash sees a seed
+/// The 32-bit seed the shaders take, `seed & 0xFFFFFFFF`: the noise hash sees a seed
 /// modulo 2**32. For a negative `seed` that is its two's complement low word,
 /// which is what the truncating cast gives.
 #[must_use]
@@ -182,8 +182,7 @@ for_each_style!(style_names);
 macro_rules! style_deserialize {
     ($($name:literal => $scene:path),* $(,)?) => {
         /// Reads the scene for `style` from any serde format. The fields are
-        /// those of the dict the Python `_<style>_scene()` builder returns;
-        /// unknown fields are ignored, as the Python adapter ignores them.
+        /// those of the style's scene struct; unknown fields are ignored.
         ///
         /// Only the types are checked here, not that the data is consistent:
         /// render the scene with [`render`], which validates it against the
@@ -268,8 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn seed32_matches_python() {
-        // seed & 0xFFFFFFFF in Python
+    fn seed32_keeps_the_low_32_bits() {
         assert_eq!(super::seed32(3), 3);
         assert_eq!(super::seed32(-1), 0xffff_ffff);
         assert_eq!(super::seed32(1 << 32), 0);
@@ -305,7 +303,7 @@ mod tests {
         }
     }
 
-    /// `(Python repr, bits)`; the comment gives the misrounded naive result.
+    /// `(shortest decimal, bits)`; the comment gives the misrounded naive result.
     const FLOAT_CASES: &[(&str, u64)] = &[
         ("-1.5471761413874225", 0xbff8_c13b_c506_9136), // naive: -1.5471761413874223
         ("-2042.3747258517706", 0xc09f_e97f_b822_3948), // naive: -2042.3747258517703
