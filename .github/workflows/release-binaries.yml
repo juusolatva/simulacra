@@ -1,11 +1,11 @@
 name: Release binaries
 
 # Builds and checks the `simulacra` binary for every release target: Linux
-# (x86_64, aarch64) and Windows (x86_64); macOS is not a target (PLAN.md
-# Phase 3). On branches and pull requests the packages are workflow artifacts
-# kept 14 days. Pushing a tag `vX.Y.Z` also drafts a GitHub release from the
-# same packages (see "Releasing" in AGENTS.md); nothing is published until
-# someone publishes the draft.
+# (x86_64, aarch64) and Windows (x86_64); macOS is not a target (there is
+# no Mac to test a download on). On branches and pull requests the packages
+# are workflow artifacts kept 14 days. Pushing a tag `vX.Y.Z` also drafts a
+# GitHub release from the same packages (see "Releasing" in AGENTS.md);
+# nothing is published until someone publishes the draft.
 #
 # build:   on a native runner per target, run the portable fixtures and the
 #          CLI tests, build with `cargo install --locked`

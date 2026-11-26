@@ -1,6 +1,6 @@
 //! Times scene building and shading for each style, as the minimum over
-//! repeats. Encoding and whole runs are timed by running the binary (see the
-//! README, "Performance and limits").
+//! repeats. Encoding and whole runs are timed by running the binary (see
+//! TESTING.md, "Performance").
 //!
 //! ```text
 //! cargo run --release --manifest-path core/Cargo.toml -p simulacra_engine \

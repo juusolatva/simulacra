@@ -1,4 +1,4 @@
-# Workspace for simulacra (see PLAN.md, "Target architecture").
+# Workspace for simulacra (see AGENTS.md, "Architecture").
 # engine: the renderer (scenes, shaders, palettes), usable as a library.
 # cli:    the `simulacra` command-line tool.
 [workspace]
