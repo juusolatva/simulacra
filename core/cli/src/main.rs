@@ -2,8 +2,8 @@
 //!
 //! It renders every style (`--list-styles`) as still PNG images, looping APNG
 //! animations (`--frames`) and GIF (a `.gif` `--out`). Its options, defaults
-//! and messages were kept from the retired Python command line (see the
-//! engine's crate docs). Animation frames are rendered and encoded several at a time
+//! and messages stay stable between versions (see the README's list of
+//! command-line differences). Animation frames are rendered and encoded several at a time
 //! on the thread pool and written to the temporary output file in order as
 //! they finish; the number in progress is bounded by the thread count and a
 //! memory budget ([`frames_in_flight`]), not by the frame count.
@@ -23,11 +23,11 @@ use simulacra_engine::{
     PALETTES, Palette, SCENE_BUILDERS, build_scene, palette_stops, py_mod, render, seed32,
 };
 
-/// `MAX_FRAME_PIXELS` in Python: the most pixels a frame may have unless
+/// The most pixels a frame may have unless
 /// `--no-limits` is given.
 const MAX_FRAME_PIXELS: u128 = 100_000_000;
 
-/// `MAX_SIDE` in Python: the longest side a frame may have unless
+/// The longest side a frame may have unless
 /// `--no-limits` is given. Some scenes grow with a side alone (`woodblock`'s
 /// heights per column, `lissajous`'s curve points), and they are built before
 /// rendering validates them, so a thin canvas within the pixel limit could
@@ -35,8 +35,8 @@ const MAX_FRAME_PIXELS: u128 = 100_000_000;
 const MAX_SIDE: usize = 100_000;
 
 /// The most pixels an animation may render in all frames together unless
-/// `--no-limits` is given. It replaces Python's `MAX_ANIMATION_BYTES` (1 GiB
-/// of packed frames, 358 million pixels), which guards memory: the binary
+/// `--no-limits` is given. It is not a memory limit (an earlier limit of 1 GiB
+/// of packed frames, 358 million pixels, was): the binary
 /// holds only the frames in progress ([`frames_in_flight`]), so its limit
 /// guards run time and output size instead. At the 4 to 49 million pixels per second and at most 0.7 bytes
 /// per pixel measured (PLAN.md Phase 5) that is up to about 18 minutes and
@@ -106,7 +106,7 @@ fn frames_in_flight(width: usize, height: usize, frames: usize, threads: usize) 
 #[command(
     name = "simulacra",
     version,
-    about = "Simulacra: procedurally generated images, without Python",
+    about = "Simulacra: procedurally generated images",
     // A repeated option takes its last value, as in argparse.
     args_override_self = true,
     group(ArgGroup::new("seeds").args(["seed", "random_seed"])),
@@ -185,7 +185,7 @@ fn finite(text: &str) -> Result<f64, String> {
     }
 }
 
-/// `_fps` in Python: a whole number from 1 to 65535.
+/// The frame rate: a whole number from 1 to 65535, surrounding spaces allowed.
 fn fps(text: &str) -> Result<u16, String> {
     let value: i64 = text
         .trim()
@@ -197,7 +197,7 @@ fn fps(text: &str) -> Result<u16, String> {
         .ok_or_else(|| "fps must be between 1 and 65535".into())
 }
 
-/// `parse_hex_palette` in Python: comma-separated `rrggbb` or `rgb` colors, each
+/// A custom palette: comma-separated `rrggbb` or `rgb` colors, each
 /// with an optional leading `#`; at least two.
 fn parse_hex_palette(text: &str) -> Result<Stops, String> {
     let mut stops = Vec::new();
@@ -224,8 +224,8 @@ fn parse_hex_palette(text: &str) -> Result<Stops, String> {
     Ok(Stops(stops))
 }
 
-/// `check_limits` in Python, with [`MAX_TOTAL_PIXELS`] in place of Python's
-/// limit on animation memory.
+/// Refuses a canvas or animation over [`MAX_SIDE`], [`MAX_FRAME_PIXELS`],
+/// [`MAX_TOTAL_PIXELS`] or [`MAX_FRAMES`], before anything is rendered.
 fn check_limits(width: usize, height: usize, frames: usize) -> Result<(), String> {
     let pixels = width as u128 * height as u128;
     if pixels > MAX_FRAME_PIXELS {
@@ -252,7 +252,7 @@ fn check_limits(width: usize, height: usize, frames: usize) -> Result<(), String
     Ok(())
 }
 
-/// A seed below 2**31, like Python's `secrets.randbelow(2 ** 31)`, from the
+/// A random seed below 2**31, from the
 /// standard library's randomly keyed hasher (no extra dependency).
 fn random_seed() -> i64 {
     let bits = std::collections::hash_map::RandomState::new()
@@ -275,20 +275,20 @@ fn list_names(args: &Args) -> Option<Vec<&'static str>> {
     Some(names)
 }
 
-/// `_wants_gif` in Python: `--out` ends in `.gif`, in any case.
+/// Whether `--out` ends in `.gif`, in any case.
 fn wants_gif(args: &Args) -> bool {
     name_wants_gif(args.out.as_os_str())
 }
 
 /// Compares the whole name, not `Path::extension`, which is `None` for a file
-/// named `.gif` (Python's `'.gif'.lower().endswith('.gif')` is true) and
+/// named just `.gif` (which should still be a GIF) and
 /// would need UTF-8; a lossy string keeps the ASCII suffix of any name.
 fn name_wants_gif(name: &std::ffi::OsStr) -> bool {
     name.to_string_lossy().to_lowercase().ends_with(".gif")
 }
 
-/// Checks the arguments in `_check_args`'s order; returns width, height and
-/// the frame count.
+/// Checks the arguments in a fixed order, so the same mistake always gives
+/// the same message; returns width, height and the frame count.
 fn dimensions(args: &Args) -> Result<(usize, usize, usize), String> {
     let positive = |v: i64| usize::try_from(v).ok().filter(|&v| v > 0);
     let (Some(width), Some(height)) = (positive(args.width), positive(args.height)) else {
@@ -320,9 +320,9 @@ fn dimensions(args: &Args) -> Result<(usize, usize, usize), String> {
     Ok((width, height, frames))
 }
 
-/// `_frame_plan` in Python: the seed and phase of frame `index`. Every style
-/// moves, so frames step through one loop from `--phase` (reduced with
-/// Python's float `%` so the steps survive huge phases), unless `--slideshow`
+/// The seed and phase of frame `index`. Every style moves, so frames step
+/// through one loop from `--phase` (reduced with the floored modulo
+/// `py_mod`, so the steps survive huge phases), unless `--slideshow`
 /// gives each frame the next seed at the same phase.
 fn frame_plan(
     seed: i64,
@@ -338,7 +338,7 @@ fn frame_plan(
             .ok_or("--slideshow seeds would pass 9223372036854775807")?;
         return Ok((seed, phase));
     }
-    // Python divides two ints exactly; both are far below 2**53 here.
+    // Both are far below 2**53, so the conversions and the division are exact.
     Ok((seed, py_mod(phase, 1.0) + index as f64 / frames as f64))
 }
 
@@ -498,7 +498,7 @@ fn write_frames(args: &Args, frame: &Frame, seed: i64, frames: usize) -> Result<
     let (encoder, start) = Encoder::new(args, frame, frames)?;
     let cannot_write = |err: std::io::Error| format!("cannot write {}: {err}", args.out.display());
     let make = |index: usize| {
-        // One frame is a still image at --phase, as in Python's _render_and_write.
+        // One frame is a still image at exactly --phase, not reduced.
         let (frame_seed, phase) = if frames == 1 {
             (seed, args.phase)
         } else {
@@ -634,7 +634,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn hex_palettes_parse_like_python() {
+    fn hex_palettes_parse() {
         let stops = parse_hex_palette("#0c061c, 5814a8,f80").unwrap().0;
         assert_eq!(stops, [(12, 6, 28), (88, 20, 168), (255, 136, 0)]);
         assert!(parse_hex_palette("ff8800").is_err(), "one color");
@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn limits_match_python() {
+    fn limits_refuse_oversized_canvases() {
         assert!(check_limits(10_000, 10_000, 1).is_ok());
         let err = check_limits(10_001, 10_000, 1).unwrap_err();
         assert_eq!(
@@ -660,9 +660,9 @@ mod tests {
 
     #[test]
     fn animations_are_limited_by_total_pixels() {
-        // Python refuses 358 frames of 1000 x 1000 (over 1 GiB of frames in
-        // memory); the binary holds only the frames in progress, so its budget is
-        // 2**32 pixels.
+        // An earlier memory limit refused 358 frames of 1000 x 1000 (over
+        // 1 GiB of frames in memory); the binary holds only the frames in
+        // progress, so its budget is 2**32 pixels.
         assert!(check_limits(1000, 1000, 358).is_ok());
         assert!(check_limits(3840, 2160, 517).is_ok());
         assert!(
@@ -693,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    fn frame_rates_parse_like_python() {
+    fn frame_rates_parse() {
         assert_eq!(fps(" 24 "), Ok(24));
         assert_eq!(fps("65535"), Ok(65535));
         for text in ["0", "-3", "65536"] {
@@ -707,8 +707,8 @@ mod tests {
     }
 
     #[test]
-    fn frame_phases_match_python() {
-        // Expected values from simulacra.py's _frame_plan: (phase % 1.0) + i / frames.
+    fn frame_phases_step_through_one_loop() {
+        // (phase mod 1.0) + i / frames, with a floored modulo.
         let phases = |phase: f64, frames: usize| -> Vec<f64> {
             (0..frames)
                 .map(|i| frame_plan(5, phase, frames, false, i).unwrap())
@@ -720,7 +720,7 @@ mod tests {
         assert_eq!(phases(-0.25, 2), [0.75, 1.25]);
         assert_eq!(phases(1.25, 3), [0.25, 0.25 + 1.0 / 3.0, 0.25 + 2.0 / 3.0]);
         assert_eq!(phases(1e300, 2), [0.0, 0.5], "1e300 % 1.0 == 0.0");
-        assert_eq!(phases(-1e-20, 1), [1.0], "-1e-20 % 1.0 == 1.0 in Python");
+        assert_eq!(phases(-1e-20, 1), [1.0], "-1e-20 mod 1.0 rounds to 1.0");
     }
 
     #[test]
@@ -734,8 +734,7 @@ mod tests {
     }
 
     #[test]
-    fn gif_names_match_python() {
-        // Python: [n.lower().endswith('.gif') for n in names]
+    fn gif_names_are_matched_by_suffix_in_any_case() {
         let wants = |name: &str| name_wants_gif(std::ffi::OsStr::new(name));
         for name in [
             "a.gif",

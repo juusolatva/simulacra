@@ -1,5 +1,4 @@
-//! The built-in palettes, sorted by name (as `PALETTES` was in the retired
-//! `simulacra.py`). Stops are sRGB, from the first color (the background in
+//! The built-in palettes, sorted by name. Stops are sRGB, from the first color (the background in
 //! many styles) to the last.
 
 /// One color stop as `(r, g, b)`, each 0 to 255.

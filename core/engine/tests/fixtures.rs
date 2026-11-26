@@ -2,9 +2,9 @@
 //!
 //! Each `fixtures/<style>.json` holds a scene at 48 x 36, seed 3, phase 0.37
 //! and the SHA-256 of the packed RGB it renders, the same on every platform. The
-//! committed scenes were written before the Python cutover by the Python
-//! scene builders (the Rust builder for `attractor`), whose reference is in
-//! git history. These tests load each scene through serde, render it and
+//! committed scenes were recorded when the styles were last checked against
+//! an independent implementation, and every style's builder still makes them
+//! draw for draw. These tests load each scene through serde, render it and
 //! require the recorded hash.
 //!
 //! A deliberate change to a shader or scene builder updates them with the
@@ -21,10 +21,11 @@
 //! settings (size, seed, phase, palette name and stops) differ from the ones
 //! below, whose stored scene no longer deserializes, validates or renders the
 //! recorded hash, or whose Rust-built scene renders another hash; other files stay byte for byte as they are. A rewritten file
-//! lists its keys alphabetically and formats numbers as `serde_json` does
-//! (`1e-5` rather than Python's `1e-05`), so the first bless of a
-//! Python-written fixture changes every line of that file; compare the
-//! `sha256` and the scene values rather than the line diff.
+//! lists its keys alphabetically and formats numbers as `serde_json` does.
+//! The committed fixtures still have the key order and number format they
+//! were first written with, so the first bless of one changes every line of
+//! that file; compare the `sha256` and the scene values rather than the line
+//! diff.
 #![cfg(feature = "json")]
 
 use std::fmt::Write as _;
@@ -118,8 +119,8 @@ fn fixtures_render_their_recorded_hash() {
     );
 }
 
-/// Scenes built by the Rust ports of the Python builders must render the
-/// fixture's hash too: the same scene, so the same image, without Python.
+/// Scenes built from scratch by the scene builders must render the
+/// fixture's hash too: the same scene, so the same image.
 #[test]
 fn ported_scene_builders_render_the_fixture_hash() {
     for style in SCENE_BUILDERS {
@@ -296,9 +297,9 @@ const SEED: i64 = 3;
 const PHASE: f64 = 0.37;
 
 /// One level per line with a one-space indent per level, a list of plain
-/// scalars on one line, and a final newline: the line layout of the
-/// Python-era `make_fixtures.py`, but with keys in the map's (alphabetical)
-/// order and numbers as `serde_json` writes them.
+/// scalars on one line, and a final newline: the committed fixtures' line
+/// layout, but with keys in the map's (alphabetical) order and numbers as
+/// `serde_json` writes them.
 fn write_fixture_json(value: &serde_json::Value) -> String {
     fn dump(value: &serde_json::Value, indent: usize, out: &mut String) {
         use serde_json::Value;

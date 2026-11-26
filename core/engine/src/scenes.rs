@@ -1,9 +1,9 @@
-//! Scene builders ported from Python, so the engine can render a style on its
-//! own. Each matches the Python `_<style>_scene()` draw for draw (through
-//! [`PyRandom`](crate::PyRandom)). Every style in [`STYLES`](crate::STYLES)
-//! has one; an unknown style name gives `None`.
+//! Scene builders: each makes all of a style's random draws, in a fixed order
+//! (through [`PyRandom`](crate::PyRandom)), so a seed always gives the same
+//! scene. Every style in [`STYLES`](crate::STYLES) has one; an unknown style
+//! name gives `None`.
 //!
-//! A ported style implements [`BuildScene`] on its scene struct and gets one
+//! A style implements [`BuildScene`] on its scene struct and gets one
 //! line in `scene_builders!` below, which generates [`SCENE_BUILDERS`],
 //! [`build_scene`] and (with the `json` feature) [`build_scene_json`].
 
@@ -26,21 +26,19 @@ pub struct SceneParams<'a> {
     pub phase: f64,
 }
 
-/// A scene struct whose Python builder is ported to Rust.
+/// A scene struct that can build itself from the canvas, seed, palette and phase.
 pub trait BuildScene: Style + Sized + 'static {
-    /// Builds the scene exactly as the Python `_<style>_scene()` does.
+    /// Builds the scene, making every random draw in a fixed order.
     fn build(params: &SceneParams<'_>) -> Self;
 }
 
-/// The one list of ported builders, in registry (alphabetical) order.
+/// The one list of scene builders, in registry (alphabetical) order.
 macro_rules! scene_builders {
     ($($name:literal => $scene:ty),* $(,)?) => {
         /// Styles whose scene the engine can build, in registry order.
         pub const SCENE_BUILDERS: [&str; [$($name),*].len()] = [$($name),*];
 
-        /// Builds the scene for `style` as `simulacra.NATIVE_STYLES[style](width,
-        /// height, seed, stops, phase)` does, or `None` if its builder is still
-        /// Python only.
+        /// Builds the scene for `style`, or `None` for an unknown style.
         #[must_use]
         pub fn build_scene(
             style: &str,
@@ -57,9 +55,9 @@ macro_rules! scene_builders {
             })
         }
 
-        /// [`build_scene`] serialized as JSON, field names as in the Python
-        /// scene dict and every float in its shortest exact form, so a test
-        /// can compare the scene with the Python builder's value by value.
+        /// [`build_scene`] serialized as JSON, field names as in the scene
+        /// struct and every float in its shortest exact form, so a test can
+        /// compare scenes value by value (the fixtures store scenes this way).
         ///
         /// # Errors
         ///
@@ -210,7 +208,7 @@ mod tests {
         }
     }
 
-    /// Builders whose scene grows with the canvas, as in Python: curve points
+    /// Builders whose scene grows with the canvas: curve points
     /// spaced about a pixel apart (`lissajous`), a height per column
     /// (`woodblock`) and a value per tile (`mosaic`). Far beyond any renderable
     /// canvas they need memory in proportion, so the huge-side test skips them.

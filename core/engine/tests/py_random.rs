@@ -1,6 +1,6 @@
 //! `PyRandom` against CPython: replays the call sequences in
 //! `random_reference.json` and requires identical results. The reference was
-//! written from CPython's `random.Random` before the Python cutover; its
+//! written from CPython's `random.Random` (3.12 and 3.14 agree); its
 //! generator, `make_random_reference.py`, is in git history.
 
 use std::path::Path;

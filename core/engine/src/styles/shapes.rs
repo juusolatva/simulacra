@@ -76,7 +76,7 @@ impl Style for Geo {
         let sigma = ((width.min(height) as f64 / 2.0).max(1.0) * 0.025).max(0.6);
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
-            // Python sums with sum(), which is compensated since 3.12.
+            // A compensated sum, in polygon order.
             let v = py_sum(self.polygons.iter().map(|poly| {
                 let q = poly_min_dist(x, y, poly) / sigma;
                 (-0.5 * (q * q)).m_exp()
@@ -214,7 +214,7 @@ impl Style for Mandala {
 }
 
 impl BuildScene for Geo {
-    /// `_geo_scene`: 4 to 6 regular polygons, alternate ones turning either
+    /// 4 to 6 regular polygons, alternate ones turning either
     /// way once per loop.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
@@ -239,7 +239,7 @@ impl BuildScene for Geo {
     }
 }
 
-/// Python's `_prism_layers(rng, g, small, turn)` for a gem at `(cx, cy)` with
+/// The layers of a gem at `(cx, cy)` with
 /// radius `r`.
 fn prism_layers(
     rng: &mut PyRandom,
@@ -272,7 +272,7 @@ fn prism_layers(
 }
 
 impl BuildScene for Prism {
-    /// `_prism_scene`: 2 to 5 gems, all placed before any gets its layers.
+    /// 2 to 5 gems, all placed before any gets its layers.
     fn build(params: &SceneParams<'_>) -> Self {
         let (w, h) = (params.width as f64, params.height as f64);
         let mut rng = PyRandom::new(params.seed);
@@ -302,7 +302,7 @@ impl BuildScene for Prism {
     }
 }
 
-/// Python's `_turned_about(point, center, cosine, sine)`: the offset is added
+/// The offset is added
 /// to the point, so angle 0 returns it exactly.
 #[inline]
 fn turned_about(point: Point, center: Point, cosine: f64, sine: f64) -> Point {
@@ -313,7 +313,7 @@ fn turned_about(point: Point, center: Point, cosine: f64, sine: f64) -> Point {
     )
 }
 
-/// Python's `_make_shard(rng, width, height)`: `(r, poly, cracks, center)`.
+/// `(r, poly, cracks, center)`.
 fn make_shard(
     rng: &mut PyRandom,
     width: usize,
@@ -345,7 +345,7 @@ fn make_shard(
 }
 
 impl BuildScene for Shard {
-    /// `_shard_scene`: 2 to 4 cracked shards, neighbours turning about their
+    /// 2 to 4 cracked shards, neighbours turning about their
     /// centres in opposite directions once per loop.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
@@ -372,7 +372,7 @@ impl BuildScene for Shard {
     }
 }
 
-/// Python's `_make_trace(rng, width, height, phase, first_pad)`: node pads
+/// Node pads
 /// circling small orbits, joined by right-angled legs.
 fn make_trace(
     rng: &mut PyRandom,
@@ -415,7 +415,7 @@ fn make_trace(
 }
 
 impl BuildScene for Circuit {
-    /// `_circuit_scene`: 3 to 6 traces, pads numbered 8 apart per trace.
+    /// 3 to 6 traces, pads numbered 8 apart per trace.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let count = rng.randint(3, 6) as usize;
@@ -435,7 +435,7 @@ impl BuildScene for Circuit {
 }
 
 /// A mandala ring while the scene is built: radius, glyph count, glyph size,
-/// phase and wobble, in Python's draw order.
+/// phase and wobble, in draw order.
 struct MandalaRing {
     radius: f64,
     glyphs: i64,
@@ -445,7 +445,7 @@ struct MandalaRing {
 }
 
 impl BuildScene for Mandala {
-    /// `_mandala_scene`: rings sorted by radius, spokes between neighbours and
+    /// Rings sorted by radius, spokes between neighbours and
     /// glyphs around each ring, neighbouring rings turning opposite ways.
     fn build(params: &SceneParams<'_>) -> Self {
         let phase = params.phase;
@@ -469,7 +469,7 @@ impl BuildScene for Mandala {
                 }
             })
             .collect();
-        // Python's stable sort by radius; radii are finite.
+        // A stable sort by radius; radii are finite.
         rings.sort_by(|a, b| a.radius.total_cmp(&b.radius));
         let spokes = rings
             .windows(2)

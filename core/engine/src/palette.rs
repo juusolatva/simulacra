@@ -1,9 +1,9 @@
-//! Palette interpolation, ported from `palette_color()` in `simulacra.py`.
+//! Palette interpolation.
 
 use std::fmt;
 
-/// Color stops, interpolated by [`Palette::color`]. Channels are integers as in
-/// Python and are clamped to 0..=255 only when a color is produced.
+/// Color stops, interpolated by [`Palette::color`]. Channels are integers and
+/// are clamped to 0..=255 only when a color is produced.
 pub struct Palette {
     stops: Vec<(i64, i64, i64)>,
 }
@@ -46,14 +46,14 @@ impl Palette {
         [channel(r as f64), channel(g as f64), channel(b as f64)]
     }
 
-    /// Map t in [0, 1] to RGB. Channels are truncated like Python's int() and
+    /// Map t in [0, 1] to RGB. Channels are truncated toward zero and
     /// then clamped to 0..=255, as the PNG writers do.
     #[allow(
         clippy::manual_clamp,
-        reason = "clamp() keeps NaN, but Python's max(0.0, min(1.0, t)) maps NaN to 1.0"
+        reason = "clamp() keeps NaN, but max(0.0, min(1.0, t)) maps NaN to 1.0"
     )]
     pub fn color(&self, t: f64) -> [u8; 3] {
-        // Python: max(0.0, min(1.0, t)). f64::min/max agree, including NaN -> 1.0.
+        // max(0.0, min(1.0, t)), which maps NaN to 1.0.
         let t = t.min(1.0).max(0.0);
         let last = self.stops.len() - 1;
         if t <= 0.0 || last == 0 {
@@ -81,7 +81,7 @@ impl Palette {
 
 #[inline]
 fn channel(value: f64) -> u8 {
-    // `as` truncates toward zero (Python int()) and saturates to 0..=255.
+    // `as` truncates toward zero and saturates to 0..=255.
     value as u8
 }
 
@@ -90,11 +90,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn interpolates_and_truncates_like_python() {
+    fn interpolates_and_truncates() {
         let palette = Palette::new(vec![(13, 19, 49), (27, 42, 94), (61, 90, 153)]).unwrap();
         assert_eq!(palette.color(-1.0), [13, 19, 49]);
         assert_eq!(palette.color(f64::NAN), [61, 90, 153]);
-        // Python: palette_color(stops, 0.3) == (21, 32, 76)
         assert_eq!(palette.color(0.3), [21, 32, 76]);
     }
 }

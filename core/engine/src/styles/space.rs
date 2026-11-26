@@ -1,6 +1,6 @@
-//! Lunar, asteroid, black hole and supernova styles: per-pixel shaders that mirror
-//! `_lunar_value`, `_asteroids_value`, `_blackhole_value` and `_supernova_value`.
-//! Distances use `sqrt(dx * dx + dy * dy)` on both sides so results stay bit-identical.
+//! Lunar, asteroid, black hole and supernova styles: per-pixel shaders over a
+//! shared star field. Distances use `sqrt(dx * dx + dy * dy)` rather than
+//! `hypot`, and must stay that way to keep the images bit-identical.
 
 use crate::math::Libm;
 use std::f64::consts::{PI, TAU};
@@ -17,7 +17,7 @@ use crate::validate::{Canvas, SceneError, check_loop_phase, check_numbers};
 /// `(x, y, sigma, brightness)`
 type Star = (f64, f64, f64, f64);
 
-/// Canvas units for pixel `(x, y)`: the short side spans -1 to 1 (Python's `_view`).
+/// Canvas units for pixel `(x, y)`: the short side spans -1 to 1.
 #[inline]
 fn view(x: usize, y: usize, width: usize, height: usize) -> (f64, f64) {
     let (cx, cy) = center(width, height);
@@ -319,7 +319,7 @@ impl Style for Supernova {
     }
 }
 
-/// Python's `width / max(1.0, min(width, height))` and the same for the
+/// `width / max(1.0, min(width, height))` and the same for the
 /// height: half the canvas in view units, whose short side spans 2.
 #[inline]
 fn half_extents(width: usize, height: usize) -> (f64, f64) {
@@ -327,7 +327,7 @@ fn half_extents(width: usize, height: usize) -> (f64, f64) {
     (width as f64 / small, height as f64 / small)
 }
 
-/// Python's `_sky_stars(rng, count, half_x, half_y)`.
+/// `count` random stars over the view, shared by the space styles.
 fn sky_stars(rng: &mut PyRandom, count: usize, half_x: f64, half_y: f64) -> Vec<Star> {
     (0..count)
         .map(|_| {
@@ -344,13 +344,13 @@ fn sky_stars(rng: &mut PyRandom, count: usize, half_x: f64, half_y: f64) -> Vec<
 const LUNAR_CRATERS: usize = 36;
 
 impl BuildScene for Lunar {
-    /// `_lunar_scene`: 36 craters and a sun whose azimuth swings over the loop.
+    /// 36 craters and a sun whose azimuth swings over the loop.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let (half_x, half_y) = half_extents(params.width, params.height);
         let craters = (0..LUNAR_CRATERS)
             .map(|_| {
-                // Python's `x ** 3` on a float is libm pow.
+                // A float cube through libm pow, not `powi`, to keep the bits.
                 let radius = 0.025 + 0.3 * rng.random().m_powf(3.0);
                 let x = rng.uniform(-half_x, half_x);
                 let y = rng.uniform(-half_y, half_y);
@@ -378,7 +378,7 @@ impl BuildScene for Lunar {
 const ASTEROID_COUNT: usize = 80;
 
 impl BuildScene for Asteroids {
-    /// `_asteroids_scene`: a tilted belt of 80 rocks drifting a whole number of
+    /// A tilted belt of 80 rocks drifting a whole number of
     /// laps per loop, sorted nearest (largest `fade`) first, over 90 stars.
     fn build(params: &SceneParams<'_>) -> Self {
         let phase = params.phase;
@@ -414,7 +414,7 @@ impl BuildScene for Asteroids {
                 )
             })
             .collect();
-        // Python's stable `sort(key=lambda rock: -rock[10])`; fade is finite.
+        // A stable sort by descending fade (nearest first); fade is finite.
         rocks.sort_by(|a, b| (-a.10).total_cmp(&-b.10));
         Self {
             rocks,
@@ -426,7 +426,7 @@ impl BuildScene for Asteroids {
 }
 
 impl BuildScene for Blackhole {
-    /// `_blackhole_scene`: horizon, tilted and rolled disk turning two laps per
+    /// Horizon, tilted and rolled disk turning two laps per
     /// loop, and 140 stars.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
@@ -450,7 +450,7 @@ impl BuildScene for Blackhole {
 }
 
 impl BuildScene for Supernova {
-    /// `_supernova_scene`: a breathing shell, a pulsing core with turned
+    /// A breathing shell, a pulsing core with turned
     /// diffraction spikes, looping filament noise and 110 stars.
     fn build(params: &SceneParams<'_>) -> Self {
         let phase = params.phase;

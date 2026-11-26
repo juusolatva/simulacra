@@ -1,6 +1,6 @@
 [package]
 name = "simulacra_cli"
-description = "The standalone Simulacra command-line tool (no Python needed)"
+description = "The Simulacra command-line tool"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

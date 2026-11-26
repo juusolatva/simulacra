@@ -1,8 +1,8 @@
-//! PNG and APNG encoding, as `write_png` and `write_animated_png` in
-//! `simulacra.py` do it: 8-bit RGB, filter type 0 (None) on every scanline, and
-//! one zlib stream at level 9 per frame. Samples are stored unchanged (palette
-//! stops are sRGB). The compressed bytes can differ from Python's zlib, but the
-//! decoded pixels are the same.
+//! PNG and APNG encoding: 8-bit RGB, filter type 0 (None) on every scanline,
+//! and one zlib stream at level 9 per frame. Samples are stored unchanged
+//! (palette stops are sRGB). The golden hashes pin both the files and their
+//! decoded pixels, so a compression library update that changes the bytes
+//! shows up separately from a change to the images.
 //!
 //! The encoder does no I/O: [`encode`] returns a whole PNG file, and [`Apng`]
 //! returns an animation piece by piece. [`Apng::compress`] compresses a frame

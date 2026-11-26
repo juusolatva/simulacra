@@ -1,4 +1,4 @@
-//! `render_drift`: noise sampled through a current-warped coordinate grid.
+//! `drift`: noise sampled through a current-warped coordinate grid.
 
 use crate::noise::{contrast, fbm_loop};
 use crate::palette::Palette;
@@ -12,7 +12,7 @@ pub struct Drift {
 }
 
 impl BuildScene for Drift {
-    /// `_drift_scene`: the noise only needs the phase.
+    /// The noise only needs the phase.
     fn build(params: &SceneParams<'_>) -> Self {
         Self {
             phase: params.phase,

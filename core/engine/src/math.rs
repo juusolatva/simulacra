@@ -3,11 +3,12 @@
 //! They call the pure-Rust `libm` crate rather than the platform libm (`f64`'s
 //! methods), whose last bit differs between platforms, so every target renders
 //! the same image and the golden hashes hold everywhere. The platform libm was
-//! the default until the Python cutover; measured, it was 1 to 11% faster over
+//! the default until it was measured: it was only 1 to 11% faster over
 //! all styles (PLAN.md, "Math backends: measurement"), not worth a second
 //! backend. `clippy.toml` forbids the `f64` methods outside this file.
 //! `sqrt` and `floor` are not routed here, because they are exact everywhere.
-//! `hypot` is not libm in Python: [`py_hypot`] ports CPython's own algorithm.
+//! `hypot` is not routed here either: [`py_hypot`] ports CPython's own
+//! algorithm, which is exact everywhere.
 
 /// Libm-backed methods on `f64`, named with an `m_` prefix so call sites read
 /// like the `f64` methods they replace.
@@ -71,7 +72,7 @@ impl Libm for f64 {
     }
 }
 
-/// Python's `math.hypot(x, y)`: CPython's `math_hypot_impl` and `vector_norm`
+/// CPython's `math.hypot(x, y)`: its `math_hypot_impl` and `vector_norm`
 /// (identical in 3.12 and 3.14) for two arguments, not libm's `hypot`, which
 /// can differ in the last bit. Every step is IEEE arithmetic with `sqrt` and a
 /// fused multiply-add, both correctly rounded, so it gives the same result on
@@ -211,8 +212,7 @@ mod tests {
     #[test]
     fn matches_cpython_where_glibc_hypot_does_not() {
         // A sample of the 12,715 disagreements among 3.5 M inputs on glibc
-        // 2.43; the port matched CPython on all 3.5 M under both math backends
-        // the engine had then.
+        // 2.43; the port matched CPython on all 3.5 M.
         check(&[
             (
                 0x40b9_6eb1_1bf6_c31f,

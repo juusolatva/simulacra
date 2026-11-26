@@ -23,8 +23,8 @@ concurrency:
 # only for pull_request events, so a merge group's scan compares the commit with
 # itself and would upload an empty diff (no merge queue is in use at the moment).
 #
-# This repository's only lockfile is core/Cargo.lock (the Python module has no
-# dependencies), and -r finds it and any lockfile added later.
+# This repository's only lockfile is core/Cargo.lock, and -r finds it and any
+# lockfile added later.
 jobs:
   scan-scheduled:
     permissions:

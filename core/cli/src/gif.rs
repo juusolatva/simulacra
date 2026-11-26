@@ -1,8 +1,8 @@
-//! GIF encoding, as `write_gif` in `simulacra.py` does it, byte for byte: one
-//! global 256-colour table shared by every frame (240 samples along the
-//! palette plus 16 greys), pixels mapped to it once per 5-bit colour cell, and
-//! the same LZW code stream (`_lzw_codes`). Python's generic colour cube for a
-//! missing palette is not ported: the command line always has a palette.
+//! GIF encoding: one global 256-colour table shared by every frame (240
+//! samples along the palette plus 16 greys), pixels mapped to it once per
+//! 5-bit colour cell, and a variable-width LZW code stream whose width grows
+//! exactly when a decoder's does. The golden hashes pin the files byte for
+//! byte.
 //!
 //! Like [`crate::png::Apng`], the encoder does no I/O: [`Gif`] returns the file
 //! piece by piece. Every frame's blocks depend only on its pixels, so
@@ -13,7 +13,7 @@ use std::sync::{Mutex, PoisonError};
 
 use simulacra_engine::Palette;
 
-/// `GIF_MAX_SIDE` in Python: the format stores each side in 16 bits.
+/// The longest side a GIF can have: the format stores each side in 16 bits.
 pub const GIF_MAX_SIDE: usize = 65_535;
 
 /// Entries in the colour table, all of which index bytes can address.
@@ -40,18 +40,17 @@ impl std::fmt::Display for GifError {
     }
 }
 
-/// `_gif_table(stops)` in Python: 240 palette samples, then 16 greys.
+/// The colour table: 240 palette samples, then 16 greys.
 fn table(palette: &Palette) -> Vec<[u8; 3]> {
     let mut table: Vec<[u8; 3]> = (0..240)
         .map(|i| palette.color(f64::from(i) / 239.0))
         .collect();
-    // Python rounds i * 255 / 15, which is the whole number 17 * i.
+    // Grey i is i * 255 / 15, which is the whole number 17 * i.
     table.extend((0..16u8).map(|i| [17 * i; 3]));
     table
 }
 
-/// `_nearest_entry` in Python: the entry closest in squared RGB distance,
-/// the lowest index on a tie (as `min` keeps the first minimum).
+/// The entry closest in squared RGB distance, the lowest index on a tie.
 fn nearest_entry(table: &[[u8; 3]], color: [u8; 3]) -> u8 {
     let distance = |entry: &[u8; 3]| -> i32 {
         (0..3)
@@ -76,10 +75,9 @@ fn cell(color: [u8; 3]) -> usize {
         | usize::from(color[2] >> 3)
 }
 
-/// `_GifColors` in Python: a colour in the table keeps its (lowest) entry;
-/// any other colour takes the entry nearest the centre of its 5-bit cell,
-/// searched once per cell. Python's cache of exact colours only saves time, so
-/// it is not ported; the mapping is the same. The searched cells are cached
+/// Maps colours to table entries: a colour in the table keeps its (lowest)
+/// entry; any other colour takes the entry nearest the centre of its 5-bit
+/// cell, searched once per cell. The searched cells are cached
 /// per thread, in [`Scratch`], so the table itself is shared read-only.
 struct Colors {
     table: Vec<[u8; 3]>,
@@ -113,7 +111,7 @@ impl Colors {
     }
 }
 
-/// `_lzw_width` in Python: the code width after the table reaches
+/// The code width after the table reaches
 /// `next_code` entries, at most 12 bits.
 fn lzw_width(next_code: usize, width: u32) -> u32 {
     if next_code == 1 << width && width < 12 {
@@ -123,7 +121,7 @@ fn lzw_width(next_code: usize, width: u32) -> u32 {
     }
 }
 
-/// Packs codes into bytes, least significant bit first (`_gif_lzw`).
+/// Packs codes into bytes, least significant bit first.
 #[derive(Default)]
 struct BitWriter {
     out: Vec<u8>,
@@ -182,8 +180,8 @@ impl Dictionary {
     }
 }
 
-/// `_gif_lzw(indices)` in Python: GIF LZW with minimum code size 8, emitting
-/// exactly the codes `_lzw_codes` yields, packed into bytes.
+/// GIF LZW with minimum code size 8: a clear code first and whenever the
+/// table fills, an end code last, packed into bytes.
 fn lzw(indices: &[u8], dictionary: &mut Dictionary) -> Vec<u8> {
     const CLEAR: usize = 256;
     const END: usize = 257;
@@ -240,8 +238,8 @@ impl Scratch {
     }
 }
 
-/// `_gif_delay(fps)` in Python: hundredths of a second, at least 2 (viewers
-/// treat 0 and 1 as 10), rounding half to even like Python's `round`.
+/// The frame delay in hundredths of a second, rounded half to even and at
+/// least 2 (viewers treat 0 and 1 as 10).
 pub fn delay(fps: u16) -> u16 {
     let hundredths = (100.0 / f64::from(fps)).round_ties_even();
     // 100 / fps is at most 100, so the cast is exact.
@@ -265,7 +263,7 @@ pub struct Gif {
 
 impl Gif {
     /// Starts a GIF; returns it with the bytes that begin the file. `looping`
-    /// adds the NETSCAPE2.0 block, which Python writes for more than one frame.
+    /// adds the NETSCAPE2.0 block (the caller asks for it with more than one frame).
     pub fn new(
         width: usize,
         height: usize,
@@ -351,7 +349,7 @@ mod tests {
         Palette::new(stops).unwrap()
     }
 
-    /// The reference decoder from `test_simulacra.py` (`lzw_decode`).
+    /// A straightforward LZW decoder, independent of the encoder.
     fn lzw_decode(data: &[u8]) -> Vec<u8> {
         // Codes 256 and 257 (clear, end) hold empty placeholders.
         let fresh = || {
@@ -415,8 +413,8 @@ mod tests {
     }
 
     #[test]
-    fn lzw_matches_python_codes() {
-        // Python: _gif_lzw(bytes([1, 2, 1, 2, 1, 2])) == b'\x00\x03\x08\x10(0 '
+    fn lzw_emits_the_expected_codes() {
+        // Clear (256), 1, 2, then 258 ("1 2") twice, and end (257), in 9 bits each.
         let mut dictionary = Dictionary::new();
         assert_eq!(
             lzw(&[1, 2, 1, 2, 1, 2], &mut dictionary),
@@ -428,7 +426,6 @@ mod tests {
     fn the_table_samples_the_palette_then_greys() {
         let table = table(&deep());
         assert_eq!(table.len(), 256);
-        // Python: _gif_table(PALETTES['deep'])[:2], [120], [239], [240:243], [255]
         assert_eq!(table[0], [13, 19, 49]);
         assert_eq!(table[1], [13, 19, 49]);
         assert_eq!(table[120], [61, 90, 153]);
@@ -438,12 +435,10 @@ mod tests {
     }
 
     #[test]
-    fn colours_map_like_python() {
+    fn colours_map_to_table_entries() {
         let table = table(&deep());
         let colors = Colors::new(table.clone());
         let mut cells = vec![None; 1 << 15];
-        // Python: list(_GifColors(table).indices(bytes([0, 0, 0, 13, 19, 49,
-        // 61, 90, 153, 200, 10, 90, 201, 12, 93]))) == [240, 0, 120, 246, 246]
         // A table colour keeps its own, lowest entry (entries 0 and 1 are
         // equal; black is only a grey); others take the entry nearest their
         // 5-bit cell's centre, here (204, 12, 92).
@@ -469,14 +464,13 @@ mod tests {
     }
 
     #[test]
-    fn delays_round_like_python() {
-        // Python: [_gif_delay(f) for f in (1, 3, 8, 12, 24, 40, 50, 51, 65535)]
+    fn delays_round_half_to_even_with_a_minimum() {
         let got: Vec<u16> = [1, 3, 8, 12, 24, 40, 50, 51, 65535].map(delay).to_vec();
         assert_eq!(got, [100, 33, 12, 8, 4, 2, 2, 2, 2]);
     }
 
     #[test]
-    fn frames_follow_write_gif() {
+    fn files_have_the_gif89a_block_layout() {
         let (gif, start) = Gif::new(2, 1, &deep(), 12, true).unwrap();
         assert_eq!(&start[..13], b"GIF89a\x02\x00\x01\x00\xF7\x00\x00");
         assert_eq!(start.len(), 13 + 768 + 19);

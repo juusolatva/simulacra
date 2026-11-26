@@ -1,5 +1,5 @@
 //! CPython's `random.Random`, ported draw for draw so a seed gives the same
-//! numbers in Rust as in Python.
+//! numbers as CPython's generator, and every seed keeps its scene.
 //!
 //! The generator is MT19937 as in `Modules/_randommodule.c` (`init_genrand`,
 //! `init_by_array`, `genrand_uint32`, `random_seed`, `random()` and
@@ -136,7 +136,7 @@ impl PyRandom {
     ///
     /// # Panics
     ///
-    /// If `k > 128`; Python's unbounded result does not fit in a `u128`.
+    /// If `k > 128`, whose result does not fit in a `u128`.
     pub fn getrandbits(&mut self, k: u32) -> u128 {
         assert!(k <= 128, "getrandbits({k}) does not fit in a u128");
         if k == 0 {
@@ -175,7 +175,7 @@ impl PyRandom {
     ///
     /// # Panics
     ///
-    /// If `stop <= 0` (Python raises `ValueError`).
+    /// If `stop <= 0` (CPython raises `ValueError`).
     pub fn randrange(&mut self, stop: i64) -> i64 {
         assert!(stop > 0, "empty range for randrange({stop})");
         // Below `stop`, so it fits back into an i64.
@@ -186,7 +186,7 @@ impl PyRandom {
     ///
     /// # Panics
     ///
-    /// If `b < a` (Python raises `ValueError`).
+    /// If `b < a` (CPython raises `ValueError`).
     pub fn randint(&mut self, a: i64, b: i64) -> i64 {
         assert!(b >= a, "empty range in randint({a}, {b})");
         // The width is at most 2**64, which fits in a u128 but not a u64.
@@ -199,16 +199,16 @@ impl PyRandom {
     ///
     /// # Panics
     ///
-    /// If `seq` is empty (Python raises `IndexError`).
+    /// If `seq` is empty (CPython raises `IndexError`).
     pub fn choice<'a, T>(&mut self, seq: &'a [T]) -> &'a T {
         assert!(!seq.is_empty(), "cannot choose from an empty sequence");
         // Below seq.len(), so it fits back into a usize.
         &seq[self.randbelow(seq.len() as u128) as usize]
     }
 
-    /// `uniform(a, b)`: `a + (b - a) * random()`, in Python's operation order.
-    /// Integer arguments in Python are converted exactly as long as they fit
-    /// in 53 bits, which every builder's bounds do.
+    /// `uniform(a, b)`: `a + (b - a) * random()`, in CPython's operation order.
+    /// Builders pass whole-number bounds as floats, which is exact while they
+    /// fit in 53 bits, as every builder's bounds do.
     pub fn uniform(&mut self, a: f64, b: f64) -> f64 {
         a + (b - a) * self.random()
     }

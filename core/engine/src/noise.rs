@@ -1,14 +1,14 @@
-//! Value noise and fBm, ported operation-for-operation from `simulacra.py`.
+//! Value noise and fBm.
 //!
-//! The arithmetic order matches the Python reference exactly (Rust does not
-//! fuse multiply-adds by default), so results agree bit-for-bit apart from
-//! any differences in the platform math library.
+//! The arithmetic order is fixed (Rust does not fuse multiply-adds by
+//! default), so results are the same bit for bit on every platform, and the
+//! pinned values in the tests below must not change.
 
 use crate::geometry::py_mod;
 use crate::math::Libm;
 
-/// Integer lattice hash in [0, 1]. Python ints are unbounded, but every step
-/// is masked to 32 bits, so wrapping 64-bit arithmetic gives the same result.
+/// Integer lattice hash in [0, 1]. Every step is masked to 32 bits, so
+/// wrapping 64-bit arithmetic gives the same result as unbounded integers.
 #[inline]
 pub(crate) fn hash(x: i64, y: i64, seed: u32) -> f64 {
     let n = (x as u64)
@@ -21,7 +21,7 @@ pub(crate) fn hash(x: i64, y: i64, seed: u32) -> f64 {
     n as f64 / 4_294_967_295.0
 }
 
-/// Smoothly interpolated lattice noise with the Python default cell size of 8.
+/// Smoothly interpolated lattice noise with a cell size of 8.
 #[inline]
 pub fn value_noise(x: f64, y: f64, seed: u32) -> f64 {
     const CELL: f64 = 8.0;
@@ -60,7 +60,7 @@ pub fn fbm(x: f64, y: f64, seed: u32, octaves: u32) -> f64 {
 }
 
 /// Layers of 2D noise a looping fBm steps through for octave 0; octave `i`
-/// uses `NOISE_LAYERS + i`. See `_NOISE_LAYERS` in `simulacra.py`.
+/// uses `NOISE_LAYERS + i`, so the octaves do not all stall or pulse together.
 const NOISE_LAYERS: u32 = 4;
 
 /// `value_noise` at loop position `z` in `[0, period)` layers: a blend of two
@@ -123,9 +123,9 @@ pub fn contrast(n: f64, gain: f64) -> f64 {
 mod tests {
     use super::*;
 
-    // Expected values were produced by the Python reference implementation.
+    // Pinned values: every noise-based style depends on them.
     #[test]
-    fn hash_matches_python() {
+    fn hash_gives_pinned_values() {
         assert_eq!(hash(0, 0, 0), 0.0);
         assert_eq!(hash(-1, -2, 5), 0.8618520523565477);
         assert_eq!(hash(123, 456, 4_294_967_295), 0.8277825722069905);
@@ -140,13 +140,13 @@ mod tests {
     }
 
     #[test]
-    fn fbm_and_polar_noise_match_python() {
+    fn fbm_and_polar_noise_give_pinned_values() {
         assert_eq!(fbm(-3.7, 12.25, 77, 4), 0.6149435913811198);
         assert_eq!(polar_noise(5.5, -2.0, 9, 3.0, 3), 0.6977435125610463);
     }
 
     #[test]
-    fn looping_fbm_matches_python() {
+    fn looping_fbm_gives_pinned_values() {
         assert_eq!(fbm_loop(-3.7, 12.25, 77, 4, 0.3), 0.4135943337603634);
         assert_eq!(fbm_loop(5.5, -8.0, 9, 3, 0.9), 0.6436688167096111);
         assert_eq!(

@@ -18,9 +18,9 @@ use crate::raster::{shade, shade_rgb};
 use crate::scenes::{BuildScene, SceneParams};
 use crate::validate::{Canvas, SceneError, check_index, check_loop_phase, check_numbers};
 
-/// Python's `math.sqrt(width * width + height * height)`: the integers are
-/// squared and added exactly and rounded to a float once, as Python converts
-/// its unbounded int (round half to even).
+/// `sqrt(width * width + height * height)`: the integers are squared and
+/// added exactly and rounded to a float once (half to even) before the square
+/// root, so huge sides do not overflow or round twice.
 pub(crate) fn diagonal(width: usize, height: usize) -> f64 {
     let (w, h) = (width as u128, height as u128);
     // Each square fits in u128 (a usize has at most 64 bits); their sum can
@@ -47,7 +47,7 @@ pub struct Blobs {
 }
 
 impl BuildScene for Blobs {
-    /// `_blobs_scene`: the noise only needs the phase.
+    /// The noise only needs the phase.
     fn build(params: &SceneParams<'_>) -> Self {
         Self {
             phase: params.phase,
@@ -78,7 +78,7 @@ pub struct Waves {
 }
 
 impl BuildScene for Waves {
-    /// `_waves_scene`: four layers of (amplitude, frequency, phase), the phases
+    /// Four layers of (amplitude, frequency, phase), the phases
     /// drawn from `random.Random(seed)` and turned by the animation phase.
     fn build(params: &SceneParams<'_>) -> Self {
         let phase = params.phase;
@@ -136,7 +136,7 @@ pub struct Plasma {
 }
 
 impl BuildScene for Plasma {
-    /// `_plasma_scene`: four plane waves in random directions, well below Nyquist.
+    /// Four plane waves in random directions, well below Nyquist.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let size = params.width.max(params.height) as f64;
@@ -184,7 +184,7 @@ pub struct Interference {
 }
 
 impl BuildScene for Interference {
-    /// `_interference_scene`: three plane waves, each in a random direction.
+    /// Three plane waves, each in a random direction.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let size = params.width.max(params.height) as f64;
@@ -230,7 +230,7 @@ pub struct Kaleidoscope {
 }
 
 impl BuildScene for Kaleidoscope {
-    /// `_kaleidoscope_scene`: the fold count and a turning phase.
+    /// The fold count and a turning phase.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let folds = rng.randint(4, 8);
@@ -272,7 +272,7 @@ pub struct Pinwheel {
 }
 
 impl BuildScene for Pinwheel {
-    /// `_pinwheel_scene`: arm count and twist; the arms spin once per loop.
+    /// Arm count and twist; the arms spin once per loop.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let n_arms = rng.randint(3, 5);
@@ -325,7 +325,7 @@ pub struct Galaxy {
 }
 
 impl BuildScene for Galaxy {
-    /// `_galaxy_scene`: a bulge and two or three log-spiral arms that turn.
+    /// A bulge and two or three log-spiral arms that turn.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let (cx, cy) = center(params.width, params.height);
@@ -387,7 +387,7 @@ pub struct Bloom {
 }
 
 impl BuildScene for Bloom {
-    /// `_bloom_scene`: 4 to 9 glows, each circling its home position.
+    /// 4 to 9 glows, each circling its home position.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height, phase) = (params.width, params.height, params.phase);
         let mut rng = PyRandom::new(params.seed);
@@ -438,7 +438,7 @@ pub struct Nebula {
 }
 
 impl BuildScene for Nebula {
-    /// `_nebula_scene`: 3 to 6 drifting clouds and 40 fixed stars.
+    /// 3 to 6 drifting clouds and 40 fixed stars.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height, phase) = (params.width, params.height, params.phase);
         let mut rng = PyRandom::new(params.seed);
@@ -509,7 +509,7 @@ pub struct Orbits {
 }
 
 impl BuildScene for Orbits {
-    /// `_orbits_scene`: 60 circling stars and 6 breathing ring bands. The ring
+    /// 60 circling stars and 6 breathing ring bands. The ring
     /// colour draw, `randrange(n_stops)`, depends on the palette size.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height, phase) = (params.width, params.height, params.phase);
@@ -524,7 +524,7 @@ impl BuildScene for Orbits {
                 (x + dx, y + dy, rng.uniform(0.5, 3.0))
             })
             .collect();
-        // Python's `x ** 2` on a float is libm pow.
+        // A float square through libm pow, not `powi`, to keep the bits.
         let max_r = ((w / 2.0).m_powf(2.0) + (h / 2.0).m_powf(2.0)).sqrt();
         let n_stops = params.palette.stop_count() as i64;
         let rings = (0..6)
@@ -629,7 +629,7 @@ pub struct Rings {
 }
 
 impl BuildScene for Rings {
-    /// `_rings_scene`: 4 to 9 rings; neighbouring rings turn in opposite directions.
+    /// 4 to 9 rings; neighbouring rings turn in opposite directions.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let scale = (params.width.min(params.height) as f64 / 2.0).max(1.0);
@@ -679,7 +679,7 @@ pub struct Starburst {
 }
 
 impl BuildScene for Starburst {
-    /// `_starburst_scene`: the ray count and a turning phase.
+    /// The ray count and a turning phase.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let rays = rng.randint(8, 14) as f64;
@@ -716,7 +716,7 @@ pub struct Spiral {
 }
 
 impl BuildScene for Spiral {
-    /// `_spiral_scene`: 2 to 5 arms of (turns, phase, amplitude, width).
+    /// 2 to 5 arms of (turns, phase, amplitude, width).
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let count = rng.randint(2, 5);
@@ -765,7 +765,7 @@ pub struct Petals {
 }
 
 impl BuildScene for Petals {
-    /// `_petals_scene`: petal count and length, and a turning phase.
+    /// Petal count and length, and a turning phase.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let count = rng.randint(5, 8) as f64;
@@ -808,7 +808,7 @@ pub struct Aurora {
 }
 
 impl BuildScene for Aurora {
-    /// `_aurora_scene`: 3 to 7 ribbons; neighbouring ones turn in opposite directions.
+    /// 3 to 7 ribbons; neighbouring ones turn in opposite directions.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height) = (params.width, params.height);
         let mut rng = PyRandom::new(params.seed);
@@ -857,7 +857,7 @@ pub struct Gems {
 }
 
 impl BuildScene for Gems {
-    /// `_gems_scene`: three gems whose facets turn.
+    /// Three gems whose facets turn.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height) = (params.width, params.height);
         let mut rng = PyRandom::new(params.seed);
@@ -907,7 +907,7 @@ pub struct Cosmos {
 }
 
 impl BuildScene for Cosmos {
-    /// `_cosmos_scene`: 2 to 5 ring centres whose bands move outward.
+    /// 2 to 5 ring centres whose bands move outward.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height) = (params.width, params.height);
         let mut rng = PyRandom::new(params.seed);
@@ -950,7 +950,7 @@ impl Style for Cosmos {
                 let (dx, dy) = (x - cx, y - cy);
                 let d = (dx * dx + dy * dy).sqrt();
                 if d < max_r {
-                    // d >= 0, so truncation matches Python's int().
+                    // d >= 0, so truncation rounds down.
                     let k = ((d / max_r) * (rings - 1) as f64 + 0.5) as i64;
                     let w = gaussian(d, max_r / (rings - 1).max(1) as f64);
                     let s = (k as f64 * 2.0 + phase).m_sin();
@@ -963,7 +963,7 @@ impl Style for Cosmos {
     }
 }
 
-/// `render_mandelbrot`: Python gives the view (scale, centre) and iteration limit.
+/// `mandelbrot`: the builder gives the view (scale, centre) and iteration limit.
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Mandelbrot {
     scale: f64,
@@ -971,13 +971,13 @@ pub struct Mandelbrot {
     iterations: u32,
 }
 
-/// `_MANDELBROT_HOME`, `_MANDELBROT_TARGET` and `_MANDELBROT_DEPTH` in Python.
+/// The view at phase 0, the point it zooms towards and how deep it zooms.
 const MANDELBROT_HOME: (f64, f64) = (-0.6, 0.0);
 const MANDELBROT_TARGET: (f64, f64) = (-0.743_643_887_037_151, 0.131_825_904_205_330);
 const MANDELBROT_DEPTH: f64 = 7.0;
 
 impl BuildScene for Mandelbrot {
-    /// `_mandelbrot_scene`: a zoom toward `MANDELBROT_TARGET` and back over a
+    /// A zoom toward `MANDELBROT_TARGET` and back over a
     /// loop, eased at both ends; phase 0 is the whole set.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height, phase) = (params.width, params.height, params.phase);
@@ -991,7 +991,7 @@ impl BuildScene for Mandelbrot {
                 home_x + (target_x - home_x) * (1.0 - closing),
                 home_y + (target_y - home_y) * (1.0 - closing),
             ),
-            // Python's int() truncates; 150 * ease is in [0, 150].
+            // Truncated; 150 * ease is in [0, 150].
             iterations: 100 + (150.0 * ease) as u32,
         }
     }
@@ -1026,7 +1026,7 @@ impl Style for Mandelbrot {
     }
 }
 
-/// The most layers a `horizon` scene may have; the Python builder draws 4.
+/// The most layers a `horizon` scene may have; the builder draws 4.
 const HORIZON_MAX_LAYERS: usize = 64;
 
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -1037,7 +1037,7 @@ pub struct Horizon {
 }
 
 impl BuildScene for Horizon {
-    /// `_horizon_scene`: four ridges, far to near, each with its own noise offset.
+    /// Four ridges, far to near, each with its own noise offset.
     fn build(params: &SceneParams<'_>) -> Self {
         let mut rng = PyRandom::new(params.seed);
         let layers = [0.35, 0.5, 0.65, 0.8]
@@ -1105,7 +1105,7 @@ pub struct Voronoi {
 }
 
 impl BuildScene for Voronoi {
-    /// `_voronoi_scene`: 10 to 16 sites, all drawn first, then each set
+    /// 10 to 16 sites, all drawn first, then each set
     /// circling its home position.
     fn build(params: &SceneParams<'_>) -> Self {
         let (width, height) = (params.width, params.height);
@@ -1141,8 +1141,8 @@ impl Style for Voronoi {
         let scale = (width.min(height) as f64).max(1.0);
         shade(width, height, palette, |x, y| {
             let (x, y) = (x as f64, y as f64);
-            // Python sorts (distance, brightness) tuples and reads the first two
-            // distances: track the lexicographic minimum and the second distance.
+            // The nearest point by (distance, brightness), ties broken by
+            // brightness, and the second-smallest distance.
             let mut nearest = (f64::INFINITY, f64::INFINITY);
             let mut second = f64::INFINITY;
             for &(sx, sy, color) in &self.sites {
@@ -1169,10 +1169,10 @@ pub struct Crystal {
 }
 
 impl BuildScene for Crystal {
-    /// `_crystal_scene`: the fixed light and its Blinn-Phong half vector.
+    /// The fixed light and its Blinn-Phong half vector.
     fn build(params: &SceneParams<'_>) -> Self {
         let (lx, ly, lz) = (0.45_f64, -0.55_f64, 0.70_f64);
-        // Python's sum() of the squares, which is compensated since 3.12.
+        // A compensated sum of the squares.
         let ln = py_sum([lx * lx, ly * ly, lz * lz]).sqrt();
         let light = (lx / ln, ly / ln, lz / ln);
         let (hx, hy, hz) = (light.0, light.1, light.2 + 1.0); // half vector, viewer at +z
@@ -1227,7 +1227,7 @@ impl Style for Crystal {
             } else {
                 0.0
             };
-            // Python's round() is half-to-even.
+            // Rounded half to even.
             let tilt =
                 ((py_hypot(gx, gy) * relief).m_atan() / tilt_step).round_ties_even() * tilt_step;
             let azimuth = (gy.m_atan2(gx) / az_step).round_ties_even() * az_step;
@@ -1285,7 +1285,7 @@ impl Style for Cymatics {
 }
 
 impl BuildScene for Cymatics {
-    /// `_cymatics_scene`: a circular or square plate and three modes, each with
+    /// A circular or square plate and three modes, each with
     /// two phases turning at different rates.
     fn build(params: &SceneParams<'_>) -> Self {
         let phase = params.phase;
@@ -1361,7 +1361,7 @@ impl Style for Optics {
 }
 
 impl BuildScene for Optics {
-    /// `_optics_scene`: four caustic waves, a thin film, an aperture's blades
+    /// Four caustic waves, a thin film, an aperture's blades
     /// and three circling flares.
     fn build(params: &SceneParams<'_>) -> Self {
         let phase = params.phase;
@@ -1444,7 +1444,7 @@ impl Style for Contour {
 }
 
 impl BuildScene for Contour {
-    /// `_contour_scene`: only the phase, which the looping terrain noise takes.
+    /// Only the phase, which the looping terrain noise takes.
     fn build(params: &SceneParams<'_>) -> Self {
         Self {
             phase: params.phase,
@@ -1499,11 +1499,11 @@ impl Style for Opart {
     }
 }
 
-/// Python's `_OPART_PATTERNS`, whose length `_opart_scene` draws below.
+/// The number of op-art patterns the builder draws from.
 const OPART_PATTERNS: i64 = 3;
 
 impl BuildScene for Opart {
-    /// `_opart_scene`: one of the stripe, checker and ring patterns, warped by
+    /// One of the stripe, checker and ring patterns, warped by
     /// two or three circling bulges.
     fn build(params: &SceneParams<'_>) -> Self {
         let phase = params.phase;
@@ -1542,11 +1542,11 @@ pub struct Marbling {
     slide: f64,
 }
 
-/// Python's `_MARBLING_BANDS`: stripes per unit of the background.
+/// Stripes per unit of the background.
 const MARBLING_BANDS: f64 = 7.0;
 
 impl BuildScene for Marbling {
-    /// `_marbling_scene`: eight ink drops, a comb, two more drops and a comb
+    /// Eight ink drops, a comb, two more drops and a comb
     /// back, applied in that order; the drops circle and the combs' strength
     /// swings with the loop.
     fn build(params: &SceneParams<'_>) -> Self {
@@ -1635,7 +1635,7 @@ impl Style for Marbling {
 }
 
 impl BuildScene for Cosmic {
-    /// `_cosmic_scene`: 40 to 90 drifting, twinkling stars and an arm that
+    /// 40 to 90 drifting, twinkling stars and an arm that
     /// turns once per loop.
     fn build(params: &SceneParams<'_>) -> Self {
         let (w, h) = (params.width as f64, params.height as f64);
@@ -1667,11 +1667,11 @@ impl BuildScene for Cosmic {
 mod tests {
     use super::diagonal;
 
-    /// Python's `math.sqrt(w * w + h * h)` on exact ints, including sums that
-    /// need more than 128 bits.
+    /// `sqrt(w * w + h * h)` on exact integers, including sums that need more
+    /// than 128 bits.
     #[cfg(target_pointer_width = "64")]
     #[test]
-    fn diagonal_matches_python_exact_ints() {
+    fn diagonal_rounds_exact_integers_once() {
         let cases: [(usize, usize, f64); 8] = [
             (usize::MAX, usize::MAX, 2.6087635650665566e+19),
             (usize::MAX, 1, 1.8446744073709552e+19),

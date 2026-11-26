@@ -94,7 +94,7 @@ fn first_numbers(
 }
 
 /// Styles whose `phase` drives looping noise, which reduces it modulo 1: any
-/// finite phase is valid there (Python passes the caller's phase through).
+/// finite phase is valid there (callers may pass any phase).
 const LOOP_PHASE_STYLES: [&str; 9] = [
     "blobs",
     "bloom",
