@@ -99,9 +99,9 @@ Do not commit generated images.
 Releases are drafted by `release-binaries.yml` from a `vX.Y.Z` tag; nothing is public until the owner publishes the draft. Pushing a tag and publishing are outward-facing: do either only when the owner asks.
 
 1. In a PR, set `version` under `[workspace.package]` in `core/Cargo.toml` (both crates inherit it, and `simulacra --version` prints it) and update `core/Cargo.lock` (`cargo update --workspace --manifest-path core/Cargo.toml`, which changes only the two workspace entries' versions). Merge it.
-2. Tag the merge commit on main and push the tag: `git tag -a vX.Y.Z -m "Simulacra vX.Y.Z" origin/main && git push origin vX.Y.Z`.
+2. Tag the merge commit on main and push the tag: `git tag -a vX.Y.Z -m "simulacra vX.Y.Z" origin/main && git push origin vX.Y.Z`.
 3. The workflow builds, tests and golden-checks every target, then drafts the release with the three packages, `SHA256SUMS` and generated notes. A failure creates no release; fix it, delete the tag (`git push --delete origin vX.Y.Z`, `git tag -d vX.Y.Z`) and tag again.
-4. Review the draft (notes, assets) and publish it. Anyone can check a download with `gh attestation verify FILE --repo juusolatva/simulacra`.
+4. Review the draft (notes, assets) and publish it. The release title and tag message are lowercase (`simulacra vX.Y.Z`), like the binary and package names. Anyone can check a download with `gh attestation verify FILE --repo juusolatva/simulacra`.
 
 ## Architecture
 
