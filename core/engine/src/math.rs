@@ -1,12 +1,13 @@
-//! Transcendental functions the shaders take from libm, behind one switch.
+//! Transcendental functions the shaders take from libm.
 //!
-//! By default these call the platform libm through `f64`'s methods, as CPython's
-//! `math` module does, so native output matches Python on the same machine. With
-//! the `portable` feature they call the pure-Rust `libm` crate instead, which
-//! gives the same result on every target (used to measure drift; see PLAN.md).
+//! They call the pure-Rust `libm` crate rather than the platform libm (`f64`'s
+//! methods), whose last bit differs between platforms, so every target renders
+//! the same image and the golden hashes hold everywhere. The platform libm was
+//! the default until the Python cutover; measured, it was 1 to 11% faster over
+//! all styles (PLAN.md, "Math backends: measurement"), not worth a second
+//! backend. `clippy.toml` forbids the `f64` methods outside this file.
 //! `sqrt` and `floor` are not routed here, because they are exact everywhere.
-//! `hypot` is not libm in Python: [`py_hypot`] ports CPython's own algorithm,
-//! and both backends use it.
+//! `hypot` is not libm in Python: [`py_hypot`] ports CPython's own algorithm.
 
 /// Libm-backed methods on `f64`, named with an `m_` prefix so call sites read
 /// like the `f64` methods they replace.
@@ -31,49 +32,6 @@ pub trait Libm {
     fn m_ln_1p(self) -> f64;
 }
 
-// The one place allowed to call the platform libm (see clippy.toml).
-#[cfg(not(feature = "portable"))]
-#[allow(clippy::disallowed_methods)]
-impl Libm for f64 {
-    #[inline]
-    fn m_exp(self) -> f64 {
-        self.exp()
-    }
-    #[inline]
-    fn m_sin(self) -> f64 {
-        self.sin()
-    }
-    #[inline]
-    fn m_cos(self) -> f64 {
-        self.cos()
-    }
-    #[inline]
-    fn m_tan(self) -> f64 {
-        self.tan()
-    }
-    #[inline]
-    fn m_tanh(self) -> f64 {
-        self.tanh()
-    }
-    #[inline]
-    fn m_atan(self) -> f64 {
-        self.atan()
-    }
-    #[inline]
-    fn m_atan2(self, other: f64) -> f64 {
-        self.atan2(other)
-    }
-    #[inline]
-    fn m_powf(self, n: f64) -> f64 {
-        self.powf(n)
-    }
-    #[inline]
-    fn m_ln_1p(self) -> f64 {
-        self.ln_1p()
-    }
-}
-
-#[cfg(feature = "portable")]
 impl Libm for f64 {
     #[inline]
     fn m_exp(self) -> f64 {
@@ -117,7 +75,7 @@ impl Libm for f64 {
 /// (identical in 3.12 and 3.14) for two arguments, not libm's `hypot`, which
 /// can differ in the last bit. Every step is IEEE arithmetic with `sqrt` and a
 /// fused multiply-add, both correctly rounded, so it gives the same result on
-/// every platform and under either backend.
+/// every platform.
 #[must_use]
 #[inline]
 pub fn py_hypot(x: f64, y: f64) -> f64 {
@@ -253,7 +211,8 @@ mod tests {
     #[test]
     fn matches_cpython_where_glibc_hypot_does_not() {
         // A sample of the 12,715 disagreements among 3.5 M inputs on glibc
-        // 2.43; the port matched CPython on all 3.5 M under both backends.
+        // 2.43; the port matched CPython on all 3.5 M under both math backends
+        // the engine had then.
         check(&[
             (
                 0x40b9_6eb1_1bf6_c31f,

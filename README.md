@@ -30,19 +30,19 @@ The project started as a Python script produced by an LLM running in a sandbox l
 Install it with Cargo, straight from this repository (it is not published on crates.io):
 
 ```bash
-cargo install --locked --features portable --git https://github.com/juusolatva/simulacra simulacra_cli
+cargo install --locked --git https://github.com/juusolatva/simulacra simulacra_cli
 ```
 
-From a clone, `cargo install --locked --features portable --path core/cli` does the same. Cargo puts `simulacra` (`simulacra.exe` on Windows) in `~/.cargo/bin`, which the Rust installer adds to `PATH`.
+From a clone, `cargo install --locked --path core/cli` does the same. Cargo puts `simulacra` (`simulacra.exe` on Windows) in `~/.cargo/bin`, which the Rust installer adds to `PATH`.
 
 - **Rust:** install a recent stable toolchain with [rustup](https://rustup.rs); run `rustup update` first if an older one fails to build (the crates use the 2024 edition, and CI builds with the latest stable release).
 - **Linux:** Rust needs a C linker; on Debian and Ubuntu, `sudo apt install build-essential`.
 - **Windows:** Rust needs the Microsoft C++ build tools, which rustup offers to install; follow its prompts.
 - **macOS:** not a tested target; the build may work.
-- **Options:** `--locked` builds with the dependency versions in the repository's `Cargo.lock`, the ones CI tests. `--features portable` uses the pure-Rust math library, so every platform renders exactly the same image (the committed golden hashes hold for these builds). Without it, the program uses the platform's math library, which is somewhat faster but can differ slightly in two styles: `cymatics` by at most one level in rare pixels, and `attractor`, whose chaotic orbit takes another path through the same curves.
+- **Options:** `--locked` builds with the dependency versions in the repository's `Cargo.lock`, the ones CI tests. Earlier instructions added `--features portable`; that feature is gone, since every build now uses the pure-Rust math library and renders exactly the same image on every platform.
 - **Updating and removing:** run the same command again to update to the latest commit on `main` (Cargo says the package is already installed if nothing changed), and `cargo uninstall simulacra_cli` to remove it.
 
-`simulacra --version` prints the crate version, which does not change between commits yet. To build without installing, run `cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable` and use `core/target/release/simulacra`. No prebuilt binaries are published yet; CI builds and checks them for Linux (x86_64, aarch64) and Windows (x86_64), see [`PLAN.md`](PLAN.md), Phases 3 and 6.
+`simulacra --version` prints the crate version, which does not change between commits yet. To build without installing, run `cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli` and use `core/target/release/simulacra`. No prebuilt binaries are published yet; CI builds and checks them for Linux (x86_64, aarch64) and Windows (x86_64), see [`PLAN.md`](PLAN.md), Phases 3 and 6.
 
 ## Quick start
 
@@ -249,13 +249,13 @@ The noise helpers use interpolated lattice values and fractal Brownian motion (f
 
 Palette stops are sRGB colors, and the writers store samples as given, with no transfer-function conversion. The output does not embed an explicit color profile or sRGB chunk.
 
-The same inputs give the same image on every platform with a `portable` build, which the committed golden hashes check. Changes to rendering algorithms can change the output for an existing seed; saved seeds are not a guarantee of identical images across versions.
+The same inputs give the same image on every platform, which the committed golden hashes check: the program uses a pure-Rust math library rather than the platform's, whose last bit differs between systems. Changes to rendering algorithms can change the output for an existing seed; saved seeds are not a guarantee of identical images across versions.
 
 ## Performance and limits
 
 Every style renders on all processor cores; at 640 × 480 most styles take a few milliseconds to shade, and the slowest about 0.15 s (measured on 8 CPUs; see "Stage baseline" in [`PLAN.md`](PLAN.md)). There is no GPU backend or progress indicator.
 
-To measure scene building and shading per style, run the engine's benchmark (add `--features portable` to measure the portable math):
+To measure scene building and shading per style, run the engine's benchmark:
 
 ```bash
 cargo run --release --manifest-path core/Cargo.toml -p simulacra_engine --example bench -- --width 1920 --height 1080 --repeat 3
@@ -267,8 +267,6 @@ It prints the best of the repeats in milliseconds for every style (or `--styles 
 hyperfine --warmup 1 'simulacra --style ink --width 1920 --height 1080 --out ink.png'
 time (for i in 1 2 3; do simulacra --style plasma --frames 12 --out plasma.png; done)
 ```
-
-To compare the platform libm with the `portable` math on your machine, run `sh core/bench_backends.sh OUTDIR` (about 15 minutes on a 4-core laptop; Git Bash on Windows). It builds both, times each libm function, every style as a 1080p still and as a 12-frame 1080p animation over three rounds, and writes the results and a `summary.tsv` with portable / platform ratios to `OUTDIR`.
 
 The program refuses, before rendering, a frame over 100 million pixels or with a side over 100,000 pixels, more than 2³² pixels across all frames (about 2,070 frames at 1920 × 1080, or 517 at 3840 × 2160) and more than 65,536 frames, since each frame has a fixed cost however small it is. Together these bound run time and file size; `--no-limits` skips them. Format limits apply even then: PNG sides up to 4,294,967,295, GIF sides up to 65,535, and at most 2,147,483,648 APNG frames.
 
@@ -289,16 +287,16 @@ cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
 
 `cargo test` covers the engine's unit tests (noise, palettes, the CPython `hypot` and random-generator ports checked against CPython's own results, scene validation), invariants every style keeps (`core/engine/tests/invariants.rs`: a wide palette range, motion and seamless loops, huge phases, tiny canvases, the work limit up to 4K, unaliased waves), and the program's behavior (`core/cli/tests/cli.rs`: options, messages, exit statuses, failed writes, and the decoded PNG, APNG and GIF output).
 
-Two sets of committed hashes pin the exact images of a `portable` build:
+Two sets of committed hashes pin the exact images, the same on every platform:
 
-- **Portable fixtures** (`core/engine/tests/fixtures/`): one scene per style at 48 × 36 with the hash of its image. `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable` renders them and also builds each scene from scratch. After a deliberate change to a style, update them with the ignored `bless_fixtures` test, run on its own: `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json,portable --test fixtures -- --ignored --exact bless_fixtures`.
-- **Golden hashes** (`core/cli/tests/golden/`): 343 renders of the program (every style at several sizes, seeds, phases and palettes, APNG and GIF animations), with each file's hash in `SHA256SUMS` and each decoded frame's in `PIXELS`. Build a portable binary and check it:
+- **Portable fixtures** (`core/engine/tests/fixtures/`): one scene per style at 48 × 36 with the hash of its image. `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json` renders them and also builds each scene from scratch. After a deliberate change to a style, update them with the ignored `bless_fixtures` test, run on its own: `cargo test --manifest-path core/Cargo.toml -p simulacra_engine --features json --test fixtures -- --ignored --exact bless_fixtures`.
+- **Golden hashes** (`core/cli/tests/golden/`): 343 renders of the program (every style at several sizes, seeds, phases and palettes, APNG and GIF animations), with each file's hash in `SHA256SUMS` and each decoded frame's in `PIXELS`. Build the binary and check it:
 
   ```bash
-  cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable
+  cargo build --release --manifest-path core/Cargo.toml -p simulacra_cli
   DIR=$(mktemp -d)/golden   # golden.sh creates it; it must be empty or missing
   sh core/cli/tests/golden.sh check core/target/release/simulacra --keep "$DIR"
-  SIMULACRA_GOLDEN_OUT="$DIR" cargo test --release --manifest-path core/Cargo.toml -p simulacra_cli --features portable --test golden_pixels -- --ignored
+  SIMULACRA_GOLDEN_OUT="$DIR" cargo test --release --manifest-path core/Cargo.toml -p simulacra_cli --test golden_pixels -- --ignored
   ```
 
   `golden.sh bless` rewrites `SHA256SUMS`, and `SIMULACRA_BLESS=1` on the pixel test rewrites `PIXELS` (it refuses an incomplete directory). A change that alters file bytes but not images, such as a compression library update, re-blesses `SHA256SUMS` only, after the pixel test passes against the unchanged `PIXELS`; a deliberate visual change re-blesses both. `sh core/cli/tests/golden_selftest.sh` tests the checker itself.
@@ -346,7 +344,6 @@ Express sizes, radii, frequencies and noise scales relative to the canvas, keep 
 | [`core/cli/tests/golden/`](core/cli/tests/golden) | The golden workloads and their file and pixel hashes; `golden.sh` checks and blesses them. |
 | [`core/engine/tests/fixtures/`](core/engine/tests/fixtures) | One portable scene per style with the hash of its image. |
 | [`core/engine/examples/bench.rs`](core/engine/examples/bench.rs) | Per-style benchmark of scene building and shading. |
-| [`core/bench_backends.sh`](core/bench_backends.sh) | Compares the two math backends: `libm_bench` (each libm function), stills and animations of every style. |
 | `core/coverage.sh`, `core/check_lcov.sh` | Line coverage as CI collects it, and its safeguards. |
 | [`.github/workflows/`](.github/workflows) | CI: `cargo test` and Clippy on both math backends and the golden check; release builds for Linux and Windows checked against the golden hashes; SonarQube Cloud analysis with Rust coverage; OSV-Scanner. |
 | `sonar-project.properties` | SonarQube Cloud project settings. |

@@ -227,7 +227,7 @@ reference to match; it remains only for speed.
    machine and CI) and Windows (CI), with repeats. As carried out:
    `core/bench_backends.sh` on the owner's machines (a laptop, a slower
    desktop and a Windows 11 desktop) instead of CI runners, which are shared
-   and noisy; results in `PLAN.md`, "Math backends: measurement (preliminary)".
+   and noisy; results in `PLAN.md`, "Math backends: measurement".
 2. Present the numbers with a recommendation; the owner decides between:
    - **portable only:** remove the platform backend (the `Libm` trait keeps one
      implementation, `clippy.toml`'s rules and the CI backend matrix
@@ -239,6 +239,11 @@ reference to match; it remains only for speed.
 
 Either way the golden hashes stay unchanged, since they are recorded from
 `portable` builds.
+
+Outcome (2026-11-26): **portable only**. Over all styles the platform libm
+was 1 to 11% faster on stills and 4 to 6% on animations on three machines,
+not worth a second backend; the backend, the `portable` feature and the
+measuring tools were removed.
 
 ## Risks
 

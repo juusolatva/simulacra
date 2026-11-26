@@ -26,7 +26,9 @@ total pixels, rendering and encoding several frames at once within a memory
 budget and writing them in order; reusing buffers is left as an option.
 Phase 6 is under way: Rust coverage, the CLI parity audit and `cargo install`
 from GitHub are done, and Python is retired (golden hashes and Rust tests took
-over, then the Python reference and extension were removed; see Phase 6).
+over, then the Python reference and extension were removed; see Phase 6),
+and every build uses the portable math (the platform-libm backend was
+measured and removed; see "Math backends: measurement").
 Simulacra is now a Rust-only project; the Python-era sections below are kept
 as history.
 
@@ -959,9 +961,10 @@ writes the same files as before.
   per-stage benchmark is `core/engine/examples/bench.rs` (whole runs are
   timed with `hyperfine` or a shell loop), and coverage is Rust-only, with
   `core/check_lcov.sh` failing CI if the binary's `main()` or the shaders
-  have no hits. CI installs no Python. PR 3 (in progress) measures the math
-  backends and decides whether the platform-libm backend stays; preliminary
-  numbers from one laptop are in "Math backends: measurement (preliminary)".
+  have no hits. CI installs no Python. PR 3 measured the math backends on
+  three machines (PR #53; "Math backends: measurement"), and the platform-libm
+  backend was removed (decided 2026-11-26): every build uses the `libm` crate,
+  CI tests one backend, and the install command lost `--features portable`.
 - [x] Retain the Python reference temporarily for regression testing.
   Retired in PR 2 of the cutover, after PR 1 recorded the golden hashes and
   fixtures while the Python comparison still passed; the reference is in
@@ -975,6 +978,11 @@ Acceptance: all supported functionality works from a downloadable executable
 on a machine without Python, with documented compatibility and performance.
 
 ## Compatibility policy
+
+Since 2026-11-26 every build uses the pure-Rust `libm` crate: the platform-libm
+backend and the `portable` feature were removed after the Python cutover (see
+"Math backends: measurement"), so all builds render the golden hashes on every
+platform. The history below explains how that choice was reached.
 
 Decided on 2026-11-06, from the measured drift below: the standalone release
 binaries (Phase 3 onward) are built with `--features portable`, and the
@@ -1120,66 +1128,66 @@ window narrower than 1/768 of the loop, so roughly one 60-frame animation in
 The tests check a sample of the table at 6 phases, and with `SIMULACRA_SLOW`
 every entry at the 48 phases, both orientations, with the test limits.
 
-### Math backends: measurement (preliminary)
+### Math backends: measurement
 
-Cutover PR 3 decides whether the platform-libm backend stays, now that no
+Cutover PR 3 decided whether the platform-libm backend stays, now that no
 Python reference needs it (design in
-`docs/superpowers/specs/2026-11-11-python-cutover-design.md`). Measured with
-`core/bench_backends.sh`, which builds both backends and times each libm
+`docs/superpowers/specs/2026-11-11-python-cutover-design.md`). **Decided
+2026-11-26: portable only.** The platform backend saved 1 to 11% over all
+styles, too little for a second backend whose images differ from the golden
+hashes in `attractor` and `cymatics`, and the program stays far faster than
+the Python and Rust combination it replaced. The backend, the `portable`
+feature and the measuring tools were removed afterwards; the tools are in
+git history (PR #53).
+
+Method: `core/bench_backends.sh` built both backends and timed each libm
 function (`examples/libm_bench.rs`), every style as a 1920 × 1080 still
 (`examples/bench.rs`: scene and shading, best of 3 per round) and every style
 as a whole binary run writing a 12-frame 1920 × 1080 APNG, over 3 rounds. The
-backends alternate between rounds, and between styles in the animations, so
-drift hits both alike; the figures are the best over all rounds.
+backends alternated between rounds, and between styles in the animations, so
+drift hit both alike; the figures are the best over all rounds. The owner's
+machines were used rather than CI runners, which are shared and noisy.
 
-Machines: the owner's own rather than CI runners, which are shared and noisy.
-Done: ThinkPad X280. To do: the homelab Core i7-4770 (the slowest machine,
-Linux), the Windows 11 desktop with a Ryzen 5 9600X (the MSVC runtime against
-the `libm` crate, which may compare differently from glibc; also Ubuntu under
-WSL2 there), and the X280 again, idle. A Raspberry Pi is possible but ARM is
-not a priority.
+| Machine | Conditions |
+| --- | --- |
+| ThinkPad X280 (2026-11-25) | Core i5-8350U, 4 cores, 8 threads, 16 GB; Fedora, kernel 7.3.3, glibc, rustc 1.99.1; on AC, `powersave` governor with `balance_performance`. Thermally limited (81 °C throughout) with a browser running; best and median animation runs differ by 10 to 20% per style. |
+| Homelab (2026-11-26) | Core i7-4770, 4 cores, 8 threads; Linux 7.3.5 (`-default` kernel), glibc, rustc 1.99.1, `schedutil` governor. 42 to 54 °C, little other load: the cleanest run. |
+| Windows desktop (2026-11-26) | Ryzen 5 9600X, 6 cores, 12 threads; Windows 11 (build 26300) under Git Bash, the MSVC runtime's libm, rustc 1.98.1. |
 
-**ThinkPad X280** (2026-11-25; Core i5-8350U, 4 cores, 8 threads, 16 GB;
-Fedora, kernel 7.3.3, glibc, rustc 1.99.1, `libm` 0.2.16; on AC, `powersave`
-governor with `balance_performance`): the package sat at 81 °C throughout, so
-the CPU was thermally limited, and a browser was running (load average 2.4
-before the run). Per style, the best and median animation runs differ by 10
-to 20%, so per-style ratios within about ±10% are noise.
+All used `libm` 0.2.16. Over all 48 styles, `portable` time / platform time:
 
-| All 48 styles | Platform libm | `portable` | `portable` / platform |
+| Machine | Stills, sum | Stills, geometric mean | Animations, sum | Animations, geometric mean |
+| --- | --- | --- | --- | --- |
+| X280 | 1.01 (9.76 s → 9.86 s) | 1.02 | 1.04 (127.0 s → 132.1 s) | 1.03 |
+| i7-4770 | 1.05 (7.61 s → 8.01 s) | 1.06 | 1.06 (96.8 s → 102.2 s) | 1.04 |
+| 9600X | 1.11 (2.55 s → 2.83 s) | 1.09 | 1.06 (34.8 s → 37.0 s) | 1.05 |
+
+Styles beyond the noise, still ratios (on the X280 rerun with 5 repeats in 3
+rounds; animation ratios, which include encoding, are similar or smaller):
+
+| Style | X280 | i7-4770 | 9600X |
 | --- | --- | --- | --- |
-| Stills, sum | 9.76 s | 9.86 s | 1.01 (geometric mean of the per-style ratios 1.02) |
-| Animations, sum | 127.0 s | 132.1 s | 1.04 (geometric mean 1.03) |
+| `quasar` | 1.62 | 1.36 | 1.54 |
+| `ink` | 1.64 | 1.50 | 1.61 |
+| `opart` | 1.45 | 1.38 | 1.47 |
+| `starburst` | 1.37 | 1.34 | 1.46 |
+| `petals` | 1.36 | 1.27 | 1.45 |
+| `aurora` | 1.09 | 1.16 | 1.40 |
+| `attractor` | 0.74 | 0.76 | 1.14 |
+| `constellations` | 0.88 | 0.95 | 0.65 |
 
-Styles beyond the noise (stills rerun for these with 5 repeats in 3 rounds;
-animation ratios from the main run, which includes encoding):
+Per call, `libm` crate time / platform time (`libm_bench`):
 
-| Style | Still ratio | Animation ratio |
-| --- | --- | --- |
-| `quasar` | 1.62 | 1.51 |
-| `ink` | 1.64 | 1.11 |
-| `opart` | 1.45 | 1.47 |
-| `starburst` | 1.37 | 1.22 |
-| `petals` | 1.36 | 1.19 |
-| `lunar` | 1.21 | 1.10 |
-| `marbling` | 1.19 | 1.20 |
-| `attractor` | 0.74 | 0.85 |
-| `asteroids` | 0.88 | 1.12 |
-| `constellations` | 0.88 | 0.90 |
+| Platform libm | `exp` | `sin`, `cos` | `tan` | `tanh` | `atan` | `atan2` | `pow` | `ln_1p` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| glibc (X280, i7-4770) | 1.7 to 1.8 | 0.77 to 0.93 | 1.2 to 1.3 | 1.0 to 1.2 | 1.0 to 1.1 | 0.8 to 0.9 | 3.0 to 3.4 | 1.0 to 1.1 |
+| MSVC runtime (9600X) | 1.9 | 1.07 to 1.10 | 1.4 | 1.6 | 1.5 | 1.0 | 2.0 | 1.1 |
 
-Per call (`libm_bench`, `libm` crate time / glibc time): `exp` 1.7 to 1.8,
-`sin` and `cos` 0.84 to 0.93, `tan` 1.2 to 1.3, `tanh` 1.2, `atan` 1.0,
-`atan2` 0.8, `pow` 3.1 to 3.4, `ln_1p` 1.1 (glibc: 8 to 23 ns per call).
-`pow` and `exp` explain the slower styles; `attractor`'s orbit is mostly
-`sin` and `cos`, which the `libm` crate does faster.
-
-Preliminary reading: over all styles the platform backend saves 1 to 4% on
-this machine, while it renders `attractor` and `cymatics` differently from
-the golden hashes and keeps a second backend in CI. The owner leans towards
-**portable only** (2026-11-25). If the slow styles matter, a faster portable
-`pow` or `exp` (or fewer calls in those shaders) is the better lever, but
-changing how a style computes changes its images. To be confirmed with the
-other machines.
+`pow` and `exp` explain the slower styles. The `libm` crate's `sin` and `cos`
+beat glibc's, so `attractor`'s orbit ran faster on Linux, but not on Windows,
+whose runtime is faster than the crate in every function. Should the slow
+styles matter, calling `pow` and `exp` less in those shaders is the lever; it
+changes their images, so it is a deliberate visual change.
 
 ## Performance investigations
 
@@ -1235,5 +1243,5 @@ speedup. Judge improvements using end-to-end measurements and peak memory.
    parity audit, and installing with `cargo install` from GitHub. Left:
    GitHub Releases, signing and clean-machine checks (Phase 3), which come
    with the first release, and PR 3 of the Python cutover (the math
-   backends; in progress, see "Math backends: measurement (preliminary)"). Python is retired: golden hashes and Rust tests took over, and
+   backends: done, portable only; see "Math backends: measurement"). Python is retired: golden hashes and Rust tests took over, and
    the reference and extension were removed.

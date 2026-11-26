@@ -8,7 +8,7 @@ publish.workspace = true
 
 [dependencies]
 rayon.workspace = true
-libm = { workspace = true, optional = true }
+libm.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
@@ -18,14 +18,8 @@ serde_json = { workspace = true, features = ["raw_value"] }
 sha2.workspace = true
 
 [features]
-# Route libm calls through the pure-Rust libm crate (same results on every target).
-portable = ["dep:libm"]
 # Derive serde::Deserialize on the scene structs; `deserialize_scene` reads a
 # scene from any serde format.
 serde = ["dep:serde"]
 # Scenes from JSON (`scene_from_json`), used by the portable fixtures in tests/.
 json = ["serde", "dep:serde_json"]
-
-[[example]]
-name = "libm_bench"
-required-features = ["portable"]

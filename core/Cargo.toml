@@ -13,6 +13,7 @@ publish = false
 
 [workspace.dependencies]
 rayon = "1.12"
+# The engine's only libm (src/math.rs), so every platform renders the same image.
 # No default features: the `arch` feature would use platform intrinsics where they exist.
 libm = { version = "0.2.16", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }

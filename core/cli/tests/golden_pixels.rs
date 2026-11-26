@@ -8,7 +8,7 @@
 //! ```text
 //! sh core/cli/tests/golden.sh check BINARY --keep DIR
 //! SIMULACRA_GOLDEN_OUT=DIR cargo test --release --manifest-path core/Cargo.toml \
-//!     -p simulacra_cli --features portable --test golden_pixels -- --ignored
+//!     -p simulacra_cli --test golden_pixels -- --ignored
 //! ```
 //!
 //! With `SIMULACRA_BLESS=1` the test rewrites `PIXELS` instead of checking it.
@@ -114,7 +114,7 @@ fn fixture_mismatches(lines: &[(String, String)]) -> Vec<String> {
 }
 
 #[test]
-#[ignore = "run on a golden.sh --keep directory: SIMULACRA_GOLDEN_OUT=DIR cargo test --manifest-path core/Cargo.toml -p simulacra_cli --features portable --test golden_pixels -- --ignored"]
+#[ignore = "run on a golden.sh --keep directory: SIMULACRA_GOLDEN_OUT=DIR cargo test --manifest-path core/Cargo.toml -p simulacra_cli --test golden_pixels -- --ignored"]
 fn every_frame_matches_its_pixel_hash() {
     let Some(dir) = std::env::var_os("SIMULACRA_GOLDEN_OUT") else {
         panic!("set SIMULACRA_GOLDEN_OUT to a golden.sh --keep directory");
