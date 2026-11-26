@@ -2,8 +2,8 @@
 //!
 //! It renders every style (`--list-styles`) as still PNG images, looping APNG
 //! animations (`--frames`) and GIF (a `.gif` `--out`). Its options, defaults
-//! and messages stay stable between versions (see the README's list of
-//! command-line differences). Animation frames are rendered and encoded several at a time
+//! and messages stay stable between versions (see the README's
+//! command-line options). Animation frames are rendered and encoded several at a time
 //! on the thread pool and written to the temporary output file in order as
 //! they finish; the number in progress is bounded by the thread count and a
 //! memory budget ([`frames_in_flight`]), not by the frame count.
@@ -36,11 +36,11 @@ const MAX_SIDE: usize = 100_000;
 
 /// The most pixels an animation may render in all frames together unless
 /// `--no-limits` is given. It is not a memory limit (an earlier limit of 1 GiB
-/// of packed frames, 358 million pixels, was): the binary
-/// holds only the frames in progress ([`frames_in_flight`]), so its limit
-/// guards run time and output size instead. At the 4 to 49 million pixels per second and at most 0.7 bytes
-/// per pixel measured (PLAN.md Phase 5) that is up to about 18 minutes and
-/// 3 GB, or 517 frames at 3840 x 2160.
+/// of packed frames, 358 million pixels, was): the binary holds only the
+/// frames in progress ([`frames_in_flight`]), so its limit guards run time and
+/// output size instead. At the 4 to 49 million pixels per second and at most
+/// 0.7 bytes per pixel measured over five styles at 1080p, that is up to
+/// about 18 minutes and 3 GB, or 517 frames at 3840 x 2160.
 const MAX_TOTAL_PIXELS: u128 = 1 << 32;
 
 /// The most frames an animation may have unless `--no-limits` is given.

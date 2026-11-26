@@ -3,9 +3,9 @@
 //! They call the pure-Rust `libm` crate rather than the platform libm (`f64`'s
 //! methods), whose last bit differs between platforms, so every target renders
 //! the same image and the golden hashes hold everywhere. The platform libm was
-//! the default until it was measured: it was only 1 to 11% faster over
-//! all styles (PLAN.md, "Math backends: measurement"), not worth a second
-//! backend. `clippy.toml` forbids the `f64` methods outside this file.
+//! the default until it was measured: it was only 1 to 11% faster over all
+//! styles on three machines, not worth a second backend. `clippy.toml`
+//! forbids the `f64` methods outside this file.
 //! `sqrt` and `floor` are not routed here, because they are exact everywhere.
 //! `hypot` is not routed here either: [`py_hypot`] ports CPython's own
 //! algorithm, which is exact everywhere.

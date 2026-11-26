@@ -764,8 +764,18 @@ const ATTRACTOR_MAX_POINTS: u128 = 24_000_000;
 /// The radius the parameters circle with over the loop.
 const ATTRACTOR_REACH: f64 = 0.06;
 
-/// The attractor parameter sets ("Attractor parameter table" in PLAN.md says
-/// how they were chosen; add entries only with the same offline checks).
+/// The attractor parameter sets, chosen with integer draws only so that no
+/// libm changes which figure a seed draws. Add entries only with the same
+/// offline checks every entry passed: candidates from a seeded generator,
+/// rounded to three decimals; in both orientations, at all 384 phases
+/// `i / 384`, the orbits from four start points within 2e-9 of (0.1, 0.1),
+/// under both glibc's and the `libm` crate's `sin` and `cos`, each span at
+/// least 1.25 and fill at least 200 of 1,024 cells, with cell counts within a
+/// ratio of 1.35 and spans within 1.15 of each other (the start points stand
+/// in for rounding differences, ruling out bistable figures); the density
+/// image stays bright (mean log density over lit pixels at least 0.27); and
+/// any two different entries, mirror images included, differ by at least 0.25
+/// in at least one parameter (an entry may lie close to its own mirror).
 const ATTRACTOR_TABLE: [(f64, f64, f64, f64); 256] = [
     (-1.763, 1.233, -1.576, 1.14),
     (-1.687, -1.998, 0.524, 1.355),
